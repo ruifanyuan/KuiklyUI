@@ -14,6 +14,9 @@
  */
 
 #include "libohos_render/expand/components/input/KRTextAreaView.h"
+#include "libohos_render/manager/KRKeyboardManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
+#include "libohos_render/utils/KRViewUtil.h"
 
 constexpr char kLineHeight[] = "lineHeight";
 
