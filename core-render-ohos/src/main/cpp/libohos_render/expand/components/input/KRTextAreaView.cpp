@@ -13,6 +13,18 @@
  * limitations under the License.
  */
 
+#include "libohos_render/expand/components/input/KRTextAreaView.h"
+
+constexpr char kLineHeight[] = "lineHeight";
+
+bool KRTextAreaView::SetProp(const std::string &prop_key, const KRAnyValue &prop_value,
+                             const KRRenderCallback event_call_back) {
+    if (kuikly::util::isEqual(prop_key, kLineHeight)) {
+        kuikly::util::UpdateTextAreaNodeLineHeight(GetNode(), prop_value->toFloat());
+        return true;
+    }
+    return KRTextFieldView::SetProp(prop_key, prop_value, event_call_back);
+}
 #include "libohos_render/expand/components/input/KRTextareaView.h"
 #include "libohos_render/manager/KRKeyboardManager.h"
 #include "libohos_render/utils/KRConvertUtil.h"
