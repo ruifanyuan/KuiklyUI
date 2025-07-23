@@ -44,14 +44,14 @@ project(":core").buildFileName = buildFileName
 include(":core-render-android")
 project(":core-render-android").buildFileName = buildFileName
 
-include(":compose")
-project(":compose").buildFileName = buildFileName
+//include(":compose")
+//project(":compose").buildFileName = buildFileName
 
 include(":demo")
 project(":demo").buildFileName = buildFileName
 
-include(":compose")
-project(":compose").buildFileName = buildFileName
+//include(":compose")
+//project(":compose").buildFileName = buildFileName
 
 // include(":androidApp")
 

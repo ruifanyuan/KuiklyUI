@@ -11,7 +11,7 @@ KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradle
 KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :core:publishToMavenLocal --stacktrace
 KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :core-ksp:publishToMavenLocal --stacktrace
 #KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :core-render-android:publishToMavenLocal --stacktrace
-KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :compose:publishToMavenLocal --stacktrace
+#KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :compose:publishToMavenLocal --stacktrace
 KUIKLY_AGP_VERSION="7.4.2" KUIKLY_KOTLIN_VERSION="2.0.21-linuxTest-010" ./gradlew -c settings.2.0.ohos.gradle.kts :demo:linkSharedReleaseSharedOhosArm64  --stacktrace
 
 

@@ -1,8 +1,8 @@
 plugins {
     kotlin("multiplatform")
-    kotlin("plugin.compose")
+    //kotlin("plugin.compose")
     id("com.google.devtools.ksp")
-    id("org.jetbrains.compose")
+    //id("org.jetbrains.compose")
     id("maven-publish")
 }
 
@@ -43,7 +43,7 @@ kotlin {
             dependencies {
                 implementation(project(":core"))
                 implementation(project(":core-annotations"))
-                implementation(project(":compose"))
+                //implementation(project(":compose"))
             }
         }
 
