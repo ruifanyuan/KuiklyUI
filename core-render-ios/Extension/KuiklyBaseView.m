@@ -47,6 +47,10 @@
     return self;
 }
 
+- (void)dealloc{
+    NSLog(@"ruifan KuiklyRenderView dealloc");
+}
+
 - (KuiklyRenderView *)renderView {
     return _delegator.renderView;
 }
