@@ -18,13 +18,16 @@
 
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <arkui/native_node.h>
+#include <arkui/native_gesture.h>
 #include <rawfile/raw_file_manager.h>
 #include "libohos_render/context/KRRenderContextParams.h"
 #include "libohos_render/core/KRRenderCore.h"
+#include "libohos_render/expand/events/gesture/KRGestueEventType.h"
 #include "libohos_render/foundation/KRCallbackData.h"
 #include "libohos_render/manager/KRSnapshotManager.h"
 #include "libohos_render/performance/KRPerformanceManager.h"
 #include "libohos_render/scheduler/IKRScheduler.h"
+#include "libohos_render/utils/KREventUtil.h"
 #include "libohos_render/view/IKRRenderView.h"
 
 class KRRenderView : public IKRRenderView {
@@ -112,6 +115,26 @@ class KRRenderView : public IKRRenderView {
      */
     void DispatchInitState(KRInitState state);
 
+    /**
+     * Long Press 手势回调
+     * @param gesture_event_data 手势事件数据
+     */
+    void OnLongpressed(const std::shared_ptr<KRGestureEventData> &gesture_event_data);
+
+    /**
+     * Pan 手势回调
+     * @param gesture_event_data 手势事件数据
+     */
+    void OnPan(const std::shared_ptr<KRGestureEventData> &gesture_event_data);
+
+    /**
+     * 遍历节点树，找出在选中区域内的节点
+     * @param point1 选中区域的第一个点
+     * @param point2 选中区域的第二个点
+     * @return 在选中区域内的节点列表（返回节点的tag）
+     */
+    std::vector<int> FindNodesInSelectionArea(const KRPoint &point1, const KRPoint &point2);
+
     class KRArkTsCallbackWrapper {
      public:
         KRArkTsCallbackWrapper(const KRRenderCallback &callback, bool callback_keep_alive,
@@ -154,6 +177,20 @@ class KRRenderView : public IKRRenderView {
     std::shared_ptr<KRPerformanceManager> performance_manager_ = nullptr;
     bool is_load_finish = false;  //  是否已经初始化过标记
     void InitRender(float width, float height);
+    
+    // 手势识别相关
+    void InitGestures();
+    void CleanupGestures();
+    static void OnLongPressGestureEvent(ArkUI_GestureEvent *event, void *extraParams);
+    static void OnPanGestureEvent(ArkUI_GestureEvent *event, void *extraParams);
+    ArkUI_GestureRecognizer *long_press_gesture_recognizer_ = nullptr;
+    ArkUI_GestureRecognizer *pan_gesture_recognizer_ = nullptr;
+    ArkUI_GestureRecognizer *gesture_group_ = nullptr;
+    bool is_long_press_triggered_ = false;
+    // 选中区域的两个点
+    KRPoint selection_point1_;
+    KRPoint selection_point2_;
+    bool has_selection_start_point_ = false;
 };
 
 #endif  // CORE_RENDER_OHOS_KRRENDERVIEW_H

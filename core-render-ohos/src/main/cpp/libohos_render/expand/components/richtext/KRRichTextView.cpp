@@ -18,6 +18,7 @@
 #include <native_drawing/drawing_brush.h>
 #include <native_drawing/drawing_pen.h>
 #include <native_drawing/drawing_point.h>
+#include <native_drawing/drawing_path.h>
 #include <native_drawing/drawing_shader_effect.h>
 #include "libohos_render/expand/components/base/KRCustomUserCallback.h"
 #include "libohos_render/expand/components/richtext/KRRichTextShadow.h"
@@ -145,6 +146,23 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
     // Note: turn this on only when absolutely needed in testing build
     // KR_LOG_INFO<<"OnForegroundDraw, frameWidth:"<<frameWidth<<", shadow:"<<richTextShadow<<", node
     // handle"<<this->GetNode();
+    
+    // Draw background color before drawing text
+    auto frame = GetFrame();
+    OH_Drawing_Brush *backgroundBrush = OH_Drawing_BrushCreate();
+    OH_Drawing_BrushSetColor(backgroundBrush, 0x33007DFF);  // ARGB format: alpha=255, RGB=0x007DFF
+    OH_Drawing_Path *backgroundPath = OH_Drawing_PathCreate();
+    OH_Drawing_PathMoveTo(backgroundPath, 0, 0);
+    OH_Drawing_PathLineTo(backgroundPath, frameWidth * KRConfig::GetDpi(), 0);
+    OH_Drawing_PathLineTo(backgroundPath, frameWidth * KRConfig::GetDpi(), frame.height * KRConfig::GetDpi());
+    OH_Drawing_PathLineTo(backgroundPath, 0, frame.height * KRConfig::GetDpi());
+    OH_Drawing_PathClose(backgroundPath);
+    OH_Drawing_CanvasAttachBrush(drawingHandle, backgroundBrush);
+    OH_Drawing_CanvasDrawPath(drawingHandle, backgroundPath);
+    OH_Drawing_CanvasDetachBrush(drawingHandle);
+    OH_Drawing_BrushDestroy(backgroundBrush);
+    OH_Drawing_PathDestroy(backgroundPath);
+    
     OH_Drawing_TypographyPaint(textTypo, drawingHandle, 0, -drawOffsetY);
 }
 
