@@ -77,6 +77,7 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
      * @return 对应节点view
      */
     std::shared_ptr<IKRRenderViewExport> GetView(int tag);
+    std::shared_ptr<IKRRenderViewExport> GetView(ArkUI_NodeHandle handle);
 
     /**
      * 获取渲染节点视图（要求在主线程调用）

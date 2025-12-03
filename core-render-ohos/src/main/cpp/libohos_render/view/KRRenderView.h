@@ -134,6 +134,8 @@ class KRRenderView : public IKRRenderView {
      * @return 在选中区域内的节点列表（返回节点的tag）
      */
     std::vector<int> FindNodesInSelectionArea(const KRPoint &point1, const KRPoint &point2);
+    
+    void IterateOverChildren(ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth);
 
     class KRArkTsCallbackWrapper {
      public:

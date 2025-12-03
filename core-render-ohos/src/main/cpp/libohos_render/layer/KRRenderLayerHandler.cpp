@@ -54,6 +54,7 @@ void KRRenderLayerHandler::CreateRenderView(int tag, const std::string &view_nam
         }
         if (view != nullptr) {
             view_registry_[tag] = view;
+            handle_to_tag[view->GetNode()] = tag;
         }
     }
 }

@@ -436,6 +436,11 @@ class IKRRenderViewExport : public std::enable_shared_from_this<IKRRenderViewExp
         view_name_ = view_name;
     }
 
+    void SetSelected(bool selected){
+        selected_ = selected;
+        kuikly::util::GetNodeApi()->markDirty(node_, NODE_NEED_RENDER);
+    }
+
     const std::string &GetViewName() const {
         return view_name_;
     }
@@ -459,6 +464,9 @@ class IKRRenderViewExport : public std::enable_shared_from_this<IKRRenderViewExp
     }
     const int GetViewTag() const {
         return view_tag_;
+    }
+    const bool IsSelected() const{
+        return selected_;
     }
     const std::string GetNodeId() {
         std::stringstream ss;
@@ -536,6 +544,7 @@ class IKRRenderViewExport : public std::enable_shared_from_this<IKRRenderViewExp
     std::string instance_id_;
     std::shared_ptr<KRBaseEventHandler> base_event_handler_;
     std::string view_name_;
+    bool selected_ = false;
     int view_tag_ = 0;
     std::vector<std::string> did_set_props_;
 

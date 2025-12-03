@@ -168,6 +168,12 @@ class KRRenderLayerHandler : public IKRRenderLayer {
      * @return 对应 ID 的渲染视图实例，如果不存在则返回 null
      */
     std::shared_ptr<IKRRenderViewExport> GetRenderView(int tag) override;
+    std::shared_ptr<IKRRenderViewExport> GetRenderView(ArkUI_NodeHandle handle) {
+        if (auto it = handle_to_tag.find(handle); it != handle_to_tag.end()){
+            return GetRenderView(it->second);
+        }
+        return nullptr;
+    }
 
     /**
      * 将要销毁时调用
@@ -186,6 +192,7 @@ class KRRenderLayerHandler : public IKRRenderLayer {
     std::weak_ptr<IKRRenderView> root_view_;
     std::unordered_map<std::string, std::vector<std::shared_ptr<IKRRenderViewExport>>> view_reuse_queue_;
     std::unordered_map<int, std::shared_ptr<IKRRenderViewExport>> view_registry_;
+    std::unordered_map<void*, int> handle_to_tag;
     std::unordered_map<std::string, std::shared_ptr<IKRRenderModuleExport>> module_registry_;
     std::unordered_map<int, std::shared_ptr<IKRRenderShadowExport>> shadow_registry_;
     mutable std::shared_mutex module_rw_mutex_;  // 用于module读写安全用的读写锁

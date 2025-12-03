@@ -569,14 +569,21 @@ static bool IsRectInSelectionArea(const KRRect &rect, const KRPoint &point1, con
     return intersects;
 }
 
-static void IterateOverChildren(ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2){
+void KRRenderView::IterateOverChildren(ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth){
     KRRect bounds = GetNodeBounds(node);
     if (!IsRectInSelectionArea(bounds, point1, point2)) {
         return;
     }
     
-    KR_LOG_DEBUG<<"Ruifan node selected:"<<node<<", type:"<<OH_ArkUI_NodeUtils_GetNodeType(node);
-    
+    auto view = core_->GetView(node);
+    std::string spacing(depth * 4, ' ');
+    KR_LOG_DEBUG<<spacing<<"Ruifan node selected:"<<node<< ", type:"<<OH_ArkUI_NodeUtils_GetNodeType(node)<<", view name:"<<(view ? view->GetViewName() : "");
+    if(view){
+        if(view->GetViewName() == "KRGradientRichTextView" || view->GetViewName() == "KRRichTextView"){
+            view->SetSelected(true);
+        }
+    }
+    ++depth;
     for (int i = 0; i < kuikly::util::GetNodeApi()->getTotalChildCount(node); ++i){
         ArkUI_NodeHandle child = kuikly::util::GetNodeApi()->getChildAt(node, i);
         // 获取节点边界
@@ -586,7 +593,7 @@ static void IterateOverChildren(ArkUI_NodeHandle node,const KRPoint &point1, con
         if (IsRectInSelectionArea(bounds, point1, point2)) {
 //            int cnt = kuikly::util::GetNodeApi()->getTotalChildCount(child);
 //            if (cnt > 0){
-                IterateOverChildren(child, point1, point2);
+                IterateOverChildren(child, point1, point2, depth);
 //            }
         }
     }
@@ -609,7 +616,7 @@ std::vector<int> KRRenderView::FindNodesInSelectionArea(const KRPoint &point1, c
     // 对于实际使用，建议添加一个 GetAllViewTags 方法到 IKRRenderLayer
     const int MAX_TAG_TO_CHECK = 10000;
     KR_LOG_DEBUG<<"Ruifan node selected begin";
-    IterateOverChildren(root_node_, point1, point2);
+    IterateOverChildren(root_node_, point1, point2, 0);
     KR_LOG_DEBUG<<"Ruifan node selected end";
 //    for (int tag = 1; tag <= MAX_TAG_TO_CHECK; tag++) {
 //        auto view = core_->GetView(tag);
