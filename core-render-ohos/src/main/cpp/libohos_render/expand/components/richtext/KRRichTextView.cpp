@@ -14,7 +14,8 @@
  */
 
 #include "libohos_render/expand/components/richtext/KRRichTextView.h"
-
+#include <native_drawing/drawing_text_line.h>
+#include <native_drawing/drawing_rect.h>
 #include <native_drawing/drawing_brush.h>
 #include <native_drawing/drawing_pen.h>
 #include <native_drawing/drawing_point.h>
@@ -56,6 +57,7 @@ void KRRichTextView::DidInit() {
 
 void KRRichTextView::SetShadow(const std::shared_ptr<IKRRenderShadowExport> &shadow) {
     shadow_ = shadow;
+    KR_LOG_DEBUG<<"set shadow "<<shadow.get()<<", to view "<<this;
 
     auto textShadow = std::dynamic_pointer_cast<KRRichTextShadow>(shadow);
     if(textShadow && textShadow->StyledStringEnabled()){
@@ -91,6 +93,13 @@ void KRRichTextView::DidRemoveFromParentView() {
     last_draw_frame_width_ = -1.0;
 }
 
+static bool KRCaretOffsetsCallback(double offset, int32_t index, bool leadingEdge){
+    return true;
+}
+template <class Facet> struct deletable_facet : Facet {
+    template <class... Args> deletable_facet(Args &&...args) : Facet(std::forward<Args>(args)...) {}
+    ~deletable_facet() {}
+};
 void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
     if (shadow_ == nullptr && GetFrame().width == 0) {
         KR_LOG_ERROR << "OnForegroundDraw, shadow or frame not ready, shadow:" << shadow_.get()
@@ -163,8 +172,132 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
         OH_Drawing_BrushDestroy(backgroundBrush);
         OH_Drawing_PathDestroy(backgroundPath);
     }
-    
+#if 1
+//bool OH_Drawing_TypographyGetLineInfo(OH_Drawing_Typography* typography, int lineNumber, bool oneLine,
+//    bool includeWhitespace, OH_Drawing_LineMetrics* drawingLineMetrics);
+    {
+        std::string text_content = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->GetTextContent();
+        int lineCount = OH_Drawing_TypographyGetLineCount(textTypo);
+        for(int i = 0; i < lineCount; ++i){
+            OH_Drawing_LineMetrics metrics;
+            OH_Drawing_TypographyGetLineInfo(textTypo, i, true, true, &metrics);
+            if(true || lineCount > 1){
+                KR_LOG_DEBUG<<"metrics "<<i+1<<"/"<<lineCount<<":"<<metrics.x<<","<<metrics.y<<","<<metrics.width<<","<<metrics.height<<", index"<<metrics.startIndex<<","<<metrics.endIndex<<", content:"<<text_content;
+            }
+        }
+    }
     OH_Drawing_TypographyPaint(textTypo, drawingHandle, 0, -drawOffsetY);
+#else
+//    if(std::shared_ptr<KRParagraph> paragraph = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->GetParagraph()){
+//        auto styled_str = paragraph->GetStyledString();
+//        textTypo = OH_ArkUI_StyledString_CreateTypography(styled_str);
+//        OH_Drawing_TypographyLayout(textTypo, frameWidth * KRConfig::GetDpi());
+//        auto textWidth = OH_Drawing_TypographyGetLongestLine(textTypo);
+//        last_draw_frame_width_ = frameWidth;
+//        OH_Drawing_TypographyPaint(textTypo, drawingHandle, 0, -drawOffsetY);
+//        return;
+//    }
+    auto last_typo = last_typo_;
+    auto new_typo = textTypo;
+    bool destroyed_old_text_lines = false;
+    bool get_text_lines = false;
+//    if (last_typo_ != textTypo) {
+//        if (text_lines_){
+//            OH_Drawing_DestroyTextLines(text_lines_);
+//            destroyed_old_text_lines = false;
+//        }
+//        text_lines_ = OH_Drawing_TypographyGetTextLines(textTypo);
+//        last_typo_ = textTypo;
+//        get_text_lines = true;
+//    }
+    text_lines_ = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->lines();
+
+    OH_Drawing_TextLine* targetLine = NULL;
+    double paintX = 0.0;  // 记录排版绘制位置
+    double paintY = 0.0;  // 记录排版绘制位置
+    double lineY = paintY;  // 当前行的 Y 坐标
+    double screenX = 0;
+    double screenY = 0;
+//    OH_Drawing_Brush *backgroundBrush = OH_Drawing_BrushCreate();
+//    OH_Drawing_BrushSetColor(backgroundBrush, 0x33FF7DFF);  // ARGB format: alpha=255, RGB=0x007DFF
+        
+    {
+        // 
+        //typedef bool (*Drawing_CaretOffsetsCallback)(double offset, int32_t index, bool leadingEdge);
+
+/**
+ * @brief Enumerate caret offset and index in text lines.
+ *
+ * @syscap SystemCapability.Graphic.Graphic2D.NativeDrawing
+ * @param line Indicates the pointer to an <b>OH_Drawing_TextLine</b> object.
+ * @param callback User-defined callback functions, see <b>Drawing_CaretOffsetsCallback</b>.
+ * @since 18
+ */
+//void OH_Drawing_TextLineEnumerateCaretOffsets(OH_Drawing_TextLine* line, Drawing_CaretOffsetsCallback callback);
+        
+    }
+    
+    std::string text_content = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->GetTextContent();
+    size_t lineCount = OH_Drawing_GetDrawingArraySize(text_lines_);
+    if(text_content.size() > 200){
+        printf("");
+    }
+    for(size_t i = 0; i < lineCount; ++i){
+        OH_Drawing_TextLine* line = OH_Drawing_GetTextLineByIndex(text_lines_, i);
+        
+        //assert(OH_Drawing_TextLineGetGlyphCount(line) > 0);
+        KR_LOG_DEBUG<<"glyph count "<<OH_Drawing_TextLineGetGlyphCount(line)<<",view:"<<this<<",line:"<<line<<", last typo:"<<last_typo<<",new typo:"<<new_typo<<",destroyed_old_text_lines:"<<destroyed_old_text_lines<<", get_text_lines:"<<get_text_lines<<", at line "<<i<<"/"<<lineCount<<", saved last typo:"<<last_typo_<<",shadow:"<<shadow_.get();
+
+        double ascent = 0;
+        double descent = 0;
+        double leading = 0;
+        double w = OH_Drawing_TextLineGetTypographicBounds(line, &ascent, &descent, &leading);
+        OH_Drawing_Rect* bounds = OH_Drawing_TextLineGetImageBounds(line);
+        double lineTop = OH_Drawing_RectGetTop(bounds);
+        double lineBottom = OH_Drawing_RectGetBottom(bounds);   
+        double lineLeft = OH_Drawing_RectGetLeft(bounds);
+        double lineRight = OH_Drawing_RectGetRight(bounds);
+        
+        //OH_Drawing_TextLineEnumerateCaretOffsets(line, [](double offset, int32_t index, bool leadingEdge){});
+        size_t text_start = 0;
+        size_t text_end;
+        std::vector<double> offsets;
+        
+        OH_Drawing_TextLineGetTextRange(line, &text_start, &text_end);
+
+        std::wstring_convert<deletable_facet<std::codecvt<char16_t, char, std::mbstate_t>>, char16_t> conv16, conv2;
+        std::u16string start_part;
+        if(text_start > 0){
+            conv2.from_bytes(text_content.c_str(), text_content.c_str() + text_start);
+        }
+        std::u16string str16 = conv16.from_bytes(text_content.c_str() + text_start, text_content.c_str() + text_end);
+        //std::u16string str16 = conv16.from_bytes(text_content);
+        int codePointCount = str16.size();
+
+        for(size_t text_index = start_part.size(); text_index < codePointCount + start_part.size(); ++text_index){
+            double offset = OH_Drawing_TextLineGetOffsetForStringIndex(line, text_index);
+            offsets.push_back(offset);
+        }
+
+//OH_Drawing_TextBox* OH_Drawing_TypographyGetRectsForRange(OH_Drawing_Typography* typography,
+//    size_t start, size_t end, OH_Drawing_RectHeightStyle heightStyle, OH_Drawing_RectWidthStyle widthStyle);
+    OH_Drawing_TextBox *text_boxes = OH_Drawing_TypographyGetRectsForRange(textTypo, text_start, text_end, RECT_HEIGHT_STYLE_TIGHT, RECT_WIDTH_STYLE_TIGHT);
+    size_t rectCount = OH_Drawing_GetSizeOfTextBox(text_boxes);
+        
+        // Get coordinates for each rectangle
+        for (int i = 0; i < rectCount; i++) {
+            float left = OH_Drawing_GetLeftFromTextBox(text_boxes, i);
+            float right = OH_Drawing_GetRightFromTextBox(text_boxes, i);
+            float top = OH_Drawing_GetTopFromTextBox(text_boxes, i);
+            float bottom = OH_Drawing_GetBottomFromTextBox(text_boxes, i); 
+        }
+
+
+
+        OH_Drawing_TextLinePaint( line, drawingHandle, 0, -drawOffsetY);
+    }
+    
+#endif
 }
 
 void KRRichTextView::ToSetProp(const std::string &prop_key, const KRAnyValue &prop_value,
@@ -215,4 +348,134 @@ void KRRichTextView::ToSetProp(const std::string &prop_key, const KRAnyValue &pr
     } else {
         IKRRenderViewExport::ToSetProp(prop_key, prop_value, event_callback);
     }
+}
+
+void KRRichTextView::SetSelection(KRPoint start, KRPoint end){
+//    auto rich_text_shadow = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_);
+//    OH_Drawing_Typography *text_typo = rich_text_shadow->MainThreadTypography();
+//    
+//    OH_Drawing_PositionAndAffinity *start_pa = OH_Drawing_TypographyGetGlyphPositionAtCoordinate(text_typo, start.x, start.y);
+//    OH_Drawing_PositionAndAffinity *end_pa = OH_Drawing_TypographyGetGlyphPositionAtCoordinate(text_typo, end.x, end.y);
+    std::pair<int,int> start_range = GetTextRangeAtPoint(start);
+    std::pair<int,int> end_range = GetTextRangeAtPoint(end);
+    std::pair<int,int> end_range2 = GetTextRangeAtPoint(KRPoint());
+    std::pair<int,int> end_range3 = GetTextRangeAtPoint(KRPoint(120.0/KRConfig::GetDpi(), 0));
+    std::pair<int,int> end_range4 = GetTextRangeAtPoint(KRPoint(129.0/KRConfig::GetDpi(), 0));
+    std::pair<int,int> end_range5 = GetTextRangeAtPoint(KRPoint(130.0/KRConfig::GetDpi(), 0));
+                                                         
+#if 0
+    size_t pos = OH_Drawing_GetPositionFromPositionAndAffinity(start_pa);
+    if (OH_Drawing_Range *range = OH_Drawing_TypographyGetWordBoundary(text_typo, pos)){
+        size_t start = OH_Drawing_GetStartFromRange(range);
+        size_t end = OH_Drawing_GetEndFromRange(range);
+        start_range.first = start;
+        start_range.second = end;
+    }
+    pos = OH_Drawing_GetPositionFromPositionAndAffinity(end_pa);
+    if (OH_Drawing_Range *range = OH_Drawing_TypographyGetWordBoundary(text_typo, pos)){
+        size_t start = OH_Drawing_GetStartFromRange(range);
+        size_t end = OH_Drawing_GetEndFromRange(range);
+        KR_LOG_DEBUG_WITH_TAG("Selection Test")<<"start:"<<start<<", end:"<<end;
+        end_range.first = start;
+        end_range.second = end;
+    }
+#endif
+    KR_LOG_DEBUG_WITH_TAG("Selection Test")<<"start range:"<<start_range.first<<","<<start_range.second<<", end range:"<<end_range.first<<","<<end_range.second;
+}
+
+std::pair<int,int> KRRichTextView::GetTextRangeAtPoint(KRPoint point){
+    std::pair<int,int> result_range;
+#if 0
+    std::pair<int,int> result_range;
+    auto richTextShadow = reinterpret_cast<KRRichTextShadow *>(shadow_.get());
+    OH_Drawing_Typography *textTypo = richTextShadow->MainThreadTypography();
+    
+    auto offset = richTextShadow->DrawOffsetY();
+    OH_Drawing_PositionAndAffinity *pos_and_affinity = OH_Drawing_TypographyGetGlyphPositionAtCoordinateWithCluster(textTypo, point.x * KRConfig::GetDpi(), point.y * KRConfig::GetDpi() );
+    size_t pos = OH_Drawing_GetPositionFromPositionAndAffinity(pos_and_affinity);
+    if (OH_Drawing_Range *range = OH_Drawing_TypographyGetWordBoundary(textTypo, pos)){
+        size_t start = OH_Drawing_GetStartFromRange(range);
+        size_t end = OH_Drawing_GetEndFromRange(range);
+        KR_LOG_DEBUG_WITH_TAG("Selection Test")<<"start:"<<start<<", end:"<<end;
+        result_range.first = start;
+        result_range.second = end;
+    }
+    
+    OH_Drawing_TextBox* textBox = OH_Drawing_TypographyGetRectsForRange(
+        textTypo,
+        result_range.first,      // Start position
+        result_range.second,         // End position
+        RECT_HEIGHT_STYLE_TIGHT,  // Height style
+        RECT_WIDTH_STYLE_TIGHT    // Width style
+    );
+    // Get number of rectangles (text may span multiple lines)
+    size_t rectCount = OH_Drawing_GetSizeOfTextBox(textBox);
+    
+    // Get coordinates for each rectangle
+    for (int i = 0; i < rectCount; i++) {
+        float left = OH_Drawing_GetLeftFromTextBox(textBox, i);
+        float right = OH_Drawing_GetRightFromTextBox(textBox, i);
+        float top = OH_Drawing_GetTopFromTextBox(textBox, i);
+        float bottom = OH_Drawing_GetBottomFromTextBox(textBox, i);
+        
+        KR_LOG_DEBUG_WITH_TAG("Selection Test")<<"Point:"<<point.x* KRConfig::GetDpi()<<","<<point.y* KRConfig::GetDpi()<<", range:"<<result_range.first<<","<<result_range.second<<", rect "<<i+1<<"/"<<rectCount<<" left:"<<left<<",right:"<<right<<",top:"<<top<<",bottom:"<<bottom;
+    }
+
+///////////////////////////////// plan b /////////////////////////////////////////////////////////
+
+#else
+    OH_Drawing_Array* textLines  = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->lines();;
+
+    OH_Drawing_TextLine* targetLine = NULL;
+    double paintX = 0.0;  // 记录排版绘制位置
+    double paintY = 0.0;  // 记录排版绘制位置
+    double lineY = paintY;  // 当前行的 Y 坐标
+    double screenX = 0;
+    double screenY = 0;
+    size_t lineCount = OH_Drawing_GetDrawingArraySize(textLines);
+    for (size_t i = 0; i < lineCount; i++) {
+        OH_Drawing_TextLine* line = OH_Drawing_GetTextLineByIndex(textLines, i);
+        targetLine = line;
+        // 获取行的图像边界
+//        OH_Drawing_Rect* bounds = OH_Drawing_TextLineGetImageBounds(line);
+//        double lineTop = OH_Drawing_RectGetTop(bounds);
+//        double lineBottom = OH_Drawing_RectGetBottom(bounds);
+//        
+//        // 检查点是否在此行的 Y 范围内
+//        // 注意：需要将屏幕坐标转换为相对于排版原点的坐标
+//        double relativeY = screenY - paintY;
+//        
+//        if (relativeY >= lineTop && relativeY <= lineBottom) {
+//            targetLine = line;
+//            break;
+//        }
+//        
+//        // 清理边界对象
+//        // (根据 API 文档决定是否需要释放)
+//        lineY += (lineBottom - lineTop);  // 移动到下一行
+    }
+    OH_Drawing_Point* dpoint = OH_Drawing_PointCreate(
+        point.x * KRConfig::GetDpi(),// (float)(screenX - paintX),  // 相对于排版原点的 X
+        point.y * KRConfig::GetDpi()//(float)(screenY - paintY)   // 相对于排版原点的 Y
+    );
+    
+    // 或者如果知道文本行的绘制位置
+    // double linePaintX = ...;  // 文本行绘制时的 X
+    // double linePaintY = ...;  // 文本行绘制时的 Y
+    // OH_Drawing_Point* point = OH_Drawing_PointCreate(
+    //     (float)(screenX - linePaintX),
+    //     (float)(screenY - linePaintY)
+    // );
+    
+    // 获取字符串索引
+    int32_t stringIndex = OH_Drawing_TextLineGetStringIndexForPosition(targetLine, dpoint);
+    
+    // 清理 Point 对象
+    OH_Drawing_PointDestroy(dpoint);
+    OH_Drawing_DestroyTextLines(textLines);
+
+    //OH_Drawing_ArrayDestroy(textLines);
+    kuikly::util::GetNodeApi()->markDirty(GetNode(), NODE_NEED_RENDER);
+#endif
+    return result_range;
 }

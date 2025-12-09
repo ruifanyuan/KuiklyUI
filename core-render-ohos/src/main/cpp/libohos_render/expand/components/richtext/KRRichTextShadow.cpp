@@ -99,12 +99,16 @@ KRAnyValue KRRichTextShadow::Call(const std::string &method_name, const std::str
  * @return
  */
 KRSize KRRichTextShadow::CalculateRenderViewSize(double constraint_width, double constraint_height) {
+#if 0 // just for a quit test
+    KRSize sz = CalculateRenderViewSizeWithStyledString(constraint_width, constraint_height);
+#else
     if(StyledStringEnabled()){
         KRSize sz = CalculateRenderViewSizeWithStyledString(constraint_width, constraint_height);
         return sz;
     }else{
         SetParagraph(nullptr);
     }
+#endif
     ReleaseLastTypography();
     BuildTextTypography(constraint_width, constraint_height);
     return context_measure_size_;
@@ -245,6 +249,8 @@ void SetCustomFontIfApplicable(NativeResourceManager *resMgr, std::shared_ptr<st
 }
 
 std::string KRRichTextShadow::GetTextContent() {
+return text_content_;
+
     std::string txt;
     for (auto span : values_) {
         auto spanMap = span->toMap();
@@ -290,6 +296,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
     float fontSizeScale = rootView->GetContext()->Config()->GetFontSizeScale();
     float fontWeightScale = rootView->GetContext()->Config()->GetFontWeightScale();
 
+    std::string text_content;
     span_offsets_.clear();
     placeholder_index_map_.clear();
     KRRenderValue::Array spans = values_;
@@ -489,8 +496,11 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
             placeholder_index_map_[spanIndex] = placeholder_count;
             placeholder_count++;
             charOffset += 1;
+
+            // TODO: shall we add anything to text_content?
         } else {
             OH_Drawing_TypographyHandlerAddText(handler, text.c_str());  // 添加文本
+            text_content.append(text);
 
             std::wstring_convert<deletable_facet<std::codecvt<char16_t, char, std::mbstate_t>>, char16_t> conv16;
             std::u16string str16 = conv16.from_bytes(text);
@@ -535,6 +545,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
     if (typoStyle != nullptr) {
         OH_Drawing_DestroyTypographyStyle(typoStyle);
     }
+    text_content_ = text_content;
     return context_thread_typography_;
 }
 

@@ -15,6 +15,7 @@
 
 #ifndef CORE_RENDER_OHOS_KRRECT_H
 #define CORE_RENDER_OHOS_KRRECT_H
+#include "libohos_render/foundation/KRPoint.h"
 
 struct KRRect {
     float x;
@@ -29,6 +30,14 @@ struct KRRect {
 
     // 参数构造函数
     KRRect(float x_, float y_, float width_, float height_) : x(x_), y(y_), width(width_), height(height_) {}
+
+    bool ContainsPoint(float x, float y) {
+        return x >= this->x && x <= this->x + this->width && y >= this->y && y <= this->y + this->height;
+    }
+
+    bool ContainsPoint(KRPoint point) {
+        return ContainsPoint(point.x, point.y);
+    }
 
     // 零大小的静态常量成员
     static const KRRect zero;

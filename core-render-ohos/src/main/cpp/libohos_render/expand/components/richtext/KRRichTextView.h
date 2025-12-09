@@ -15,12 +15,13 @@
 
 #ifndef CORE_RENDER_OHOS_KRRICHTEXTVIEW_H
 #define CORE_RENDER_OHOS_KRRICHTEXTVIEW_H
-
+#include <utility>
 #include <arkui/native_node.h>
 #include "libohos_render/expand/components/base/KRCustomUserCallback.h"
 #include "libohos_render/expand/components/richtext/KRParagraph.h"
 #include "libohos_render/export/IKRRenderShadowExport.h"
 #include "libohos_render/export/IKRRenderViewExport.h"
+#include "libohos_render/foundation/KRPoint.h"
 #include "libohos_render/view/IKRRenderView.h"
 class KRRichTextView : public IKRRenderViewExport {
  public:
@@ -43,8 +44,15 @@ class KRRichTextView : public IKRRenderViewExport {
 
     void ToSetProp(const std::string &prop_key, const KRAnyValue &prop_value,
                    const KRRenderCallback event_call_back = nullptr) override;
+    
+    void SetSelection(KRPoint start, KRPoint end);
 
+    std::pair<int,int> GetTextRangeAtPoint(KRPoint point);
+    static bool KRCaretOffsetsCallback(double offset, int32_t index, bool leadingEdge);
+    
  private:
+    OH_Drawing_Typography *last_typo_ = nullptr;
+    OH_Drawing_Array* text_lines_ = nullptr;
     std::shared_ptr<KRParagraph> paragraph_;
     std::shared_ptr<IKRRenderShadowExport> shadow_;
     float last_draw_frame_width_ = -1.0;

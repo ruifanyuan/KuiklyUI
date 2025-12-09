@@ -18,6 +18,7 @@
 
 #include <arkui/styled_string.h>
 #include <native_drawing/drawing_text_declaration.h>
+#include <native_drawing/drawing_text_line.h>
 #include <native_drawing/drawing_text_typography.h>
 #include <native_drawing/drawing_types.h>
 #include <unordered_set>
@@ -73,6 +74,19 @@ class KRRichTextShadow : public IKRRenderShadowExport {
      */
     KRSchedulerTask TaskToMainQueueWhenWillSetShadowToView() override;
 
+    
+    OH_Drawing_Array *lines() {
+        if (last_main_thread_typography_ != main_thread_typography_){
+            if (text_lines_){
+                OH_Drawing_DestroyTextLines(text_lines_);
+                
+            }
+            text_lines_ = OH_Drawing_TypographyGetTextLines(main_thread_typography_);
+            last_main_thread_typography_ = main_thread_typography_;
+        }
+        return text_lines_;
+    }
+    
     OH_Drawing_Typography *MainThreadTypography() const {
         return main_thread_typography_;
     }
@@ -108,8 +122,11 @@ class KRRichTextShadow : public IKRRenderShadowExport {
     KRSize CalculateRenderViewSizeWithStyledString(double constraint_width, double constraint_height);
 
  private:
+    std::string text_content_;
     KRRenderValue::Map props_;
     KRRenderValue::Array values_;
+    OH_Drawing_Array* text_lines_ = nullptr;
+    OH_Drawing_Typography *last_main_thread_typography_ = nullptr;
     OH_Drawing_Typography *main_thread_typography_ = nullptr;
     OH_Drawing_Typography *context_thread_typography_ = nullptr;
     float context_thread_drawOffsetX_ = 0;

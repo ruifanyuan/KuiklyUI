@@ -19,6 +19,8 @@
 #include <functional>
 #include <vector>
 #include "libohos_render/context/IKRRenderNativeContextHandler.h"
+#include "libohos_render/expand/components/richtext/KRRichTextView.h"
+#include "libohos_render/foundation/KRPoint.h"
 #include "libohos_render/manager/KRWeakObjectManager.h"
 #include "libohos_render/manager/KRRenderManager.h"
 #include "libohos_render/scheduler/IKRScheduler.h"
@@ -461,18 +463,18 @@ void KRRenderView::OnPanGestureEvent(ArkUI_GestureEvent *event, void *extraParam
                 // Pan Update 时更新第二个点并调用 FindNodesInSelectionArea
                 if (strong_view->has_selection_start_point_) {
                     strong_view->selection_point2_ = gesture_event_data->gesture_event_window_point_;
-                    
+                    strong_view->OnSelectionPointChanged(strong_view->selection_point1_, strong_view->selection_point2_);
                     // 调用 FindNodesInSelectionArea 找出选中区域内的节点
-                    std::vector<int> selected_nodes = strong_view->FindNodesInSelectionArea(
-                        strong_view->selection_point1_, 
-                        strong_view->selection_point2_
-                    );
+//                    std::vector<int> selected_nodes = strong_view->FindNodesInSelectionArea(
+//                        strong_view->selection_point1_, 
+//                        strong_view->selection_point2_
+//                    );
                     
                     // 可以在这里处理选中的节点，例如发送事件
-                    KR_LOG_DEBUG << "Ruifan Selected nodes count: " << selected_nodes.size();
-                    for (int tag : selected_nodes) {
-                        KR_LOG_DEBUG << "Ruifan Selected node tag: " << tag;
-                    }
+//                    KR_LOG_DEBUG << "Ruifan Selected nodes count: " << selected_nodes.size();
+//                    for (int tag : selected_nodes) {
+//                        KR_LOG_DEBUG << "Ruifan Selected node tag: " << tag;
+//                    }
                 }
             } else if (action_type == GESTURE_EVENT_ACTION_END || action_type == GESTURE_EVENT_ACTION_CANCEL) {
                 // Pan 结束或取消时清理状态
@@ -638,5 +640,195 @@ std::vector<int> KRRenderView::FindNodesInSelectionArea(const KRPoint &point1, c
 //        }
 //    }
     
+    return result;
+}
+
+
+void KRRenderView::GetSelectedNodes(std::vector<ArkUI_NodeHandle> &result, ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth){
+    KRRect bounds = GetNodeBounds(node);
+    if (!IsRectInSelectionArea(bounds, point1, point2)) {
+        return;
+    }
+    result.push_back(node);
+    auto view = core_->GetView(node);
+    std::string spacing(depth * 4, ' ');
+    KR_LOG_DEBUG<<spacing<<"Ruifan node selected:"<<node<< ", type:"<<OH_ArkUI_NodeUtils_GetNodeType(node)<<", view name:"<<(view ? view->GetViewName() : "");
+    if(view){
+        if(view->GetViewName() == "KRGradientRichTextView" || view->GetViewName() == "KRRichTextView"){
+            view->SetSelected(true);
+        }
+    }
+    ++depth;
+    for (int i = 0; i < kuikly::util::GetNodeApi()->getTotalChildCount(node); ++i){
+        ArkUI_NodeHandle child = kuikly::util::GetNodeApi()->getChildAt(node, i);
+        // 获取节点边界
+        KRRect bounds = GetNodeBounds(child);
+        
+        // 判断节点是否在选中区域内
+        if (IsRectInSelectionArea(bounds, point1, point2)) {
+            GetSelectedNodes(result, child, point1, point2, depth);
+        }
+    }
+}
+
+KRPoint KRRenderView::ConvertPointToChildCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle child_node){
+    // TODO: implement this
+    ArkUI_NodeHandle current = child_node;
+    ArkUI_IntOffset result_offset;
+    result_offset.x = 0;
+    result_offset.y = 0;
+    for(;;){
+        ArkUI_IntOffset offset;
+        OH_ArkUI_NodeUtils_GetPositionToParent(current, &offset);
+        result_offset.x += offset.x / KRConfig::GetDpi();
+        result_offset.y += offset.y  / KRConfig::GetDpi();
+        if (current == node){
+            break;
+        }
+        current = kuikly::util::GetNodeApi()->getParent(current);
+        if (current == nullptr){
+            assert(false && "no parent - child relationship");
+            break;
+        }
+    }
+    return KRPoint(point.x - result_offset.x, point.y - result_offset.y);
+}
+
+KRPoint KRRenderView::ConvertPointToParentCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle parent_node){
+    // OH_ArkUI_NodeUtils_GetPositionToParent
+    ArkUI_NodeHandle current = node;
+    ArkUI_IntOffset result_offset;
+    result_offset.x = 0;
+    result_offset.y = 0;
+    for(;;){
+        ArkUI_IntOffset offset;
+        OH_ArkUI_NodeUtils_GetPositionToParent(current, &offset);
+        result_offset.x += offset.x;
+        result_offset.y += offset.y;
+        if (current == parent_node){
+            break;
+        }
+        current = kuikly::util::GetNodeApi()->getParent(current);
+        if (current == nullptr){
+            assert(false && "no parent - child relationship");
+            break;
+        }
+    }
+    return KRPoint(point.x + result_offset.x, point.y + result_offset.y);
+}
+
+void KRRenderView::OnSelectionPointChanged(KRPoint p0, KRPoint p1){
+    std::vector<ArkUI_NodeHandle> nodes = GetSelectedNodes(p0, p1);
+    
+    // calculate start handle and end handle rect
+#if 0
+    for(ArkUI_NodeHandle handle : nodes){
+        auto view = core_->GetView(handle);
+        if(view == nullptr){
+            continue;
+        }
+        if (view->GetViewName() == "KRGradientRichTextView" || view->GetViewName() == "KRRichTextView"){
+            KRPoint view_coord0 = ConvertPointToChildCoordinate(p0, root_node_, view->GetNode());
+            KRPoint view_coord1 = ConvertPointToChildCoordinate(p1, root_node_, view->GetNode());
+            
+            KRPoint p00 = ConvertPointToParentCoordinate(view_coord0, view->GetNode(), root_node_);
+            KRPoint p11 = ConvertPointToParentCoordinate(view_coord1, view->GetNode(), root_node_);
+            KR_LOG_DEBUG<<"p0 in window:"<<p0.x<<","<<p0.y<<", in view :"<<view_coord0.x<<","<<view_coord0.y<<", convert back:"<<p00.x<<","<<p00.y;
+            KR_LOG_DEBUG<<"p1 in window:"<<p1.x<<","<<p1.y<<", in view :"<<view_coord1.x<<","<<view_coord1.y<<", convert back:"<<p11.x<<","<<p11.y;;
+        }
+    }
+#endif
+    // transform nodes into a vector of views using std::transform
+    std::vector<std::shared_ptr<IKRRenderViewExport>> views;
+    for(ArkUI_NodeHandle handle : nodes){
+        auto view = core_->GetView(handle);
+        if(view == nullptr){
+            continue;
+        }
+        if (view->GetViewName() == "KRGradientRichTextView" || view->GetViewName() == "KRRichTextView"){
+            views.push_back(view);
+        }
+    }
+    float container_width = root_view_width_;
+    // sort views
+    std::sort(views.begin(), views.end(), [container_width](const std::shared_ptr<IKRRenderViewExport> &a, const std::shared_ptr<IKRRenderViewExport> &b){
+        auto frame1 = GetNodeBounds(a->GetNode());
+        auto frame2 = GetNodeBounds(b->GetNode());
+        return frame1.x + frame1.y * container_width < frame2.x + frame2.y * container_width;
+    });
+    
+    // calculate selection
+    KRPoint start;
+    KRPoint end;
+    if (p0.y < p1.y){
+        start = p0;
+        end = p1;
+    }else if(p0.y > p1.y){
+        start = p1;
+        end = p0;
+    }else if(p0.x < p1.x){
+        start = p0;
+        end = p1;
+    }else{
+        start = p1;
+        end = p0;
+    }
+    start.x = start.x / KRConfig::GetDpi();
+    start.y = start.y / KRConfig::GetDpi();
+    end.x = end.x / KRConfig::GetDpi();
+    end.y = end.y / KRConfig::GetDpi();
+    
+    double flattened_start = start.y * container_width + start.x;
+    double flattened_end = end.y * container_width + end.x;
+    
+    
+    for(int i = 0; i < views.size(); ++i){
+        auto view = std::dynamic_pointer_cast<KRRichTextView>(views[i]);
+        
+        auto frame = GetNodeBounds(view->GetNode());
+        double flattened_frame_top_left = frame.y * container_width + frame.x;
+        double flattened_frame_bottom_right = (frame.y + frame.height) * container_width + frame.x + frame.width;
+#if 0
+        KRPoint view_coord0 = ConvertPointToChildCoordinate(p0, root_node_, view->GetNode());
+        if (auto text_view = std::dynamic_pointer_cast<KRRichTextView>(view)){
+            text_view->GetTextRangeAtPoint(KRPoint(view_coord0.x / KRConfig::GetDpi(), view_coord0.y / KRConfig::GetDpi()));
+        }
+#endif
+        // if it is not fully selected, either begin or end must reside within the text view
+        
+        // entire body
+        if (flattened_start <= flattened_frame_top_left && flattened_frame_bottom_right <= flattened_end){
+            KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" entire body selected";
+            
+            continue;
+        }
+        
+        if (frame.ContainsPoint(start) && frame.ContainsPoint(end)){
+            //view->SetSelection(KRPoint(start.x * KRConfig::GetDpi(),start.y * KRConfig::GetDpi()), KRPoint(end.x * KRConfig::GetDpi(),end.y * KRConfig::GetDpi()));
+            KRPoint view_start = ConvertPointToChildCoordinate(start, root_node_, view->GetNode());
+            KRPoint view_end = ConvertPointToChildCoordinate(end, root_node_, view->GetNode());
+            view->SetSelection(view_start, view_end);
+            KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" middle part selected start:"<<view_end.x<<","<<view_end.y<<", end:"<<view_end.x<<","<<view_end.y;
+            continue;
+        }
+        
+        if (frame.ContainsPoint(end)){
+            view->SetSelection(KRPoint(0,0), KRPoint(end.x * KRConfig::GetDpi(),end.y * KRConfig::GetDpi()));
+            KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" first part selected:"<<end.x<<","<<end.y;
+            continue;
+        }
+        
+        if (frame.ContainsPoint(start)){
+            KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" last part selected";
+            continue;
+        }
+
+        KR_LOG_INFO_WITH_TAG("Selection Test")<<"nothing selected";
+    }
+}
+
+std::vector<ArkUI_NodeHandle> KRRenderView::GetSelectedNodes(KRPoint p0, KRPoint p1){
+    std::vector<ArkUI_NodeHandle> result;
+    GetSelectedNodes(result, root_node_, p0, p1, 0);
     return result;
 }

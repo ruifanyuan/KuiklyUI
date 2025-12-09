@@ -243,6 +243,11 @@ uint32_t ArkUINativeNodeAPI::getTotalChildCount(ArkUI_NodeHandle node) {
     KUIKLY_CHECK_NODE_OR_RETURN_ZERO(node);
     return impl_->getTotalChildCount(node);
 }
+ArkUI_NodeHandle ArkUINativeNodeAPI::getParent(ArkUI_NodeHandle node){
+    KREnsureMainThread();
+    KUIKLY_CHECK_NODE_OR_RETURN_NULL(node);
+    return impl_->getParent(node);
+}
 ArkUI_NodeHandle ArkUINativeNodeAPI::getChildAt(ArkUI_NodeHandle node, int32_t position){
     KREnsureMainThread();
     KUIKLY_CHECK_NODE_OR_RETURN_NULL(node);

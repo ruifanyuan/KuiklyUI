@@ -24,6 +24,7 @@
 #include "libohos_render/core/KRRenderCore.h"
 #include "libohos_render/expand/events/gesture/KRGestueEventType.h"
 #include "libohos_render/foundation/KRCallbackData.h"
+#include "libohos_render/foundation/KRPoint.h"
 #include "libohos_render/manager/KRSnapshotManager.h"
 #include "libohos_render/performance/KRPerformanceManager.h"
 #include "libohos_render/scheduler/IKRScheduler.h"
@@ -126,6 +127,12 @@ class KRRenderView : public IKRRenderView {
      * @param gesture_event_data 手势事件数据
      */
     void OnPan(const std::shared_ptr<KRGestureEventData> &gesture_event_data);
+    
+    void OnSelectionPointChanged(KRPoint p0, KRPoint p2);
+    std::vector<ArkUI_NodeHandle> GetSelectedNodes(KRPoint p0, KRPoint p2);
+    void GetSelectedNodes(std::vector<ArkUI_NodeHandle> &result, ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth);
+    KRPoint ConvertPointToChildCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle child_node);
+    KRPoint ConvertPointToParentCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle parent_node);
 
     /**
      * 遍历节点树，找出在选中区域内的节点
