@@ -133,17 +133,7 @@ class KRRenderView : public IKRRenderView {
     void GetSelectedNodes(std::vector<ArkUI_NodeHandle> &result, ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth);
     KRPoint ConvertPointToChildCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle child_node);
     KRPoint ConvertPointToParentCoordinate(KRPoint point, ArkUI_NodeHandle node, ArkUI_NodeHandle parent_node);
-
-    /**
-     * 遍历节点树，找出在选中区域内的节点
-     * @param point1 选中区域的第一个点
-     * @param point2 选中区域的第二个点
-     * @return 在选中区域内的节点列表（返回节点的tag）
-     */
-    std::vector<int> FindNodesInSelectionArea(const KRPoint &point1, const KRPoint &point2);
     
-    void IterateOverChildren(ArkUI_NodeHandle node,const KRPoint &point1, const KRPoint &point2, int depth);
-
     class KRArkTsCallbackWrapper {
      public:
         KRArkTsCallbackWrapper(const KRRenderCallback &callback, bool callback_keep_alive,

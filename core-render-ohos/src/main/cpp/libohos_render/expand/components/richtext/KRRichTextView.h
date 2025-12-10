@@ -40,6 +40,9 @@ public:
     // select all
     std::vector<KRRect> GetSelectionRectsAll();
     
+    int GetOffsetAtPoint(KRPoint point);
+    std::vector<KRRect> GetRectsBetweenOffsets(int start, int end);
+    
     std::vector<KRLineInfo> line_info_list_;
     std::string text_content_;
 };
