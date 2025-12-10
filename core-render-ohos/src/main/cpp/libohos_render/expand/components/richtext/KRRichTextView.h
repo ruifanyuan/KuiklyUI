@@ -23,6 +23,27 @@
 #include "libohos_render/export/IKRRenderViewExport.h"
 #include "libohos_render/foundation/KRPoint.h"
 #include "libohos_render/view/IKRRenderView.h"
+
+class KRLineInfo{
+public:
+    OH_Drawing_LineMetrics line_metrics_;
+    std::vector<KRRect> rects_; // rect for each offset
+};
+class KRParagraphInfo{
+public:
+    // get selection between two points
+    std::vector<KRRect> GetSelectionRects(KRPoint start, KRPoint end);
+    // get selection from this point to the end
+    std::vector<KRRect> GetSelectionRectsToEnd(KRPoint point);
+    // get selection from the beginning to this point
+    std::vector<KRRect> GetSelectionRectsUpTo(KRPoint start);
+    // select all
+    std::vector<KRRect> GetSelectionRectsAll();
+    
+    std::vector<KRLineInfo> line_info_list_;
+    std::string text_content_;
+};
+
 class KRRichTextView : public IKRRenderViewExport {
  public:
     ArkUI_NodeHandle CreateNode() override;
@@ -45,14 +66,18 @@ class KRRichTextView : public IKRRenderViewExport {
     void ToSetProp(const std::string &prop_key, const KRAnyValue &prop_value,
                    const KRRenderCallback event_call_back = nullptr) override;
     
+    void SetSelectionAll();
     void SetSelection(KRPoint start, KRPoint end);
+    void SetSelectionToEnd(KRPoint point);
+    void SetSelectionUpTo(KRPoint point);
 
     std::pair<int,int> GetTextRangeAtPoint(KRPoint point);
-    static bool KRCaretOffsetsCallback(double offset, int32_t index, bool leadingEdge);
+    KRParagraphInfo GetParagraphInfo();
     
  private:
     OH_Drawing_Typography *last_typo_ = nullptr;
     OH_Drawing_Array* text_lines_ = nullptr;
+    std::vector<KRRect> selection_rects_;
     std::shared_ptr<KRParagraph> paragraph_;
     std::shared_ptr<IKRRenderShadowExport> shadow_;
     float last_draw_frame_width_ = -1.0;

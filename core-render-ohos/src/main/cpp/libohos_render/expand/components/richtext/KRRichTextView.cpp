@@ -155,6 +155,7 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
     // Note: turn this on only when absolutely needed in testing build
     // KR_LOG_INFO<<"OnForegroundDraw, frameWidth:"<<frameWidth<<", shadow:"<<richTextShadow<<", node
     // handle"<<this->GetNode();
+#if 0
     if (IsSelected()){
         // Draw background color before drawing text
         auto frame = GetFrame();
@@ -172,6 +173,26 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
         OH_Drawing_BrushDestroy(backgroundBrush);
         OH_Drawing_PathDestroy(backgroundPath);
     }
+#endif
+{
+    double density = KRConfig::GetDpi();
+    OH_Drawing_Brush *backgroundBrush = OH_Drawing_BrushCreate();
+    OH_Drawing_BrushSetColor(backgroundBrush, 0x33007DFF);  // ARGB format: alpha=255, RGB=0x007DFF
+    OH_Drawing_CanvasAttachBrush(drawingHandle, backgroundBrush);
+    OH_Drawing_Path *backgroundPath = OH_Drawing_PathCreate();
+    for(const KRRect &rect : selection_rects_){
+        OH_Drawing_PathReset(backgroundPath);
+        OH_Drawing_PathMoveTo(backgroundPath, rect.x * density, rect.y * density);
+        OH_Drawing_PathLineTo(backgroundPath, (rect.x + rect.width) * density, rect.y  * density);
+        OH_Drawing_PathLineTo(backgroundPath, (rect.x + rect.width) * density, (rect.y + rect.height) * density);
+        OH_Drawing_PathLineTo(backgroundPath, rect.x * density, (rect.y + rect.height) * density);
+        OH_Drawing_PathClose(backgroundPath);
+        OH_Drawing_CanvasDrawPath(drawingHandle, backgroundPath);
+    }
+    OH_Drawing_CanvasDetachBrush(drawingHandle);
+    OH_Drawing_BrushDestroy(backgroundBrush);
+    OH_Drawing_PathDestroy(backgroundPath);
+}
 #if 1
 //bool OH_Drawing_TypographyGetLineInfo(OH_Drawing_Typography* typography, int lineNumber, bool oneLine,
 //    bool includeWhitespace, OH_Drawing_LineMetrics* drawingLineMetrics);
@@ -350,19 +371,275 @@ void KRRichTextView::ToSetProp(const std::string &prop_key, const KRAnyValue &pr
     }
 }
 
+std::vector<KRRect> KRParagraphInfo::GetSelectionRectsToEnd(KRPoint point_in){
+    float density = KRConfig::GetDpi();
+    KRPoint point(point_in.x * KRConfig::GetDpi(), point_in.y  * density);
+
+    int start_line_index = -1;
+    int start_rect_index = -1;
+    int end_line_index = -1;
+    int end_rect_index = -1;
+    int start_text_index = -1;
+    int end_text_index = -1;
+    int text_index = 0;
+    for (int line_index = 0; line_index < line_info_list_.size(); ++line_index){
+        const KRLineInfo &line_info = line_info_list_[line_index];
+        if (start_line_index == -1){
+            for(int rect_index = 0; rect_index < line_info.rects_.size(); ++rect_index){
+                if(line_info.rects_[rect_index].ContainsPoint(point)){
+                    start_line_index = line_index;
+                    start_rect_index = rect_index;
+                    start_text_index = text_index;
+                }
+    
+                ++text_index;
+            }
+        } else {
+            text_index += line_info.rects_.size();
+        }
+    }
+    end_line_index = line_info_list_.size() - 1;
+    end_rect_index = line_info_list_.back().rects_.size() - 1;
+    end_text_index = text_index;
+
+    KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index;
+
+    std::vector<KRRect> selected_rect_list;
+    if (start_line_index == -1 && end_line_index == -1){
+        return selected_rect_list;
+    }
+    if(start_line_index == end_line_index){
+        // same line
+        const KRLineInfo &line_info = line_info_list_[start_line_index];
+        const KRRect &start_rect = line_info.rects_[start_rect_index];
+        const KRRect &end_rect = line_info.rects_[end_rect_index];
+        KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index<<", rect:"<<result.x<<","<<result.y<<","<<result.width<<","<<result.height;
+        selected_rect_list.push_back(result);
+    }else{
+        for (int line_index = start_line_index; line_index <= end_line_index; ++line_index){
+            if (line_index == start_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_[line_index];
+                const KRRect &end_rect = line_info.rects_.back();
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+    
+            if (line_index == end_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_.front();
+                const KRRect &end_rect = line_info.rects_[line_index];
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+
+            const KRLineInfo &line_info = line_info_list_[line_index];
+            KRRect result(line_info.line_metrics_.x / density, line_info.line_metrics_.y / density, line_info.line_metrics_.width / density, line_info.line_metrics_.height / density);
+            selected_rect_list.push_back(result);
+        }
+    }
+
+    KR_LOG_DEBUG<<"selected rect list size:"<<selected_rect_list.size();
+    return selected_rect_list;
+}
+
+std::vector<KRRect> KRParagraphInfo::GetSelectionRectsAll(){
+    float density = KRConfig::GetDpi();
+    std::vector<KRRect> selected_rect_list;
+
+    for (int line_index = 0; line_index < line_info_list_.size(); ++line_index){
+        const KRLineInfo &line_info = line_info_list_[line_index];
+        KRRect result(line_info.line_metrics_.x / density,
+                        line_info.line_metrics_.y / density,
+                        line_info.line_metrics_.width / density,
+                        line_info.line_metrics_.height / density);
+        selected_rect_list.push_back(result);
+    }
+
+    return selected_rect_list;
+}
+
+std::vector<KRRect> KRParagraphInfo::GetSelectionRectsUpTo(KRPoint point_in){
+    float density = KRConfig::GetDpi();
+    KRPoint point(point_in.x * KRConfig::GetDpi(), point_in.y  * density);
+
+    int start_line_index = 0;
+    int start_rect_index = 0;
+    int end_line_index = -1;
+    int end_rect_index = -1;
+    int start_text_index = 0;
+    int end_text_index = -1;
+    int text_index = 0;
+    for (int line_index = 0; line_index < line_info_list_.size(); ++line_index){
+        const KRLineInfo &line_info = line_info_list_[line_index];
+        for(int rect_index = 0; rect_index < line_info.rects_.size(); ++rect_index){
+            if(line_info.rects_[rect_index].ContainsPoint(point)){
+                end_line_index = line_index;
+                end_rect_index = rect_index;
+                end_text_index = text_index;
+                break;
+            }
+
+            ++text_index;
+        }
+        if(end_line_index != -1){
+            break;
+        }
+    }
+
+    KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index;
+
+    std::vector<KRRect> selected_rect_list;
+    if (start_line_index == -1 && end_line_index == -1){
+        return selected_rect_list;
+    }
+    if(start_line_index == end_line_index){
+        // same line
+        const KRLineInfo &line_info = line_info_list_[start_line_index];
+        const KRRect &start_rect = line_info.rects_[start_rect_index];
+        const KRRect &end_rect = line_info.rects_[end_rect_index];
+        KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index<<", rect:"<<result.x<<","<<result.y<<","<<result.width<<","<<result.height;
+        selected_rect_list.push_back(result);
+    }else{
+        for (int line_index = start_line_index; line_index <= end_line_index; ++line_index){
+            if (line_index == start_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_[line_index];
+                const KRRect &end_rect = line_info.rects_.back();
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+    
+            if (line_index == end_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_.front();
+                const KRRect &end_rect = line_info.rects_[line_index];
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+
+            const KRLineInfo &line_info = line_info_list_[line_index];
+            KRRect result(line_info.line_metrics_.x / density, line_info.line_metrics_.y / density, line_info.line_metrics_.width / density, line_info.line_metrics_.height / density);
+            selected_rect_list.push_back(result);
+        }
+    }
+
+    KR_LOG_DEBUG<<"selected rect list size:"<<selected_rect_list.size();
+    return selected_rect_list;
+}
+
+std::vector<KRRect> KRParagraphInfo::GetSelectionRects(KRPoint p0, KRPoint p1){
+    float density = KRConfig::GetDpi();
+    KRPoint start(p0.x * KRConfig::GetDpi(), p0.y  * density);
+    KRPoint end(p1.x * KRConfig::GetDpi(), p1.y  * density);
+    int start_line_index = -1;
+    int start_rect_index = -1;
+    int end_line_index = -1;
+    int end_rect_index = -1;
+    int start_text_index = -1;
+    int end_text_index = -1;
+    int text_index = 0;
+    for (int line_index = 0; line_index < line_info_list_.size(); ++line_index){
+        const KRLineInfo &line_info = line_info_list_[line_index];
+        for(int rect_index = 0; rect_index < line_info.rects_.size(); ++rect_index){
+            if(line_info.rects_[rect_index].ContainsPoint(start)){
+                start_line_index = line_index;
+                start_rect_index = rect_index;
+                start_text_index = text_index;
+            }
+            if(line_info.rects_[rect_index].ContainsPoint(end)){
+                end_line_index = line_index;
+                end_rect_index = rect_index;
+                end_text_index = text_index;
+            }
+            ++text_index;
+        }
+    }
+
+    if(start.x <= 0 && start.y <= 0){
+        start_line_index = 0;
+        start_rect_index = 0;
+        start_text_index = 0;
+    }
+
+    KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index;
+
+    std::vector<KRRect> selected_rect_list;
+    if (start_line_index == -1 && end_line_index == -1){
+        return selected_rect_list;
+    }
+    if(start_line_index == end_line_index){
+        // same line
+        const KRLineInfo &line_info = line_info_list_[start_line_index];
+        const KRRect &start_rect = line_info.rects_[start_rect_index];
+        const KRRect &end_rect = line_info.rects_[end_rect_index];
+        KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+KR_LOG_DEBUG_WITH_TAG("Text Selection")<<"text content:"<<text_content_<<", range:"<<start_text_index<<","<<end_text_index<<", rect:"<<result.x<<","<<result.y<<","<<result.width<<","<<result.height;
+        selected_rect_list.push_back(result);
+    }else{
+        for (int line_index = start_line_index; line_index <= end_line_index; ++line_index){
+            if (line_index == start_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_[line_index];
+                const KRRect &end_rect = line_info.rects_.back();
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+    
+            if (line_index == end_line_index){
+                const KRLineInfo &line_info = line_info_list_[line_index];
+                const KRRect &start_rect = line_info.rects_.front();
+                const KRRect &end_rect = line_info.rects_[line_index];
+                KRRect result(start_rect.x / density, start_rect.y / density, (end_rect.x - start_rect.x + end_rect.width) / density, end_rect.height / density);
+                selected_rect_list.push_back(result);
+                continue;
+            }
+
+            const KRLineInfo &line_info = line_info_list_[line_index];
+            KRRect result(line_info.line_metrics_.x / density, line_info.line_metrics_.y / density, line_info.line_metrics_.width / density, line_info.line_metrics_.height / density);
+            selected_rect_list.push_back(result);
+        }
+    }
+
+    KR_LOG_DEBUG<<"selected rect list size:"<<selected_rect_list.size();
+    return selected_rect_list;
+}
+
+void KRRichTextView::SetSelectionAll(){
+    KRParagraphInfo info = GetParagraphInfo();
+    selection_rects_ = info.GetSelectionRectsAll();
+}
+void KRRichTextView::SetSelectionToEnd(KRPoint point){
+    KRParagraphInfo info = GetParagraphInfo();
+    selection_rects_ = info.GetSelectionRectsToEnd(point);
+}
+void KRRichTextView::SetSelectionUpTo(KRPoint point){
+    KRParagraphInfo info = GetParagraphInfo();
+    selection_rects_ = info.GetSelectionRectsUpTo(point);
+}
 void KRRichTextView::SetSelection(KRPoint start, KRPoint end){
 //    auto rich_text_shadow = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_);
 //    OH_Drawing_Typography *text_typo = rich_text_shadow->MainThreadTypography();
 //    
 //    OH_Drawing_PositionAndAffinity *start_pa = OH_Drawing_TypographyGetGlyphPositionAtCoordinate(text_typo, start.x, start.y);
 //    OH_Drawing_PositionAndAffinity *end_pa = OH_Drawing_TypographyGetGlyphPositionAtCoordinate(text_typo, end.x, end.y);
+    KRParagraphInfo info = GetParagraphInfo();
+    selection_rects_ = info.GetSelectionRects(start, end);
+    
     std::pair<int,int> start_range = GetTextRangeAtPoint(start);
     std::pair<int,int> end_range = GetTextRangeAtPoint(end);
     std::pair<int,int> end_range2 = GetTextRangeAtPoint(KRPoint());
     std::pair<int,int> end_range3 = GetTextRangeAtPoint(KRPoint(120.0/KRConfig::GetDpi(), 0));
     std::pair<int,int> end_range4 = GetTextRangeAtPoint(KRPoint(129.0/KRConfig::GetDpi(), 0));
     std::pair<int,int> end_range5 = GetTextRangeAtPoint(KRPoint(130.0/KRConfig::GetDpi(), 0));
-                                                         
+
 #if 0
     size_t pos = OH_Drawing_GetPositionFromPositionAndAffinity(start_pa);
     if (OH_Drawing_Range *range = OH_Drawing_TypographyGetWordBoundary(text_typo, pos)){
@@ -424,58 +701,84 @@ std::pair<int,int> KRRichTextView::GetTextRangeAtPoint(KRPoint point){
 ///////////////////////////////// plan b /////////////////////////////////////////////////////////
 
 #else
-    OH_Drawing_Array* textLines  = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->lines();;
+    OH_Drawing_Typography *textTypo = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->MainThreadTypography();
 
-    OH_Drawing_TextLine* targetLine = NULL;
-    double paintX = 0.0;  // 记录排版绘制位置
-    double paintY = 0.0;  // 记录排版绘制位置
-    double lineY = paintY;  // 当前行的 Y 坐标
-    double screenX = 0;
-    double screenY = 0;
-    size_t lineCount = OH_Drawing_GetDrawingArraySize(textLines);
-    for (size_t i = 0; i < lineCount; i++) {
-        OH_Drawing_TextLine* line = OH_Drawing_GetTextLineByIndex(textLines, i);
-        targetLine = line;
-        // 获取行的图像边界
-//        OH_Drawing_Rect* bounds = OH_Drawing_TextLineGetImageBounds(line);
-//        double lineTop = OH_Drawing_RectGetTop(bounds);
-//        double lineBottom = OH_Drawing_RectGetBottom(bounds);
-//        
-//        // 检查点是否在此行的 Y 范围内
-//        // 注意：需要将屏幕坐标转换为相对于排版原点的坐标
-//        double relativeY = screenY - paintY;
-//        
-//        if (relativeY >= lineTop && relativeY <= lineBottom) {
-//            targetLine = line;
-//            break;
-//        }
-//        
-//        // 清理边界对象
-//        // (根据 API 文档决定是否需要释放)
-//        lineY += (lineBottom - lineTop);  // 移动到下一行
+    {
+        
+        std::string text_content = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->GetTextContent();
+        int lineCount = OH_Drawing_TypographyGetLineCount(textTypo);
+        for(int i = 0; i < lineCount; ++i){
+            OH_Drawing_LineMetrics metrics;
+            OH_Drawing_TypographyGetLineInfo(textTypo, i, true, true, &metrics);
+
+//            OH_Drawing_TextBox* OH_Drawing_TypographyGetRectsForRange(OH_Drawing_Typography* typography,
+//    size_t start, size_t end, OH_Drawing_RectHeightStyle heightStyle, OH_Drawing_RectWidthStyle widthStyle);
+            for(int index = metrics.startIndex; index < metrics.endIndex; ++index){
+                OH_Drawing_TextBox* boxes = OH_Drawing_TypographyGetRectsForRange(textTypo, index, index + 1, RECT_HEIGHT_STYLE_TIGHT, RECT_WIDTH_STYLE_TIGHT);
+                size_t rectCount = OH_Drawing_GetSizeOfTextBox(boxes);
+                for(int i = 0; i < rectCount; ++i){
+                    float left = OH_Drawing_GetLeftFromTextBox(boxes, i);
+                    float right = OH_Drawing_GetRightFromTextBox(boxes, i);
+                    float top = OH_Drawing_GetTopFromTextBox(boxes, i);
+                    float bottom = OH_Drawing_GetBottomFromTextBox(boxes, i);
+    
+                    // Calculate width and height
+                    float width = right - left;
+                    float height = bottom - top;
+                }
+                OH_Drawing_TypographyDestroyTextBox(boxes);
+            }
+
+            if(true || lineCount > 1){
+                KR_LOG_DEBUG<<"metrics "<<i+1<<"/"<<lineCount<<":"<<metrics.x<<","<<metrics.y<<","<<metrics.width<<","<<metrics.height<<", index"<<metrics.startIndex<<","<<metrics.endIndex<<", content:"<<text_content;
+            }
+        }
     }
-    OH_Drawing_Point* dpoint = OH_Drawing_PointCreate(
-        point.x * KRConfig::GetDpi(),// (float)(screenX - paintX),  // 相对于排版原点的 X
-        point.y * KRConfig::GetDpi()//(float)(screenY - paintY)   // 相对于排版原点的 Y
-    );
-    
-    // 或者如果知道文本行的绘制位置
-    // double linePaintX = ...;  // 文本行绘制时的 X
-    // double linePaintY = ...;  // 文本行绘制时的 Y
-    // OH_Drawing_Point* point = OH_Drawing_PointCreate(
-    //     (float)(screenX - linePaintX),
-    //     (float)(screenY - linePaintY)
-    // );
-    
-    // 获取字符串索引
-    int32_t stringIndex = OH_Drawing_TextLineGetStringIndexForPosition(targetLine, dpoint);
-    
-    // 清理 Point 对象
-    OH_Drawing_PointDestroy(dpoint);
-    OH_Drawing_DestroyTextLines(textLines);
 
     //OH_Drawing_ArrayDestroy(textLines);
     kuikly::util::GetNodeApi()->markDirty(GetNode(), NODE_NEED_RENDER);
 #endif
     return result_range;
+}
+
+KRParagraphInfo KRRichTextView::GetParagraphInfo(){
+    KRParagraphInfo paragraph_info;
+    OH_Drawing_Typography *textTypo = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->MainThreadTypography();
+    if (textTypo == nullptr){
+        return paragraph_info;
+    }
+
+    std::string text_content = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_)->GetTextContent();
+    paragraph_info.text_content_ = text_content;
+    int lineCount = OH_Drawing_TypographyGetLineCount(textTypo);
+    for(int i = 0; i < lineCount; ++i){
+        KRLineInfo line_info;
+        OH_Drawing_TypographyGetLineInfo(textTypo, i, true, true, &line_info.line_metrics_);
+
+        for(int index = line_info.line_metrics_.startIndex; index < line_info.line_metrics_.endIndex; ++index){
+            OH_Drawing_TextBox* boxes = OH_Drawing_TypographyGetRectsForRange(textTypo, index, index + 1, RECT_HEIGHT_STYLE_TIGHT, RECT_WIDTH_STYLE_TIGHT);
+            size_t count = OH_Drawing_GetSizeOfTextBox(boxes);
+            assert(count == 1);
+            for(int i = 0; i < count; ++i){
+                float left = OH_Drawing_GetLeftFromTextBox(boxes, i);
+                float right = OH_Drawing_GetRightFromTextBox(boxes, i);
+                float top = OH_Drawing_GetTopFromTextBox(boxes, i);
+                float bottom = OH_Drawing_GetBottomFromTextBox(boxes, i);
+
+                // Calculate width and height
+                float width = right - left;
+                float height = bottom - top;
+                
+                line_info.rects_.emplace_back(KRRect(left, top, width, height));
+            }
+            OH_Drawing_TypographyDestroyTextBox(boxes);
+        }
+        paragraph_info.line_info_list_.emplace_back(line_info);
+
+//        if(true || lineCount > 1){
+//            KR_LOG_DEBUG<<"metrics "<<i+1<<"/"<<lineCount<<":"<<line_info.line_metrics_.x<<","<<line_info.line_metrics_.y<<","<<line_info.line_metrics_.width<<","<<line_info.line_metrics_.height<<", index"<<line_info.line_metrics_.startIndex<<","<<line_info.line_metrics_.endIndex<<", content:"<<text_content;
+//        }
+    }
+
+    return paragraph_info;
 }

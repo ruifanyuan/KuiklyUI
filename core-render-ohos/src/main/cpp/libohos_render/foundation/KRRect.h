@@ -31,11 +31,11 @@ struct KRRect {
     // 参数构造函数
     KRRect(float x_, float y_, float width_, float height_) : x(x_), y(y_), width(width_), height(height_) {}
 
-    bool ContainsPoint(float x, float y) {
+    bool ContainsPoint(float x, float y) const {
         return x >= this->x && x <= this->x + this->width && y >= this->y && y <= this->y + this->height;
     }
 
-    bool ContainsPoint(KRPoint point) {
+    bool ContainsPoint(KRPoint point) const {
         return ContainsPoint(point.x, point.y);
     }
 

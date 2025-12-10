@@ -799,7 +799,7 @@ void KRRenderView::OnSelectionPointChanged(KRPoint p0, KRPoint p1){
         // entire body
         if (flattened_start <= flattened_frame_top_left && flattened_frame_bottom_right <= flattened_end){
             KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" entire body selected";
-            
+            view->SetSelectionAll();
             continue;
         }
         
@@ -813,12 +813,15 @@ void KRRenderView::OnSelectionPointChanged(KRPoint p0, KRPoint p1){
         }
         
         if (frame.ContainsPoint(end)){
-            view->SetSelection(KRPoint(0,0), KRPoint(end.x * KRConfig::GetDpi(),end.y * KRConfig::GetDpi()));
+            KRPoint view_end = ConvertPointToChildCoordinate(end, root_node_, view->GetNode());
+            view->SetSelectionUpTo(view_end);
             KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" first part selected:"<<end.x<<","<<end.y;
             continue;
         }
         
         if (frame.ContainsPoint(start)){
+            KRPoint view_end = ConvertPointToChildCoordinate(start, root_node_, view->GetNode());
+            view->SetSelectionToEnd(view_end);
             KR_LOG_INFO_WITH_TAG("Selection Test")<<i + 1<<"/"<<views.size()<<" last part selected";
             continue;
         }
