@@ -14,6 +14,7 @@
  */
 
 #include "libohos_render/expand/components/ActivityIndicator/KRActivityIndicatorAnimationView.h"
+#include "libohos_render/utils/animate/KRAnimateOption.h"
 
 constexpr char kGrayImage[] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAMAAAAL34HQAAAAS1BMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADmYDp0AAAAGXRSTlMAJk0zQGZzBCITGh8OCggXSTotRDEqXVVqQNv4pgAABP9JREFUeNrs2ctyozAQheHTGKEbEtgk2O//pJOaSSjUQUiAqGHhb+vNX6ZpjIy3t6vTlshqXItT9JdyuBBHkyt1KZooXIammevMl6UZi6ugAK7iP2ZJ83iYI1m+bT1Ku72aL6/b3iyt6IvSKGpovlX7sgx961BQ30zqPVkdTQyKsc2M2p7laMahlKqZEXJzlqIZg1JEM3fbmqVpTqGUJvBy27IkhVDKqwn027I6CqiCsxXqtmR5ChmUQizruSXLUqhFMSPr+szPailkUY5hWUJmZykKOTAlp+uem6WLThbXNkyblyWJkSjqzrKqvCxDIY2ypGBdJifLUUihtE+WNUazzl0O3JN1PWJZ5y4HrmNZL5/KkopCHifoWVedytIU6nAG92JdOpJ18nLgbnxJxF5f08vh7CURf9n3RZeDGUYx9gpLFMvq145GTNbDsDWKlHFIqMU/T5OxJMTaQZLKeBg6yz6NVk0GB3C6Ca0du6WXgzSZd+lDzN0kuCFcXWuHlCq1HHTuDSFHERgVGB8siSdi+GwpCaZV2XdEJ7hKI/TBfqTGtWvfhbfEecSQ+K120akfscpG51129FubyGLGDxle6OkSeqySU5eNDFVmVicWPS1mXPW9tKba1HgZyc7KF3lEjWJZrzHT3obhQyOD1F2ngyhvaJnKWhDc3aMA2VGMxopBxIwPHKYVxRisuouoXuIYQ1EdEuxTxDw9DpCWYpRDkvwYRcRwznelkcXVIqLFbpIiOolcuhKLHthN0yLrsYUaF9cEdutogWqxkbydn6WxgxvOvYhGYh/zPG/krcN+FIxYjQMMG6pD5F1MKlnqz1AtcVTb/1R5HCItG6qDupq9Om7DXwo93t7e3gqQVPfVor4miZK0pQirEdJDtWLQKMYpWqFcUFUl6GJVlDDrkkOVMEiUoShBYUJVEqEITUkaP+oqqUYRlpIsfvRVUo8iKMPVs/60c7Y7DoJAFKVAguInFN7/VTfpbqnedTRt6jA/PE9wVLzKMCD0IQod8kIDQmicSv34SP1UX1xcXHxGm+7zHLys0shg9C/BySkkuawLQUzZrZv1giSjSNlavWb4Ykl3/HxQIU31Ari7zfofsfZygb/rDWLdxZU+6E2amktRY9IEQ8WFu2bWBKbeMud01xS23qJw1iSh3hK60RRzU6/hoNEU0VVsz6AGe+ixIcUPHzazdO83s7TE7HVa/1PYB5mt9afbHlRuZWXsH8kxNEpRWgmuItqCYWora8lBVfB2wcTThIdD/u4V4IJdEDlaFjEg5o2SyM0uCQtfn1PK3n2nwROJumCGre6bNa9rj+ZB7L/TDosk/YvdtE92+271ptATdb/uveZhpDX0pLC1a/LzsqMpRHdCq/U+AbT6p4FZ4MnG9JPoig+8iNksyMxt/CPerHLrk1mQmDc93MDq9VTMCt4tIj1YBUdo8W6oSaDlFaHFuv1oAiujKC3OzVqOCAdCiyskGiJJCS2mkBgtMO5rMYVEJsKB0GLYZEqEA63FtyXXgNakDrRYQqIFq6SOtFhCImI47GqxbY6HzLqpXS22owTo8U5r0SFx0t3q1L4W2zEVGX7g97V4DvXAN7F9X2s4Kbgy5PuuFseBMfhnmtWh1pnH6yA+PMZVp461zj2MCOm9hxglteijmzhBLSnAhEwKMH2VAkz2pQClETGsCkmCKGU3UValSCnoCV5cbPIDQR5TIrqY83gAAAAASUVORK5CYII=";
 constexpr char KWhiteImage[] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAACWCAMAAAAL34HQAAAAb1BMVEUAAAD///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8v0wLRAAAAJHRSTlMATWZZv5mM2UUHIDM+FBo4JgwrEVJ9qDCHbbd0XejRx5D2sZ/haBjGAAAFg0lEQVR42uzZW5eaMBSG4W9TMEfOHaxOFUfz/39ju9oZS5AQDnGVC59Lr94VN1tAvLxsXaGJdIFtSTn9wVNsSEp3W+ridMexGQV1bGe+NHVobAVZsBX/MUvkUaTXZKVS1gjtcDK/nd6XZklOv3GJoBLzqVmWpejTHgE15m63JKuiO4VguOmg+VkZdaQBD6uDidlZnOgZx3UyXe9zsyR1cYTyYWV9ZPOyBNkCnpblNi9rT086rauxqTlZNdlyhPLd2No5WZpsGYI5G9u36VkZ2TTC0cZ2EpOzONnSsGve9jY1qyCbQkjyw1g+5LQsQT0CQb0ZWzMtS5GtQFjiZGx6SlZKNo7Qvhnb2ZPlWA7BtcYW+bMk2TTCU/0lUfqyBCdbjSe4GdvOl1WRbY9nyPpLohjPKqlH4Cneje06/viak03iOQQztnzsYb8OuhzyS3xuE44h1N+pY69G1KTlkOWcuErhsWN/XRUGHHsX49iLJD7hNivV034qf7C7S4YHVW/ox167ka3EA6EmXqU/Wcf5INCX9E/L/ZKSU1eFB8XUC0K0zBITeuqT6ThiRE4dXKAn45OvCMX6mgq2Q+8m1S0bO4taU18Nl+/s0Y/UOfUtRmnnvIs9PZKerJ5zJNBRnu9VKUYJ7fiJlkSzshQbFHN0pI354ybg83koSjiGypLCqWXDbgU65CFJDhITlLKqZGl9ktMwDreIubzVCEBU5CIx4sJc2p9YTXJyURj1xpySEuvk5FTBg8fM5VpjBaHJhWfwEtGZOVywgvKMlVf6gzlkWKwkh73AVFXDBq0Ye0mDdI05KB5cE1isWjZUfeJwfnpWgQWyy3O/RCWwjLoymww38jrFct9a1rHDCnvq4BKrlO//RqwRof4MrQTWkslXVQ0EWfN5iRDULj63N8JC/YfCGi8vLy8BiCg5xoOOSSQQUqHJQRewqSYe0SgEk3IawVOrKvZQwarIo9MlmtijEQiDkwfHXRR7RQiiIK8CX5LYK0EQmrw0vhxjryOCoAm2nvWrXbtZchSEogB85RYUoPEnwVJLF/3+TzlVdoeBO9iMUUoWfttkccqQo8LN9EfMdMlnWhCZ1mmuN59cb9W32+32Gc1GLqYmr62ReuLf+i6fjSRluDVns+1WCe5geWxS6p77Hhls6b4Yp+TlG+Cq4P/Cq48LmpEH4LWHK3rmQfLKo6hu4RseFx7cyS++gV13zDmMfEvfXXYojHzTpC47Qmd8y5e8buBA8i3YXTieIXjYXPujc8b8372ja8uyPTzMonnQOPj1IVao4osJV83B0Z8mvKgUONQsfkyR31VJ/CHVzkGpeCxGapgJa4r0H1rVobEyzamZfrkSjhJ+odHRHhnCo0t+bIDoRuFgsYtlmQMji7QgCgWUEa7enSE1jBn3Ecqgq9w14EktZFERtfCMfz9AtsIa3tD3+mgcltZ83wY/FeGrVTPL5irQIyPDwxHt+lIY/tpT+BC+KWQWKltavsio9QE9ifVeDyVzlO8rgb4CEpEkFbOrmzmM7RL0PSGJbiQL3l565rHfR0JBCih8BfweCwb0NZBATVL1KhZLGfQ94HwTidVALBZopCVxupKkmiEeCyT6NJxMBcohHouWhAErTTksEIkV7tQBTvWi5fCKxNoqiQ7OtAifhHis1TNlSeiNcojHgiJhScwk1gDxWOlLYiCpJojG2i6JGs7CSKx6T6wX+io4C+kshD2xoEnVXaNfDt2+WAp9ia6WhF2xaEkUaVqrh72xoEjTXK1wPPfHqtP8EwHJw9/OWFAmqnmba4FPYkGV6Am16td1VcFnseBp1nJo4Wy6aTTAjljEQ+sHpBOPlYtMY5HX11yQl/1ckK2RbHgbSRmx225ZpbKblBn9grdb0B9tgZ0KTsLMSAAAAABJRU5ErkJggg==";
@@ -71,45 +72,51 @@ void KRActivityIndicatorAnimationView::FireOnImageCompleteEvent(ArkUI_NodeEvent 
     if (!kuikly::util::IsImageLoadSuccessStatus(event)) {
         return;
     }
-    ArkUI_AnimateOption *option = OH_ArkUI_AnimateOption_Create();
-    OH_ArkUI_AnimateOption_SetIterations(option, kAnimationIterations);
-    OH_ArkUI_AnimateOption_SetCurve(option, ArkUI_AnimationCurve::ARKUI_CURVE_LINEAR);
-    OH_ArkUI_AnimateOption_SetPlayMode(option, ARKUI_ANIMATION_PLAY_MODE_NORMAL);
+    
+    // Use KRAnimateOption for RAII-based resource management
+    auto animate_option = std::make_shared<KRAnimateOption>();
+    animate_option->SetIterations(kAnimationIterations);
+    animate_option->SetCurve(ArkUI_AnimationCurve::ARKUI_CURVE_LINEAR);
+    animate_option->SetPlayMode(ARKUI_ANIMATION_PLAY_MODE_NORMAL);
 
     auto range = std::make_shared<ArkUI_ExpectedFrameRateRange>();
     range->min = kMinFrameRate;
     range->max = kMaxFrameRate;
     range->expected = kExpectedFrameRate;
-    OH_ArkUI_AnimateOption_SetExpectedFrameRateRange(option, range.get());
+    animate_option->SetExpectedFrameRateRange(range.get());
 
     auto root_view = GetRootView().lock();
     if (!root_view) {
+        // No manual disposal needed - animate_option will be automatically destroyed
         return;
     }
     ArkUI_ContextHandle handle = root_view->GetUIContextHandle();
 
-    struct MyUserData {
+    // Animation data structure using KRAnimateOption
+    struct ActivityIndicatorAnimationData {
         ArkUI_ContextHandle handle;
         std::weak_ptr<IKRRenderViewExport> weak_view;
+        std::shared_ptr<KRAnimateOption> animate_option;  // RAII: auto-managed
         ArkUI_ContextCallback update;
         ArkUI_AnimateCompleteCallback complete_callback;
-        ArkUI_AnimateOption *option;
         uint32_t index;
         bool stop;
     };
-    MyUserData *user_data = new MyUserData;
-    user_data->weak_view = weak_from_this();
-    user_data->handle = handle;
-    user_data->option = option;
-    user_data->index = 0;
-    user_data->update.userData = user_data;
-    user_data->update.callback = [](void *userData) {
-        struct MyUserData *user_data = (struct MyUserData *)userData;
-        auto view = user_data->weak_view.lock();
+    
+    ActivityIndicatorAnimationData *anim_data = new ActivityIndicatorAnimationData;
+    anim_data->weak_view = weak_from_this();
+    anim_data->handle = handle;
+    anim_data->animate_option = animate_option;  // shared_ptr: reference counted
+    anim_data->index = 0;
+    anim_data->stop = false;
+    
+    anim_data->update.userData = anim_data;
+    anim_data->update.callback = [](void *userData) {
+        auto data = static_cast<ActivityIndicatorAnimationData *>(userData);
+        auto view = data->weak_view.lock();
         if (view) {
-            float angle = static_cast<float>(user_data->index + 1) / kRotateTimesPerCycle * 360;
-            // set rotate
-            ArkUI_NumberValue rotateValue[] = {0, 0, 1, angle, 0};  // {x, y, z, angle, view_distance}
+            float angle = static_cast<float>(data->index + 1) / kRotateTimesPerCycle * 360;
+            ArkUI_NumberValue rotateValue[] = {0, 0, 1, angle, 0};
             ArkUI_AttributeItem rotateItem = {rotateValue, sizeof(rotateValue) / sizeof(ArkUI_NumberValue)};
             if (auto node = view->GetNode()) {
                 kuikly::util::GetNodeApi()->setAttribute(node, NODE_ROTATE, &rotateItem);
@@ -117,38 +124,40 @@ void KRActivityIndicatorAnimationView::FireOnImageCompleteEvent(ArkUI_NodeEvent 
         }
     };
 
-    user_data->complete_callback.userData = user_data;
-    user_data->complete_callback.type = ARKUI_FINISH_CALLBACK_REMOVED;
-    user_data->complete_callback.callback = [](void *userData) {
-        struct MyUserData *user_data = (struct MyUserData *)userData;
-        if (user_data->stop) {
-            user_data->weak_view.reset();
-            free(userData);
-        } else {
-            // start next iteration
-            user_data->index = (user_data->index + 1) % kRotateTimesPerCycle;
-            auto view = user_data->weak_view.lock();
-            if (view) {
-                if (user_data->index == 0) {                            // reset angle
-                    ArkUI_NumberValue rotateValue[] = {0, 0, 1, 0, 0};  // {x, y, z, angle, view_distance}
-                    ArkUI_AttributeItem rotateItem = {rotateValue, sizeof(rotateValue) / sizeof(ArkUI_NumberValue)};
-                    kuikly::util::GetNodeApi()->setAttribute(view->GetNode(), NODE_ROTATE, &rotateItem);
-                }
-                OH_ArkUI_AnimateOption_SetDuration(user_data->option, kDurations[user_data->index]);
-                ArkUI_NativeAnimateAPI_1 *animate_api = reinterpret_cast<ArkUI_NativeAnimateAPI_1 *>(
-                    OH_ArkUI_QueryModuleInterfaceByName(ARKUI_NATIVE_ANIMATE, "ArkUI_NativeAnimateAPI_1"));
-                animate_api->animateTo(user_data->handle, user_data->option, &user_data->update,
-                                       &user_data->complete_callback);
-            } else {
-                user_data->weak_view.reset();
-                free(userData);
+    anim_data->complete_callback.userData = anim_data;
+    anim_data->complete_callback.type = ARKUI_FINISH_CALLBACK_REMOVED;
+    anim_data->complete_callback.callback = [](void *userData) {
+        auto data = static_cast<ActivityIndicatorAnimationData *>(userData);
+        if (data->stop) {
+            delete data;  // animate_option automatically disposed via RAII
+            return;
+        }
+        
+        // Continue next iteration
+        data->index = (data->index + 1) % kRotateTimesPerCycle;
+        auto view = data->weak_view.lock();
+        if (view) {
+            if (data->index == 0) {
+                ArkUI_NumberValue rotateValue[] = {0, 0, 1, 0, 0};
+                ArkUI_AttributeItem rotateItem = {rotateValue, sizeof(rotateValue) / sizeof(ArkUI_NumberValue)};
+                kuikly::util::GetNodeApi()->setAttribute(view->GetNode(), NODE_ROTATE, &rotateItem);
             }
+            // Update animation duration using KRAnimateOption API
+            data->animate_option->SetDuration(kDurations[data->index]);
+            
+            ArkUI_NativeAnimateAPI_1 *animate_api = reinterpret_cast<ArkUI_NativeAnimateAPI_1 *>(
+                OH_ArkUI_QueryModuleInterfaceByName(ARKUI_NATIVE_ANIMATE, "ArkUI_NativeAnimateAPI_1"));
+            animate_api->animateTo(data->handle, data->animate_option->ToArkUIAnimateOption(), 
+                                 &data->update, &data->complete_callback);
+        } else {
+            delete data;  // animate_option automatically disposed
         }
     };
 
-    OH_ArkUI_AnimateOption_SetDuration(option, kDurations[user_data->index]);
+    animate_option->SetDuration(kDurations[anim_data->index]);
     ArkUI_NativeAnimateAPI_1 *animate_api = reinterpret_cast<ArkUI_NativeAnimateAPI_1 *>(
         OH_ArkUI_QueryModuleInterfaceByName(ARKUI_NATIVE_ANIMATE, "ArkUI_NativeAnimateAPI_1"));
 
-    animate_api->animateTo(handle, option, &user_data->update, &user_data->complete_callback);
+    animate_api->animateTo(handle, animate_option->ToArkUIAnimateOption(), 
+                         &anim_data->update, &anim_data->complete_callback);
 }
