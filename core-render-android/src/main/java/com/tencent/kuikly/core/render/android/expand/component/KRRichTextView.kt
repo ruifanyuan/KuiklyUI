@@ -23,6 +23,7 @@ import android.graphics.Paint
 import android.graphics.Paint.FontMetricsInt
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.os.Build
 import android.text.Layout
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -68,6 +69,13 @@ class KRRichTextView(context: Context) : KRView(context) {
             isRichTextMode = it.isRichTextMode
         }
         initTextLayout(richTextShadow)
+        // Store plain text so the shared accessibilityDelegate can expose it as info.text,
+        // without overriding contentDescription (which carries debugName for view-tree class resolution)
+        val plainText = richTextShadow?.textLayout?.text?.toString() ?: ""
+        putViewData(KRCssConst.PLAIN_TEXT_FOR_A11Y, plainText)
+        if (hasDebugName()) {
+            initAccessibilityDelegateIfNeeded()
+        }
         invalidate()
     }
 
@@ -81,6 +89,7 @@ class KRRichTextView(context: Context) : KRView(context) {
         richTextShadow = null
         textLayout = null
         isRichTextMode = false
+        putViewData(KRCssConst.PLAIN_TEXT_FOR_A11Y, "")
     }
 
     override fun setProp(propKey: String, propValue: Any): Boolean {
@@ -663,7 +672,9 @@ class KRRichTextShadow : IKuiklyRenderShadowExport, IKuiklyRenderContextWrapper 
             text
         }
         val desiredWidth = getDesiredWith(textSource, constraintSize, measureMode)
-        if (!isBeforeM) {
+        val shouldUseLegacyLineBreakMarginCompat =
+            textProps.lineBreakMargin != 0f && isNougatLineBreakMarginCompat()
+        if (!isBeforeM && !shouldUseLegacyLineBreakMarginCompat) {
             val builder = createStaticLayoutBuilder(textSource, desiredWidth)
             if (textProps.numberOfLines > 0 && textProps.lineBreakMargin == 0f) {
                 builder.setMaxLines(textProps.numberOfLines)
@@ -725,6 +736,11 @@ class KRRichTextShadow : IKuiklyRenderShadowExport, IKuiklyRenderContextWrapper 
             }
         }
         return array
+    }
+
+    private fun isNougatLineBreakMarginCompat(): Boolean {
+        return Build.VERSION.SDK_INT == Build.VERSION_CODES.N ||
+            Build.VERSION.SDK_INT == Build.VERSION_CODES.N_MR1
     }
 
     private fun getDesiredWith(

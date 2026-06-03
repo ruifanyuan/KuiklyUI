@@ -6,7 +6,7 @@
 - **表情短码输入**：用户输入 `[smile]` 等短码，自动渲染为对应表情图片
 - **表情面板**：点击表情按钮，在光标位置插入对应短码
 - **实时预览**：输入框和预览区域同步显示表情渲染效果
-- **跨端支持**：Android 和 iOS 双平台支持（iOS 单行输入框除外）
+- **跨端支持**：Android、iOS 和鸿蒙支持（iOS 单行输入框除外；鸿蒙单行 `Input` 暂不支持图片自定义表情）
 :::
 
 ## 整体流程
@@ -25,12 +25,25 @@
   → 调用适配器 onTextPostProcess()，传入原始文本和字体属性
   → 适配器返回带 ImageSpan 的 SpannableStringBuilder（Android）
      或带 NSTextAttachment 的 NSMutableAttributedString（iOS）
+     或 Text/Image Span 序列（鸿蒙）
   → Render 层将处理结果渲染到 UI
 ```
 
 :::warning iOS 平台限制
 - **单行输入框（`Input` / `UITextField`）不支持 `NSTextAttachment` 图片渲染**，因此自定义表情图片预览在 iOS 单行模式下不可用。如需表情预览，请使用多行输入框（`TextArea` / `UITextView`）。
 - 如果只需要短码文本输入而不需要图片预览，单行输入框可以正常使用。
+:::
+
+:::warning 鸿蒙平台限制
+- **单行输入框（`Input`）暂不支持图片自定义表情**。受鸿蒙系统底层 Text Editor 限制，新输入控件暂不支持 keyboard type，因此单行 `Input` 维持原来的输入能力，不走图片自定义表情路径。
+- 如果只需要短码文本输入而不需要图片预览，单行 `Input` 可以正常使用；如需图片表情预览，请使用多行 `TextArea` 或只读 `Text` 预览区域。
+:::
+
+:::tip 鸿蒙平台说明
+- `Text` 只读渲染会按 DSL 传入的 `textPostProcessor("xxx")` 名称调用对应 adapter。
+- `TextArea` 编辑态使用固定的输入处理器名称 `"input"`，业务侧需通过 `KRRegisterTextPostProcessorAdapter("input", adapter)` 注册。
+- `TextArea` 场景推荐使用 `KRTextProcessedResultAppendImageSpanWithRaw(builder, uri, rawLiteral, width, height)` 回传图片 span。`rawLiteral` 是图片在原始文本中的短码（如 `[smile]`），用于在用户继续编辑、删除图片 span 或上抛 `TextInputState.text` 时精准还原 raw text。
+- 图片 `src` 必须是可寻址 URI，目前推荐 `file://...`，也支持 `http(s)://...` 或 `data:image/...;base64,...`；不要把业务私有协议直接传给 SDK。
 :::
 
 ## DSL 使用方式
@@ -71,9 +84,9 @@ internal class EmojiDemoPage : BasePager() {
 ```
 
 :::tip 自研 DSL 关键点
-- **使用 `TextArea` 而非 `Input`**：iOS 上 `Input`（UITextField）不支持 `NSTextAttachment` 图片渲染，请使用 `TextArea`（UITextView）
+- **使用 `TextArea` 而非 `Input`**：iOS 上 `Input`（UITextField）不支持 `NSTextAttachment` 图片渲染，请使用 `TextArea`（UITextView）。鸿蒙单行 `Input` 暂不支持图片自定义表情，如需图片预览请使用 `TextArea`。
 - **`textPostProcessor("input")`**：声明处理器名称，触发适配器中的处理逻辑
-- **processor 名称自定义**：`"emoji"`、`"input"` 是示例名称，实际名称由业务自定义
+- **processor 名称自定义**：`"emoji"`、`"input"` 是示例名称，实际名称由业务自定义；鸿蒙 `TextArea` 编辑态需注册 `"input"`，只读 `Text` 可注册并使用业务自定义名称（如 `"richtext"`）
 :::
 
 #### 表情面板：点击插入表情短码
@@ -265,6 +278,13 @@ fun EmojiInputDemo() {
 - **`selection.start` / `selection.end`**：当前光标位置或选区范围，`replace` 会自动替换选区内容或插入到光标处
 - **`state.text` 获取原始文本**：始终返回短码格式（如 `[smile]`），不会包含处理后的图片
 - **清空输入**：使用 `state.clearText()` 一次性清空文本和重置选区
+:::
+
+:::warning 与 `maxLength` / 自定义 processor 组合时的注意事项
+- **processor 名称要全链路一致**：Kotlin 侧 `textPostProcessor("comment_input")`、Android `IKRTextPostProcessorAdapter` 路由、iOS `hr_customTextWithAttributedString:textPostProcessor:` 路由、鸿蒙 `KRRegisterTextPostProcessorAdapter("comment_input", ...)` 注册名，都应使用同一个名称；鸿蒙 `TextArea` 编辑态当前约定使用 `"input"`。
+- **表情插入请始终基于当前 raw selection 做 `replace(selection.start, selection.end, shortCode)`**：不要自己拆成“删选区 + append”，否则容易破坏中间插入和选区替换语义。
+- **与 `Modifier.maxLength` 组合时，超限应拒绝整段 shortcode**：例如 `[smile]` 放不下时，应保留原有 raw text 和合法选区，而不是写入半个 token。
+- **鸿蒙 `TextArea` 请回传 raw 字面量**：使用 `KRTextProcessedResultAppendImageSpanWithRaw`，否则图片 span 在 ArkUI 内部被扁平化为占位字符后，编辑回写时无法可靠还原原始短码。
 :::
 
 ## Android 适配器实现
@@ -473,6 +493,23 @@ iOS 侧 processor 名称的来源：
 | `UITextField` 不渲染 `NSTextAttachment` 图片 | iOS 单行输入框（`Input` 组件）无法显示表情图片，只有 `UITextView`（`TextArea` 组件）支持 |
 | 光标跳动 | `UITextView` + `NSTextAttachment` 点击时可能触发两次 `selectionChange`，导致光标短暂跳回（iOS 原生问题） |
 
+## 鸿蒙适配器实现
+
+鸿蒙侧通过 `KRRegisterTextPostProcessorAdapter(name, adapter)` 注册具名 adapter。SDK 将原始 UTF-8 文本传入 adapter，业务按顺序追加 `TextSpan` / `ImageSpan` 后，由 Render 层渲染为只读文本或 ArkUI `StyledString`。
+
+关键差异：
+
+- **输入态名称**：`TextArea` 编辑态当前使用 `"input"` 处理器；只读 `Text` 使用 DSL 中 `textPostProcessor("xxx")` 传入的名称。单行 `Input` 暂不支持图片自定义表情。
+- **图片 URI**：图片 `src` 需是可寻址 URI，例如 `file://...`、`http(s)://...` 或 `data:image/...;base64,...`。
+- **raw 字面量**：`TextArea` 图片 span 推荐使用 `KRTextProcessedResultAppendImageSpanWithRaw(builder, src, rawLiteral, width, height)`，其中 `rawLiteral` 是 `[smile]` 这类原始短码，用于编辑后还原 `TextInputState.text`。
+
+最小注册示例：
+
+```cpp
+KRRegisterTextPostProcessorAdapter("input", MyTextPostProcessorAdapter);
+KRRegisterTextPostProcessorAdapter("richtext", MyTextPostProcessorAdapter);
+```
+
 ## 完整示例一：自研 DSL 实现
 
 完整的自研 DSL 自定义表情输入 Demo，请参考仓库中的实现：
@@ -490,9 +527,9 @@ iOS 侧 processor 名称的来源：
 ### Q: 设置 textPostProcessor 后输入框不显示表情？
 
 A: 检查以下几点：
-1. **适配器是否已注册** — 确认在 Application.onCreate() 中设置了 `KuiklyRenderAdapterManager.krTextPostProcessorAdapter`
-2. **processor 名称是否匹配** — DSL 中 `textPostProcessor("xxx")` 的名称要与适配器中的处理逻辑匹配
-3. **drawable 资源是否存在** — Android 检查 `R.drawable.xxx` 是否引用正确；iOS 检查 `Assets.xcassets` 中是否有对应图片
+1. **适配器是否已注册** — Android 确认在 Application.onCreate() 中设置了 `KuiklyRenderAdapterManager.krTextPostProcessorAdapter`；鸿蒙确认 native 初始化阶段调用了 `KRRegisterTextPostProcessorAdapter("input", adapter)`
+2. **processor 名称是否匹配** — DSL 中 `textPostProcessor("xxx")` 的名称要与适配器中的处理逻辑匹配；鸿蒙 `TextArea` 编辑态当前固定使用 `"input"`
+3. **图片资源是否存在** — Android 检查 `R.drawable.xxx` 是否引用正确；iOS 检查 `Assets.xcassets` 中是否有对应图片；鸿蒙检查 `file://` 真实路径是否存在，或 `http(s)` / `data:image` URI 是否可访问
 4. **是否使用了正确的组件** — iOS 上确保使用 `TextArea` 而非 `Input`
 
 ### Q: 表情显示位置偏移/大小不对？
@@ -540,3 +577,4 @@ A: 不会。适配器仅在组件设置了 `textPostProcessor` 属性时才会�
 - [TextArea 组件文档](../API/components/text-area.md)
 - [Text 组件文档](../API/components/text.md)
 - [Input 组件文档 - TextInputState 数据结构](../API/components/input.md#textinputstate-数据结构)
+- [鸿蒙 TextPostProcessor C API](../../core-render-ohos/src/main/cpp/libohos_render/api/include/Kuikly/Kuikly.h)

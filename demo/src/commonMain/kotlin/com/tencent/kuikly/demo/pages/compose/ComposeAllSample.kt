@@ -49,6 +49,7 @@ import com.tencent.kuikly.compose.ui.text.font.FontWeight
 import com.tencent.kuikly.compose.ui.unit.dp
 import com.tencent.kuikly.compose.ui.unit.sp
 import com.tencent.kuikly.core.annotations.Page
+import com.tencent.kuikly.compose.ui.semantics.testTag
 import com.tencent.kuikly.core.module.RouterModule
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.utils.urlParams
@@ -63,6 +64,7 @@ internal data class DemoItem(
 
 @Page("ComposeAllSample")
 internal class ComposeAllSample : ComposeContainer() {
+    override fun debugUIInspector(): Boolean = true
     // 预定义一组美观的Material Design颜色
     private val demoColors =
         listOf(
@@ -107,7 +109,6 @@ internal class ComposeAllSample : ComposeContainer() {
             DemoItem("LazyHorizontalGrid", "LazyHorizontalGrid基本用法示例", "LazyHorizontalGridDemo1"),
             DemoItem("焦点处理", "Focus焦点处理示例", "focusDemo"),
             DemoItem("TextField", "TextField 组件示例", "TextFieldDemo"),
-            DemoItem("TextFieldEmoji", "TextField 自定义表情示例", "TextFieldEmojiDemo"),
             DemoItem("PullToRefresh", "PullToRefresh 组件示例", "PullToRefreshDemo"),
             // 其他
             DemoItem("封装KuiklyView", "封装Kuikly的VideoView为一个Composeable组件示例", "ComposeVideoDemo"),
@@ -164,6 +165,7 @@ internal class ComposeAllSample : ComposeContainer() {
             DemoItem("ViewModel示例", "Lifecycle和ViewModel", "ViewModelDemo"),
             DemoItem("GradientAnimationDemo", "Offset or color animate ", "GradientAnimationDemo"),
             DemoItem("重组性能分析", "RecompositionProfiler追踪重组热点", "RecompositionProfilerDemo"),
+            DemoItem("TextFieldEmoji", "TextField 自定义表情示例（暂不支持鸿蒙）", "TextFieldEmojiDemo"),
         )
 
     @Composable
@@ -184,7 +186,7 @@ internal class ComposeAllSample : ComposeContainer() {
         ) {
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag("demo_list"),
                 verticalArrangement = Arrangement.spacedBy(8.dp), // 减小间距
                 contentPadding = PaddingValues(all = 8.dp),
             ) {
@@ -206,6 +208,7 @@ internal class ComposeAllSample : ComposeContainer() {
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .testTag("demo_card_${demo.pageName}")
                     .clickable(onClick = onClick),
             shape = RoundedCornerShape(8.dp),
             colors =
