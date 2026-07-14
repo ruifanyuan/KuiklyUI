@@ -202,6 +202,12 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
     auto *drawContext = OH_ArkUI_NodeCustomEvent_GetDrawContextInDraw(event);
     auto *drawingHandle = reinterpret_cast<OH_Drawing_Canvas *>(OH_ArkUI_DrawContext_GetCanvas(drawContext));
     auto frameWidth = GetFrame().width;
+    // Fix: Do NOT call OH_Drawing_TypographyLayout on the main thread.
+    // Typography is not thread-safe; re-layout here races with context thread
+    // operations on the same object, causing CFI crashes (use-after-free on
+    // internal vtable pointers). If the frame width changed, skip this frame
+    // and request a re-render for the next frame where the new typography
+    // (re-laid-out on context thread) will be available.
     bool needReLayout = false;
     if (last_draw_frame_width_ > 0 && fabs(last_draw_frame_width_ - frameWidth) > 0.01) {
         needReLayout = true;
@@ -210,12 +216,18 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
         needReLayout = true;
     }
     if (needReLayout) {
-        auto dpi = KRConfig::GetDpi();
-        OH_Drawing_TypographyLayout(textTypo, frameWidth * dpi);
+        // Schedule a re-render for the next frame instead of mutating typography here.
         last_draw_frame_width_ = frameWidth;
+        std::weak_ptr<IKRRenderViewExport> weakSelf = shared_from_this();
+        KRMainThread::RunOnMainThreadForNextLoop([weakSelf] {
+            if (auto strongSelf = weakSelf.lock()) {
+                kuikly::util::GetNodeApi()->markDirty(strongSelf->GetNode(), NODE_NEED_RENDER);
+            }
+        });
         if (textAlign != TEXT_ALIGN_LEFT) {
             richTextShadow->ResetTextAlign();
         }
+        return;
     }
 
     if (!selection_rects_.selection_rects.empty()) {
@@ -240,21 +252,30 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
     }
 
     if(OH_Drawing_TextLinePaint && line_break_margin_ > 0 && richTextShadow->DidExceedMaxLines()){
+        // Fix: Snapshot the cached text_lines pointer into a local variable at
+        // the start of the block. The textTypoHandle (shared_ptr) above already
+        // keeps the underlying typography alive, which in turn keeps the
+        // text_lines data valid for this frame. The risk of
+        // DestroyCachedTextLines() being called mid-iteration (via Kotlin
+        // reentry) is mitigated by the IsPerformMainTasking() guard above,
+        // which defers this draw when recursive main-thread work is detected.
         auto text_lines = richTextShadow->GetTextLines();
-        size_t line_count = OH_Drawing_GetDrawingArraySize(text_lines);
-        for(int i = 0; i < line_count; ++i){
-            OH_Drawing_TextLine* line = OH_Drawing_GetTextLineByIndex(text_lines, i);
+        if (text_lines) {
+            size_t line_count = OH_Drawing_GetDrawingArraySize(text_lines);
+            for(int i = 0; i < line_count; ++i){
+                OH_Drawing_TextLine* line = OH_Drawing_GetTextLineByIndex(text_lines, i);
 
-            if(i + 1 == line_count && richTextShadow->DidExceedMaxLines()){
-                OH_Drawing_TextLine *truncated_text_line = OH_Drawing_TextLineCreateTruncatedLine(line, (frameWidth - line_break_margin_) * KRConfig::GetDpi(), ELLIPSIS_MODAL_TAIL, "...");
-                OH_Drawing_TextLinePaint( truncated_text_line, drawingHandle, 0, -drawOffsetY);
-                OH_Drawing_DestroyTextLine(truncated_text_line);
-            }else{
-                OH_Drawing_TextLinePaint( line, drawingHandle, 0, -drawOffsetY);
+                if(i + 1 == line_count && richTextShadow->DidExceedMaxLines()){
+                    OH_Drawing_TextLine *truncated_text_line = OH_Drawing_TextLineCreateTruncatedLine(line, (frameWidth - line_break_margin_) * KRConfig::GetDpi(), ELLIPSIS_MODAL_TAIL, "...");
+                    OH_Drawing_TextLinePaint( truncated_text_line, drawingHandle, 0, -drawOffsetY);
+                    OH_Drawing_DestroyTextLine(truncated_text_line);
+                }else{
+                    OH_Drawing_TextLinePaint( line, drawingHandle, 0, -drawOffsetY);
+                }
             }
-        }
-        if(line_count > 0){
-            return;
+            if(line_count > 0){
+                return;
+            }
         }
     }
     // fallback
@@ -677,15 +698,19 @@ KRParagraphInfo KRRichTextView::GetParagraphInfo() {
     KRParagraphInfo paragraph_info;
     auto richTextShadow = reinterpret_cast<KRRichTextShadow *>(shadow_.get());
     if (richTextShadow) {
-        OH_Drawing_Typography *textTypo = richTextShadow->MainThreadTypography();
-        paragraph_info.typography_ = textTypo;
+        // Fix: Hold a shared_ptr (KRTypographyHandle) to keep the typography
+        // alive for the entire lifetime of paragraph_info. Using a raw pointer
+        // from MainThreadTypography() is unsafe because a concurrent
+        // SetMainThreadTypography() could release the object mid-use.
+        paragraph_info.typography_handle_ = richTextShadow->MainThreadTypographyHandle();
+        paragraph_info.typography_ = paragraph_info.typography_handle_.get();
     }
 
     auto textShadow = std::dynamic_pointer_cast<KRRichTextShadow>(shadow_);
     if (!textShadow) {
         return paragraph_info;
     }
-    OH_Drawing_Typography *textTypo = textShadow->MainThreadTypography();
+    OH_Drawing_Typography *textTypo = paragraph_info.typography_;
     if (textTypo == nullptr) {
         return paragraph_info;
     }

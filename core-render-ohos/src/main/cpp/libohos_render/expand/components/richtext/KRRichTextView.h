@@ -111,6 +111,10 @@ class KRParagraphInfo {
 
     std::vector<KRLineInfo> line_info_list_;
     std::string text_content_;
+    // Fix: Hold a shared_ptr to keep the typography alive for the lifetime of
+    // this struct, preventing use-after-free when SetMainThreadTypography()
+    // replaces the shadow's typography mid-use.
+    KRTypographyHandle typography_handle_;
     OH_Drawing_Typography *typography_ = nullptr;
     float width_ = 0;
     float height_ = 0;
