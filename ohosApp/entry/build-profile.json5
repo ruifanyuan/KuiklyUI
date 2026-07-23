@@ -1,11 +1,24 @@
 {
   "apiType": "stageMode",
   "buildOption": {
+    "resOptions": {
+      "copyCodeResource": {
+        "enable": false
+      }
+    },
+    "cangjieOptions": {
+      "path": "./cjpm.toml"
+    },
     "externalNativeOptions": {
       "path": "./src/main/cpp/CMakeLists.txt",
       "arguments": "",
       "cppFlags": ""
     },
+    "nativeLib": {
+      "filter": {
+        "enableOverride": true
+      }
+    }
   },
   "buildOptionSet": [
     {

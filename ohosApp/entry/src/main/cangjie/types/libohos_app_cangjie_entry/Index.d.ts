@@ -1,0 +1,1 @@
+export declare function testCJ(s: string): string

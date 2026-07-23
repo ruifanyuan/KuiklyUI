@@ -5,3 +5,6 @@
 /.cxx
 /.test
 /src/main/ets/ts-api/provider.ets
+**/IDL_Dependencies_List~
+**/build-script-cache
+cjpm.lock

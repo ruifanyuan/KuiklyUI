@@ -21,10 +21,17 @@ import { AppKRRouterAdapter } from '../kuikly/adapters/AppKRRouterAdapter';
 import fs from '@ohos.file.fs';
 import { BusinessError } from '@kit.BasicServicesKit';
 import Napi from 'libkuikly_entry.so';
+import { testCJ } from 'libohos_app_cangjie_entry.so';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onCreate');
+    try {
+      const cjResult = testCJ('KuiklyUI');
+      hilog.info(0x0000, 'testTag', 'testCJ result: %{public}s', cjResult);
+    } catch (e) {
+      hilog.error(0x0000, 'testTag', 'testCJ call failed: %{public}s', JSON.stringify(e));
+    }
   }
 
   onDestroy(): void {
