@@ -31,6 +31,8 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CValues
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UShortVar
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.utf16
 import kotlinx.cinterop.memScoped
 
 /**
@@ -126,9 +128,9 @@ internal class CStringUtf16BenchmarkPage : BasePager() {
         override val align: Int get() = 2
         override fun place(placement: CPointer<UShortVar>): CPointer<UShortVar> {
             for (i in 0 until s.length) {
-                placement[i] = s[i].code.toUShort()
+                placement[i].value = s[i].code.toUShort()
             }
-            placement[s.length] = 0u
+            placement[s.length].value = 0u
             return placement
         }
     }
