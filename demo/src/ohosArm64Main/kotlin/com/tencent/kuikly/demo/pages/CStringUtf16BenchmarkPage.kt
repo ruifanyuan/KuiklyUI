@@ -122,7 +122,9 @@ internal class CStringUtf16BenchmarkPage : BasePager() {
     }
 
     // ===== 零额外堆分配的 UTF-16 C 字符串（被测方案 3） =====
-    // 直接持有 String，在 place() 里把 UTF-16 码元写入 native 内存，无 toCharArray、无 UTF-8 编码。
+    // TODO: 当前 Kotlin 版本的 CPointer 元素访问 API 待确认，暂注释。
+    // 直接用标准库 utf16 对照即可；nativeUtf16 将在确认 API 后补齐。
+    /*
     private class Str16CValues(val s: String) : CValues<UShortVar>() {
         override val size: Int get() = 2 * (s.length + 1)
         override val align: Int get() = 2
@@ -137,6 +139,7 @@ internal class CStringUtf16BenchmarkPage : BasePager() {
 
     private fun String.nativeUtf16(scope: AutofreeScope): CPointer<UShortVar> =
         Str16CValues(this).getPointer(scope)
+    */
 
     // ===== 基准测试主体 =====
 
@@ -157,19 +160,19 @@ internal class CStringUtf16BenchmarkPage : BasePager() {
             sb.appendLine("SHORT (ascii \"hi\"):")
             sb.appendLine("  cstr       : ${bench { memScoped { sink = "hi".cstr.ptr } }} ms")
             sb.appendLine("  utf16      : ${bench { memScoped { sink = short.utf16.ptr } }} ms")
-            sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = short.nativeUtf16(this) } }} ms")
+            // sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = short.nativeUtf16(this) } }} ms")
 
             sb.appendLine("----------------------------------------")
             sb.appendLine("MEDIUM (中文+ascii ~${medium.length} chars):")
             sb.appendLine("  cstr       : ${bench { memScoped { sink = medium.cstr.ptr } }} ms")
             sb.appendLine("  utf16      : ${bench { memScoped { sink = medium.utf16.ptr } }} ms")
-            sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = medium.nativeUtf16(this) } }} ms")
+            // sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = medium.nativeUtf16(this) } }} ms")
 
             sb.appendLine("----------------------------------------")
             sb.appendLine("LONG (含emoji ~${long.length} chars):")
             sb.appendLine("  cstr       : ${bench { memScoped { sink = long.cstr.ptr } }} ms")
             sb.appendLine("  utf16      : ${bench { memScoped { sink = long.utf16.ptr } }} ms")
-            sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = long.nativeUtf16(this) } }} ms")
+            // sb.appendLine("  nativeUtf16: ${bench { memScoped { sink = long.nativeUtf16(this) } }} ms")
 
             val out = sb.toString()
             KLog.i(TAG, out)
