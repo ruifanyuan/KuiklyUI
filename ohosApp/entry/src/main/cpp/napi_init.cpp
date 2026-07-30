@@ -361,28 +361,61 @@ void ExampleModuleOnDestruct(const void* moduleInstance){
     // we don't need to do anything here
 }
 
+// =====================================================================
+// MyExampleCModule callMethod 的 C 实现桥接到仓颉实现
+//
+// 仓颉侧（src/main/cangjie/index.cj）用 @C 修饰了 myExampleCModuleCallMethod，
+// 并在模块注册阶段通过 RegisterCangjieMyExampleCModule 把该函数指针注册到这里。
+// 本文件只保留一个"薄包装"：KRRenderModuleRegister 注册的仍是 ExampleModuleOnCallMethod，
+// 运行时它再转发到仓颉实现。这样：
+//   * C 侧无需在编译期链接仓颉符号（两个 .so 解耦）；
+//   * 仓颉未加载 / 未注册时，薄包装安全降级为返回空结果。
+// 类型约定（与仓颉 CFunc 签名严格对齐）：
+//   char* (*)(void* moduleInstance, const char* moduleName, int sync,
+//             const char* method, void* param, void* context)
+// =====================================================================
+typedef char* (*CjMyExampleCModuleCallMethod)(void* moduleInstance,
+                                              const char* moduleName,
+                                              int sync,
+                                              const char* method,
+                                              void* param,
+                                              void* context);
+
+static CjMyExampleCModuleCallMethod g_cj_call_method = nullptr;
+
+// 由仓颉侧调用，注册其 MyExampleCModule callMethod 实现。
+extern "C" void RegisterCangjieMyExampleCModule(CjMyExampleCModuleCallMethod cb) {
+    g_cj_call_method = cb;
+}
+
 static KRCallMethodCValue ExampleModuleOnCallMethod(const void* moduleInstance,
     const char* moduleName,
     int sync,
     const char *method,
     KRAnyData param,
     KRRenderModuleCallbackContext context){
-    
-    if (context){
-        // Do some work and callback later.
-        // For the sake of simplicity, a thread is used here to illustrate the async behavior,
-        // which might probably not be the best practice.
-        std::thread([context] { 
-            char* result = "{\"key\":\"value\"}";
-            KRRenderModuleDoCallback(context, result);
-        }).detach();
-    }
-    std::string resultString(method ? method: "");
-    resultString.append(" handled.");
     KRCallMethodCValue ret;
-    ret.res = strdup(resultString.c_str()); // the result string
-    ret.free = free; // strdup result need to be freed later
-    ret.length = resultString.size(); // the length of the res string
+    ret.res = nullptr;
+    ret.length = 0;
+    ret.free = nullptr;
+
+    if (g_cj_call_method == nullptr) {
+        return ret;
+    }
+
+    // 转发到仓颉实现。仓颉侧用 LibC.mallocCString 分配结果字符串，
+    // 这里统一用 C 的 free 释放（与 malloc 配对）。
+    char* cjRes = g_cj_call_method(const_cast<void*>(moduleInstance),
+                                   moduleName,
+                                   sync,
+                                   method,
+                                   static_cast<void*>(param),
+                                   static_cast<void*>(context));
+    if (cjRes != nullptr) {
+        ret.res = cjRes;
+        ret.length = static_cast<int>(strlen(cjRes));
+        ret.free = free;
+    }
     return ret;
 }
 
