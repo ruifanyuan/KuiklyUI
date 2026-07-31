@@ -60,7 +60,10 @@ foreign func RegisterCangjieMyExampleCModule(
 ): Unit
 
 // 仓颉侧主动声明的"C 侧回调 API"：业务可在 callMethod 内异步回写数据给 Kuikly。
-foreign func KRRenderModuleDoCallback(context: CPointer<Unit>, data: CString): Unit
+// 注意：直接依赖 render 库内部的 KRRenderModuleDoCallback 会出现跨库符号解析失败
+//（cangjie .so 在 relocate 阶段找不到该符号）。这里改为引用 napi_init.cpp 中
+// 全局导出的转发 wrapper KRDemoRenderModuleDoCallback，其签名与之一致。
+foreign func KRDemoRenderModuleDoCallback(context: CPointer<Unit>, data: CString): Unit
 
 // MyExampleCModule 的 callMethod 实现（仓颉版）。
 // 逻辑与原 C 版 ExampleModuleOnCallMethod 对齐：
@@ -80,12 +83,12 @@ func myExampleCModuleCallMethod(
     // 异步回调（对齐原 C 版对 context 非空时的处理）。
     if (!context.isNull()) {
         let cbData = cjMallocCString("{\"key\":\"value\"}")
-        unsafe { KRRenderModuleDoCallback(context, CString(CPointer<UInt8>(cbData))) }
+        unsafe { KRDemoRenderModuleDoCallback(context, CString(CPointer<UInt8>(cbData))) }
         unsafe { free(CPointer<Unit>(cbData)) }
     }
     // 构造同步返回值 "method handled."。
     let methodStr = method.toString()
-    let resultStr = methodStr + " handled."
+    let resultStr = methodStr + " handled in cj."
     return cjMallocCString(resultStr)
 }
 

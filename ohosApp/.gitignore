@@ -13,5 +13,14 @@ entry/build
 /entry/libs/arm64-v8a/libshared.so
 /entry/src/main/cpp/thirdparty/biz_entry/libshared_api.h
 
+# 仓颉链接期桩需要签入仓库, 覆盖仓库根 .gitignore 的 *.so 规则
+!/entry/cangjie_stub/arm64-v8a/libkuikly_entry_stub.so
+
 # Kotlin/Native LLDB helpers (auto-generated, do not commit)
 /.kuikly/
+**/cj_res
+**/*.cj.macrocall
+**/ability_mainability_entry.cj
+**/module_**_entry.cj
+**/IDL_Dependencies_List~
+**/build-script-cache

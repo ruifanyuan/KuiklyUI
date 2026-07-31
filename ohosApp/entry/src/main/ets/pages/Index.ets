@@ -22,6 +22,8 @@ import router from '@ohos.router';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ContextCodeHandler } from '../kuikly/ContextCodeHandler';
 import { AppKRRenderManager } from '../kuikly/adapters/AppKRRenderManager';
+import { testCJ } from 'libohos_app_cangjie_entry.so';
+
 
 @Entry
 @Component
@@ -36,6 +38,12 @@ struct Index {
   @State showKuikly: boolean = false;
 
   onBackPress(): boolean | void {
+    try {
+      testCJ("kuikly")
+    } catch (e) {
+      const err = e as Error;
+      hilog.error(0x0000, 'demo', 'back press event dispatching loging failed: %{public}s | %{public}s', err?.message ?? '', err?.stack ?? '');
+    }
     if (this.useDefaultBackPress) {
       // Note: set useDefaultBackPress to false when testing back press event dispatching loging.
       return;
@@ -48,6 +56,15 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    // 验证仓诧导出函数 testCJ（此时 ArkTS 引擎与仓诧模块均已就绪）。
+    try {
+      const cjResult = testCJ('KuiklyUI');
+      hilog.info(0x0000, 'testTag', 'testCJ result: %{public}s', cjResult);
+    } catch (e) {
+      const err = e as Error;
+      hilog.error(0x0000, 'testTag', 'testCJ call failed: %{public}s | %{public}s', err?.message ?? '', err?.stack ?? '');
+    }
+
     AppKRRenderManager.getInstance().initIfNeed();
     const params = router.getParams() as Record<string, Object>;
     this.pageName = params?.pageName as string;

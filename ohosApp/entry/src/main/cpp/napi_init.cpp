@@ -27,6 +27,7 @@
 #include <string>
 #include <thread>
 #include <Kuikly/Kuikly.h>
+#include "cj_bridge.h"
 #include "napi/native_api.h"
 #include "thirdparty/biz_entry/libshared_api.h"
 
@@ -370,22 +371,23 @@ void ExampleModuleOnDestruct(const void* moduleInstance){
 // 运行时它再转发到仓颉实现。这样：
 //   * C 侧无需在编译期链接仓颉符号（两个 .so 解耦）；
 //   * 仓颉未加载 / 未注册时，薄包装安全降级为返回空结果。
-// 类型约定（与仓颉 CFunc 签名严格对齐）：
-//   char* (*)(void* moduleInstance, const char* moduleName, int sync,
-//             const char* method, void* param, void* context)
+// 桥接 ABI（CjMyExampleCModuleCallMethod 及下面两个导出函数的声明）统一放在
+// cj_bridge.h，由本文件与 cangjie_stub/cj_bridge_stub.c 共同包含，保证签名一致。
 // =====================================================================
-typedef char* (*CjMyExampleCModuleCallMethod)(void* moduleInstance,
-                                              const char* moduleName,
-                                              int sync,
-                                              const char* method,
-                                              void* param,
-                                              void* context);
 
 static CjMyExampleCModuleCallMethod g_cj_call_method = nullptr;
 
 // 由仓颉侧调用，注册其 MyExampleCModule callMethod 实现。
 extern "C" void RegisterCangjieMyExampleCModule(CjMyExampleCModuleCallMethod cb) {
     g_cj_call_method = cb;
+}
+
+// 仓颉侧（index.cj）通过 FFI 回调 Kuikly 框架时，需要调用 KRRenderModuleDoCallback。
+// 但该符号定义在 core-render-ohos 内部库，默认以非全局可见性链接进本模块，
+// 仓颉 .so 在 relocate 阶段无法直接跨库解析。这里提供一个本文件全局导出的转发
+// wrapper，让仓颉侧改为调用本函数，从而在不修改 render 库可见性的前提下完成桥接。
+extern "C" void KRDemoRenderModuleDoCallback(void *context, const char *data) {
+    KRRenderModuleDoCallback(reinterpret_cast<KRRenderModuleCallbackContext>(context), data);
 }
 
 static KRCallMethodCValue ExampleModuleOnCallMethod(const void* moduleInstance,
