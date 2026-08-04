@@ -13,11 +13,22 @@
  * limitations under the License.
  */
 
-package com.tencent.kuikly.demo.pages.base
+package com.tencent.kuikly.core.utils
 
-import com.tencent.kuikly.core.nvi.serialization.json.testAppleNestedNSDictionaryLifecycle
+import com.tencent.kuikly.core.nvi.serialization.json.LazyNSDictionaryMap
+import platform.Foundation.NSDictionary
 
-internal actual fun runNestedCJsonLifecycleTest(ownerHandle: Long): String {
-    // ownerHandle is a sentinel from native; lifecycle uses a local NSDictionary tree.
-    return testAppleNestedNSDictionaryLifecycle()
+/**
+ * Apple parallel to OHOS [KRRenderCValue.toAny]: unpack Native callKotlin args
+ * before [com.tencent.kuikly.core.manager.BridgeManager].
+ *
+ * [NSDictionary] → lazy [com.tencent.kuikly.core.nvi.serialization.json.JSONObject];
+ * other types pass through. CallNative returns are unchanged (ObjC still may
+ * hand raw collections to Kotlin module APIs).
+ */
+fun Any?.toKotlinBridgeArg(): Any? {
+    return when (this) {
+        is NSDictionary -> LazyNSDictionaryMap.wrapAsJSONObject(this)
+        else -> this
+    }
 }

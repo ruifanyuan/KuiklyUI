@@ -234,27 +234,44 @@ std::string BenchBasic(const std::string &instance_id, int iterations) {
 std::string BenchPhases(const std::string &instance_id, int iterations, size_t json_bytes, const std::string &mode) {
     const auto null_value = KRRenderValue::MakeNull();
     const auto &null_c = null_value->toCValue();
-    const bool use_map = (mode == "map");
+    const bool use_map =
+        (mode == "map" || mode == "update_map" || mode == "callback_map");
+    const bool is_update = (mode == "update" || mode == "update_map");
+    const bool is_callback = (mode == "callback" || mode == "callback_map");
+    const bool is_fire = (mode == "fire" || mode == "map" || mode == "both");
     auto payload_str = MakeJsonPayload(json_bytes);
 
     auto arg0 = KRRenderValue::Make(instance_id);
-    auto arg1 = KRRenderValue::Make(1);
-    auto arg2 = KRRenderValue::Make("click");
-    // mode=fire/both: legacy JSON string; mode=map: structured Map bridge
+    auto arg1_tag = KRRenderValue::Make(1);
+    auto arg2_event = KRRenderValue::Make(is_update ? "perf_update" : "click");
+    auto arg1_cb = KRRenderValue::Make(std::string("0"));
     auto arg3 = use_map ? MakeMapPayload(json_bytes) : KRRenderValue::Make(payload_str);
     const auto &c0 = arg0->toCValue();
-    const auto &c1 = arg1->toCValue();
-    const auto &c2 = arg2->toCValue();
+    const auto &c1_tag = arg1_tag->toCValue();
+    const auto &c2_event = arg2_event->toCValue();
+    const auto &c1_cb = arg1_cb->toCValue();
     const auto &c3 = arg3->toCValue();
+
+    auto call_payload_once = [&]() {
+        if (is_update) {
+            CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodUpdateInstance), c0,
+                           c2_event, c3, null_c, null_c, null_c);
+        } else if (is_callback) {
+            CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireCallback), c0,
+                           c1_cb, c3, null_c, null_c, null_c);
+        } else {
+            CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireViewEvent), c0,
+                           c1_tag, c2_event, c3, null_c, null_c);
+        }
+    };
 
     for (int i = 0; i < 10; i++) {
         if (mode == "layout" || mode == "both") {
             CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodLayoutView), c0, null_c,
                            null_c, null_c, null_c, null_c);
         }
-        if (mode == "fire" || mode == "both" || mode == "map") {
-            CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireViewEvent), c0, c1,
-                           c2, c3, null_c, null_c);
+        if (is_fire || is_update || is_callback) {
+            call_payload_once();
         }
     }
 
@@ -279,18 +296,26 @@ std::string BenchPhases(const std::string &instance_id, int iterations, size_t j
         }
     }
 
-    if (mode == "fire" || mode == "both" || mode == "map") {
+    if (is_fire || is_update || is_callback) {
         for (int i = 0; i < iterations; i++) {
             int64_t t0 = NowNs();
             const auto &a0 = arg0->toCValue();
-            const auto &a1 = arg1->toCValue();
-            const auto &a2 = arg2->toCValue();
-            const auto &a3 = arg3->toCValue();
+            const auto &a1 = is_callback ? arg1_cb->toCValue() : (is_update ? arg2_event->toCValue() : arg1_tag->toCValue());
+            const auto &a2 = is_callback ? arg3->toCValue() : (is_update ? arg3->toCValue() : arg2_event->toCValue());
+            const auto &a3 = is_fire ? arg3->toCValue() : null_c;
             const auto &a4 = null_value->toCValue();
             const auto &a5 = null_value->toCValue();
             int64_t t1 = NowNs();
-            CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireViewEvent), a0, a1,
-                           a2, a3, a4, a5);
+            if (is_update) {
+                CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodUpdateInstance), a0,
+                               a1, a2, null_c, null_c, null_c);
+            } else if (is_callback) {
+                CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireCallback), a0, a1,
+                               a2, null_c, null_c, null_c);
+            } else {
+                CallKotlinOnce(static_cast<int>(KuiklyRenderContextMethod::KuiklyRenderContextMethodFireViewEvent), a0,
+                               a1, a2, a3, a4, a5);
+            }
             int64_t t2 = NowNs();
             tocvalue_ns += t1 - t0;
             call_ns += t2 - t1;
@@ -306,10 +331,18 @@ std::string BenchPhases(const std::string &instance_id, int iterations, size_t j
         cold_tocvalue_ns = NowNs() - t0;
     }
 
-    // For mode=both, totals cover 2*iterations calls
     int calls = iterations;
     if (mode == "both") {
         calls = iterations * 2;
+    }
+
+    const char *method_name = "LayoutView";
+    if (is_update) {
+        method_name = "UpdateInstance";
+    } else if (is_callback) {
+        method_name = "FireCallback";
+    } else if (is_fire) {
+        method_name = "FireViewEvent";
     }
 
     std::ostringstream oss;
@@ -317,6 +350,7 @@ std::string BenchPhases(const std::string &instance_id, int iterations, size_t j
     oss.precision(2);
     oss << "{"
         << "\"mode\":\"" << mode << "\","
+        << "\"method\":\"" << method_name << "\","
         << "\"iterations\":" << iterations << ","
         << "\"calls\":" << calls << ","
         << "\"json_bytes\":" << payload_str.size() << ","
@@ -494,7 +528,8 @@ KRAnyValue CallKotlinPerfTestModule::CallMethod(bool sync, const std::string &me
                 }
             }
         }
-        if (mode != "layout" && mode != "fire" && mode != "both" && mode != "map") {
+        if (mode != "layout" && mode != "fire" && mode != "both" && mode != "map" && mode != "update" &&
+            mode != "update_map" && mode != "callback" && mode != "callback_map") {
             mode = "fire";
         }
         json = BenchPhases(instance_id, iterations, static_cast<size_t>(std::max(0, json_bytes)), mode);

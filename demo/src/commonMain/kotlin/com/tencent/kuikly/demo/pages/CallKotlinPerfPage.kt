@@ -29,9 +29,9 @@ import com.tencent.kuikly.demo.pages.base.CallKotlinPerfTestModule
 import com.tencent.kuikly.demo.pages.demo.base.NavBar
 
 /**
- * OHOS callKotlin interop performance page — phase distribution + JSON size sweep.
+ * callKotlin interop performance page — layout + Fire/Update/Callback JSON bridge.
  *
- * Launch: open page `CallKotlinPerfPage` via demo router (debug OHOS build).
+ * Launch: open page `CallKotlinPerfPage` via demo router (Debug build).
  * Logs tag: CallKotlinPerf
  */
 @Page("CallKotlinPerfPage")
@@ -59,7 +59,7 @@ internal class CallKotlinPerfPage : BasePager() {
     private fun runBenchmark() {
         val mod = acquireModule<CallKotlinPerfTestModule>(CallKotlinPerfTestModule.MODULE_NAME)
         try {
-            statusLine = "nested cjson lifecycle..."
+            statusLine = "nested lifecycle..."
             val nested = mod.testNestedLifecycle()
             KLog.i(TAG, "NESTED_LIFECYCLE $nested")
             if (nested.contains("\"ok\":false")) {
@@ -74,22 +74,30 @@ internal class CallKotlinPerfPage : BasePager() {
             val layoutCpp = mod.benchPhases(iterations = 3000, jsonBytes = 64, mode = "layout")
             KLog.i(TAG, "PHASES_CPP $layoutCpp")
 
+            // FireViewEvent + UpdateInstance (+ same JSON bridge as Create) + FireCallback
+            val pathModes = listOf(
+                "fire" to "map",
+                "update" to "update_map",
+                "callback" to "callback_map",
+            )
             for (bytes in listOf(1024, 65536, 3 * 1024 * 1024)) {
                 val iters = when {
                     bytes >= 3 * 1024 * 1024 -> 50
                     bytes >= 65536 -> 200
                     else -> 1000
                 }
-                statusLine = "fire string $bytes..."
-                val cpp = mod.benchPhases(iterations = iters, jsonBytes = bytes, mode = "fire")
-                KLog.i(TAG, "PHASES_CPP jsonBytes=$bytes $cpp")
+                for ((stringMode, lazyMode) in pathModes) {
+                    statusLine = "$stringMode string $bytes..."
+                    val cpp = mod.benchPhases(iterations = iters, jsonBytes = bytes, mode = stringMode)
+                    KLog.i(TAG, "PHASES_CPP path=$stringMode jsonBytes=$bytes $cpp")
 
-                statusLine = "lazy cjson $bytes..."
-                val cppMap = mod.benchPhases(iterations = iters, jsonBytes = bytes, mode = "map")
-                KLog.i(TAG, "PHASES_CPP jsonBytes=$bytes $cppMap")
+                    statusLine = "$lazyMode lazy $bytes..."
+                    val cppMap = mod.benchPhases(iterations = iters, jsonBytes = bytes, mode = lazyMode)
+                    KLog.i(TAG, "PHASES_CPP path=$lazyMode jsonBytes=$bytes $cppMap")
+                }
             }
 
-            resultLine = "done — see hilog CallKotlinPerf"
+            resultLine = "done — see log tag CallKotlinPerf"
             statusLine = "done"
             KLog.i(TAG, "DONE")
         } catch (t: Throwable) {

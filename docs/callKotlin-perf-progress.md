@@ -1,7 +1,7 @@
-# callKotlin Interop Performance Optimization (OHOS)
+# callKotlin Interop Performance Optimization
 
-> Goal: optimize Native (`core-render-ohos`) → Kotlin `callKotlin` interop performance.
-> Device: physical `LNG0223C13000049` (primary); earlier numbers also from emulator.
+> Goal: optimize Native → Kotlin `callKotlin` interop (large JSON / hot path).
+> OHOS device: physical `LNG0223C13000049`. iOS: simulator (see iOS section).
 
 ## Progress Log
 
@@ -13,6 +13,7 @@
 | 4. Re-test early opts; keep what matters | DONE | Keep A, B, D; drop C |
 | 5. Phase distribution + long JSON | DONE | |
 | 6. Lazy cJSON* JSONObject proxy | DONE | Flat ~50–70µs even at 3MB if unread |
+| 7. iOS port (KSP B + lazy NSDictionary D + DEBUG harness) | DONE | See iOS section |
 
 ---
 
@@ -34,7 +35,7 @@ Notes:
 
 ---
 
-## Call path
+## Call path (OHOS)
 
 ```
 KRRenderCore::CallKotlinMethod
@@ -49,7 +50,7 @@ KRRenderCore::CallKotlinMethod
 
 ---
 
-## Measurement notes
+## Measurement notes (OHOS)
 
 Kotlin-side phase counters in `core` were removed (too intrusive on Bridge/TypeUtils).
 Bench timing is C++-only in ohosApp `CallKotlinPerfTestModule`
@@ -69,7 +70,7 @@ Kotlin ohosArm64 `CJsonJSONObject.fromOwner` **retain**s; Cleaner **release**s o
 
 ---
 
-## Optimizations kept in tree
+## Optimizations kept in tree (OHOS)
 
 ### A. Cache instanceId on `KRRenderCore` (`core-render-ohos`)
 - Construct `instanceIdValue_` once in ctor; reuse in `CallKotlinMethod`.
@@ -83,11 +84,12 @@ Kotlin ohosArm64 `CJsonJSONObject.fromOwner` **retain**s; Cleaner **release**s o
   - `FIRE_CALLBACK` / `UPDATE` / `DESTROY` → arg0–arg2
   - `CREATE_INSTANCE` → reuse `asString()` as instanceId (no double convert)
 
-### D. Lazy cJSON* bridge (OHOS only)
+### D. Lazy cJSON* bridge (OHOS)
 - C++ Map/Array `toCValue` → `NATIVE_JSON` (opaque `shared_ptr<KuiklyCJsonOwner>` handle).
-- Kotlin **ohosArm64**: `CJsonJSONObject` subclass + `CJsonNative` FFI; `retain` returns a new shared handle; `TypeUtils` wraps owner → `JSONObject`.
-- **commonMain** stays free of cJSON: `JSONObject` is `open` for subclassing; `fireViewEvent` accepts `String` or `JSONObject`.
-- Field access via `kuikly_cjson_*`; large leaves not copied until read.
+- Kotlin **ohosArm64**: `LazyCJsonMap` into internal `JSONObject(map)`; `TypeUtils` wraps owner → `JSONObject`.
+- **commonMain**: `JSONObject` stays `final`; Create/Update/Fire accept `String` or `JSONObject`.
+- **CreateInstance**: pass `PageData()` Map (no `toString()`).
+- **UpdateInstance / SendEvent**: ETS/NAPI pass Record → Map; legacy string API parses to Map before CallKotlin.
 
 ### Dropped: C. Eager structured Map bridge
 - Removed `ToStructuredMapLocked` / `ToJsonMapOrArrayLocked` and `__kuikly_map_v1__` Kotlin decode.
@@ -95,7 +97,71 @@ Kotlin ohosArm64 `CJsonJSONObject.fromOwner` **retain**s; Cleaner **release**s o
 
 ---
 
+## iOS port (2026-08-04)
+
+iOS Native→Kotlin is ObjC `id` → K/N (not `KRRenderCValue` / cJSON).
+
+| Opt | iOS approach | Notes |
+|-----|----------------|-------|
+| **A** | Skip | `_instanceId` already retained `NSString*` |
+| **B** | `IOSTargetEntryBuilder` (+ multi) | No per-call lambda; codegen try/catch from `catchException` |
+| **D** | Lazy `NSDictionary` | Pass collections through ObjC; `toKotlinBridgeArg` at KSP entry wraps `NSDictionary` → `LazyNSDictionaryMap` before `BridgeManager` (OHOS parallel: `toAny`) |
+
+### Call path (iOS)
+
+```
+KuiklyRenderCore → ContextHandler.callWithMethod
+  └─ All methods: pass NSDictionary/NSArray through (no NSJSONSerialization)
+  └─ KuiklyCoreEntry.callKotlinMethod
+       └─ KSP entry: argN.toKotlinBridgeArg() → BridgeManager
+            └─ Create/Update/Fire* → toBridgeJSONObject (String | JSONObject)
+```
+
+### DEBUG harness
+
+- `iosApp/.../CallKotlinPerfTestModule.m` (`#if DEBUG`), class name matches Kotlin `MODULE_NAME`
+- Times `hr_dictionaryToJSON` (string mode) vs pass-through dict (map mode) + `callWithMethod`
+- Nested lifecycle: `testAppleNestedNSDictionaryLifecycle` (local `NSMutableDictionary` tree)
+- Open `CallKotlinPerfPage` via demo router; log tag `CallKotlinPerf`
+
+### Bench numbers (iOS simulator, iPhone 15, 2026-08-04)
+
+Unread payloads — `cpp_total_ns_per` from DEBUG `CallKotlinPerfTestModule`
+(string = `hr_dictionaryToJSON` + call; lazy = pass-through `NSDictionary`).
+
+**FireViewEvent**
+
+| ~bytes | string | lazy | speedup |
+|------:|-------:|-----:|--------:|
+| 1K | ~32µs | ~1.7µs | ~19× |
+| 64K | ~1.12ms | ~1.3µs | ~860× |
+| 3MB | ~55ms | ~1.2µs | ~45k× |
+
+**UpdateInstance** (same `toBridgeJSONObject` path as Create pageData)
+
+| ~bytes | string | lazy | speedup |
+|------:|-------:|-----:|--------:|
+| 1K | ~25µs | ~0.88µs | ~29× |
+| 64K | ~1.12ms | ~0.83µs | ~1350× |
+| 3MB | ~54ms | ~0.82µs | ~66k× |
+
+**FireCallback**
+
+| ~bytes | string | lazy | speedup |
+|------:|-------:|-----:|--------:|
+| 1K | ~4.3µs | ~0.93µs | ~4.6× |
+| 64K | ~121µs | ~0.92µs | ~130× |
+| 3MB | ~5.9ms | ~0.90µs | ~6500× |
+
+LAYOUT ≈ **0.52µs**/call. Nested lifecycle: `ok:true`.
+CreateInstance is not looped (would allocate pagers); it shares Update’s JSON bridge.
+Log: `logs/kuikly_console.log` tag `CallKotlinPerf`.
+
+---
+
 ## How to re-run
+
+### OHOS
 
 Open demo page `CallKotlinPerfPage` (router / in-app navigation; Want `--ps pageName` is not wired).
 Debug OHOS build only — native `CallKotlinPerfTestModule` is `#ifndef NDEBUG` / CMake Debug-gated.
@@ -106,8 +172,17 @@ hdc -t LNG0223C13000049 shell aa start -a EntryAbility -b com.tencent.kuiklyohos
 # Navigate to CallKotlinPerfPage; hilog tag CallKotlinPerf — BASIC / PHASES_CPP / DONE
 ```
 
+### iOS
+
+Debug iosApp only — `CallKotlinPerfTestModule` is `#if DEBUG`.
+
+```bash
+# Build + launch simulator; open CallKotlinPerfPage via demo router
+# Capture: os_log / Xcode console tag CallKotlinPerf — NESTED_LIFECYCLE / BASIC / PHASES_CPP / DONE
+```
+
 ### Follow-ups (optional)
 
 - Prefer Map/Array at Native call sites instead of pre-serializing JSON strings.
-- Cache Kotlin-side pageId string to skip `toKString` on LAYOUT_VIEW.
+- Cache Kotlin-side pageId string to skip `toKString` on LAYOUT_VIEW (OHOS).
 - Measure try/catch-off build to shrink LAYOUT FFI residual.

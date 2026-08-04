@@ -13,11 +13,18 @@
  * limitations under the License.
  */
 
-package com.tencent.kuikly.demo.pages.base
+#import <Foundation/Foundation.h>
+#import "KRBaseModule.h"
 
-import com.tencent.kuikly.core.nvi.serialization.json.testAppleNestedNSDictionaryLifecycle
+NS_ASSUME_NONNULL_BEGIN
 
-internal actual fun runNestedCJsonLifecycleTest(ownerHandle: Long): String {
-    // ownerHandle is a sentinel from native; lifecycle uses a local NSDictionary tree.
-    return testAppleNestedNSDictionaryLifecycle()
-}
+#if DEBUG
+/**
+ * Demo/test-only callKotlin interop microbench (DEBUG only).
+ * Class name must match Kotlin MODULE_NAME for KRClassFromString lookup.
+ */
+@interface CallKotlinPerfTestModule : KRBaseModule
+@end
+#endif
+
+NS_ASSUME_NONNULL_END
