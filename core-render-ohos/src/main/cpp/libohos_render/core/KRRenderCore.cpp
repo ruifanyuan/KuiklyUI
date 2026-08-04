@@ -74,6 +74,8 @@ KRRenderCore::KRRenderCore(std::weak_ptr<IKRRenderView> renderView, std::shared_
     renderView_ = renderView;
     context_ = context;
     defaultNullValue_ = KRRenderValue::Make();
+    // instanceId 生命周期与 Core 一致：缓存 KRRenderValue，避免每次 CallKotlin 重新 Make/toCValue
+    instanceIdValue_ = KRRenderValue::Make(context_->InstanceId());
     uiScheduler_ = std::make_shared<KRUIScheduler>(this);
     contextHandler_ = IKRRenderNativeContextHandler::CreateContextHandler(context);
     // 注册kotlin call native回调（走onCallNative接口）
@@ -434,8 +436,7 @@ void KRRenderCore::WillPerformUITasksWithScheduler() {  // 运行在 context 线
 
 void KRRenderCore::CallKotlinMethod(const KuiklyRenderContextMethod &method, const KRAnyValue &arg1, const KRAnyValue &arg2,
                                     const KRAnyValue &arg3, const KRAnyValue &arg4, const KRAnyValue &arg5) {
-    auto arg0 = KRRenderValue::Make(context_->InstanceId());
-    contextHandler_->Call(method, arg0, arg1, arg2, arg3, arg4, arg5);
+    contextHandler_->Call(method, instanceIdValue_, arg1, arg2, arg3, arg4, arg5);
 }
 
 void KRRenderCore::notifyInitState(KRInitState state) {

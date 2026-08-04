@@ -140,7 +140,7 @@ object BridgeManager {
                     arg0 as String,
                     arg1 as Int,
                     arg2 as String,
-                    arg3 as? String
+                    arg3
                 )
             }
             KotlinMethod.LAYOUT_VIEW -> {

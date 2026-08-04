@@ -96,12 +96,21 @@ object PagerManager {
         reactiveObserverMap.remove(pagerId)
     }
 
-    fun fireViewEvent(pagerId: String, viewRef: Int, event: String, data: String?) {
-        var dataObject: JSONObject? = null
-        data?.also {
-            dataObject = JSONObject(it)
+    /**
+     * [data] is typically a JSON [String], or an already-built [JSONObject]
+     * (OHOS may pass a platform-backed subclass from FFI).
+     */
+    fun fireViewEvent(pagerId: String, viewRef: Int, event: String, data: Any?) {
+        pagerMap[pagerId]?.onViewEvent(viewRef, event, toViewEventJSONObject(data))
+    }
+
+    private fun toViewEventJSONObject(data: Any?): JSONObject? {
+        return when (data) {
+            null -> null
+            is JSONObject -> data
+            is String -> if (data.isEmpty()) null else JSONObject(data)
+            else -> null
         }
-        pagerMap[pagerId]?.onViewEvent(viewRef, event, dataObject)
     }
 
     fun fireCallBack(pagerId: String, functionRef: GlobalFunctionRef, data: Any? = null) {

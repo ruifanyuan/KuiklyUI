@@ -141,6 +141,8 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
     std::shared_ptr<IKRRenderLayer> renderLayerHandler_;
     /** 默认NUll值 */
     std::shared_ptr<KRRenderValue> defaultNullValue_;
+    /** 缓存的 instanceId KRRenderValue，避免每次 CallKotlinMethod 重新 Make+toCValue */
+    std::shared_ptr<KRRenderValue> instanceIdValue_;
     /** 正在从主线程同步任务到context线程 */
     bool syncingPerformTaskMainThreadToContextThread = false;
 
