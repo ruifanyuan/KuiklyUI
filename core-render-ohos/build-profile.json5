@@ -14,7 +14,7 @@
     {
       "name": "release",
       "externalNativeOptions": {
-        "arguments": "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+        "arguments": "-DCMAKE_BUILD_TYPE=RelWithDebInfo -DKUIKLY_OHOS_SIZE_OPTS=ON"
       },
       "arkOptions": {
         "obfuscation": {

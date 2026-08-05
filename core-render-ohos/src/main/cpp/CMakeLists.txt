@@ -122,6 +122,25 @@ target_compile_options(kuikly PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:-Wconstexpr-not-const>
         $<$<COMPILE_LANGUAGE:CXX>:-Werror=constexpr>
 )
+
+# Package-size opts with no runtime perf impact (PPT slide4: 副作用=无).
+# Toggle via -DKUIKLY_OHOS_SIZE_OPTS=ON|OFF for A/B comparison.
+option(KUIKLY_OHOS_SIZE_OPTS "Enable OHOS size opts without perf impact" ON)
+if(KUIKLY_OHOS_SIZE_OPTS)
+    target_compile_options(kuikly PRIVATE
+            -ffunction-sections
+            -fdata-sections
+            # 跨 .so 被引用的符号必须标 KUIKLY_EXPORT，否则加载期解析失败直接 SIGSEGV。
+            # 消费方：libshared.so(K/N) 用 com_tencent_kuikly_*，libkuikly_entry.so 用 KRAnyData*/KRRegister*Adapter 等。
+            -fvisibility=hidden
+            -fvisibility-inlines-hidden
+    )
+    target_link_options(kuikly PRIVATE
+            -Wl,--gc-sections
+            -Wl,--pack-dyn-relocs=relr
+            -Wl,--hash-style=gnu
+    )
+endif()
 target_include_directories(kuikly PUBLIC ${HMOS_SDK_NATIVE}/sysroot/usr/include)
 target_link_directories(kuikly PUBLIC ${HMOS_SDK_NATIVE}/sysroot/usr/lib/aarch64-linux-ohos)
 target_include_directories(kuikly PRIVATE ${NATIVERENDER_ROOT_PATH}
