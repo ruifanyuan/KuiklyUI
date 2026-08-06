@@ -123,7 +123,6 @@ target_compile_options(kuikly PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:-Werror=constexpr>
 )
 
-# Package-size opts with no runtime perf impact (PPT slide4: 副作用=无).
 # Default follows build type: OFF for Debug, ON for Release/RelWithDebInfo/MinSizeRel
 # (i.e. the NDEBUG configurations). Override with -DKUIKLY_OHOS_SIZE_OPTS=ON|OFF.
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

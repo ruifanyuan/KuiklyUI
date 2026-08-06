@@ -36,7 +36,6 @@ kotlin {
         binaries.sharedLib("shared"){
             freeCompilerArgs += "-Xadd-light-debug=enable"
             linkerOpts += "--build-id=sha1"
-            // 安装包优化（仅 release）：PPT slide4 副作用=无 选项（不含 -Os）
             if (buildType == org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType.RELEASE) {
                 // 保留 Konan 默认 -O3（不用 -Os），仅叠加 sections；linker 侧加 relr/gc/hash-style
                 val CLANG_OPT_FLAGS = "-O3 -ffunction-sections -fdata-sections"
