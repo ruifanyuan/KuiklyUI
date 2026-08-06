@@ -124,8 +124,16 @@ target_compile_options(kuikly PRIVATE
 )
 
 # Package-size opts with no runtime perf impact (PPT slide4: 副作用=无).
-# Toggle via -DKUIKLY_OHOS_SIZE_OPTS=ON|OFF for A/B comparison.
-option(KUIKLY_OHOS_SIZE_OPTS "Enable OHOS size opts without perf impact" ON)
+# Default follows build type: OFF for Debug, ON for Release/RelWithDebInfo/MinSizeRel
+# (i.e. the NDEBUG configurations). Override with -DKUIKLY_OHOS_SIZE_OPTS=ON|OFF.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_KUIKLY_OHOS_SIZE_OPTS_DEFAULT OFF)
+else()
+    set(_KUIKLY_OHOS_SIZE_OPTS_DEFAULT ON)
+endif()
+option(KUIKLY_OHOS_SIZE_OPTS
+        "Enable OHOS size opts without perf impact (auto: ON unless Debug)"
+        ${_KUIKLY_OHOS_SIZE_OPTS_DEFAULT})
 if(KUIKLY_OHOS_SIZE_OPTS)
     target_compile_options(kuikly PRIVATE
             -ffunction-sections
