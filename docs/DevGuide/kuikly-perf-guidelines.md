@@ -101,7 +101,7 @@ target_link_options(kuikly PRIVATE
 | 指标 | A 基线 | C 最终 | 变化 |
 |------|--------|--------|------|
 | `libshared.so`（HAP / stripped） | 48.51 MiB | 38.41 MiB | **-20.8%** |
-| `libkuikly.so`（HAP / stripped） | 2.17 MiB | 1.49 MiB | **-31.1%** |
+| `libkuikly.so`（HAP / stripped） | 2.17 MiB | 1.49 MiB | **-31.3%** |
 | `libkuikly.so` dynsym 符号数 | 4525 | 1032 | **-77.2%** |
 | Total PSS | 109115 kB | 97452 kB | **-10.7%** |
 | `.so` PSS | 35524 kB | 24949 kB | **-29.8%** |
