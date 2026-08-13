@@ -91,8 +91,17 @@ build_lib() {
 SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 
-build_lib "$DEST/libclang_rt.profile_iossim.a" "arm64-apple-ios14.1-simulator" "$SIM_SDK"
-build_lib "$DEST/libclang_rt.profile_ios.a"    "arm64-apple-ios14.1"           "$IOS_SDK"
+# iossim 需要 arm64 + x86_64 双 slice：demo/build.gradle.kts 覆盖了 ios_simulator_arm64
+# 与 ios_x64；Intel Mac 上 --simulator 会链 x86_64，单 arm64 库会报 symbol not found。
+SIM_ARM64_A="$DEST/libclang_rt.profile_iossim_arm64.a"
+SIM_X64_A="$DEST/libclang_rt.profile_iossim_x86_64.a"
+build_lib "$SIM_ARM64_A" "arm64-apple-ios14.1-simulator" "$SIM_SDK"
+build_lib "$SIM_X64_A"   "x86_64-apple-ios14.1-simulator" "$SIM_SDK"
+rm -f "$DEST/libclang_rt.profile_iossim.a"
+lipo -create "$SIM_ARM64_A" "$SIM_X64_A" -output "$DEST/libclang_rt.profile_iossim.a"
+rm -f "$SIM_ARM64_A" "$SIM_X64_A"
+
+build_lib "$DEST/libclang_rt.profile_ios.a" "arm64-apple-ios14.1" "$IOS_SDK"
 
 ls -lh "$DEST"/libclang_rt.profile_*.a
-echo "Done. LLVMCompileRT（LLVM16 完整 profile runtime）已就绪: $DEST"
+echo "Done. LLVMCompileRT（LLVM16 完整 profile runtime，iossim 为 arm64+x86_64 fat）已就绪: $DEST"

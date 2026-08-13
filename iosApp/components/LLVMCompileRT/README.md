@@ -3,7 +3,7 @@
 LLVM Clang Profile Runtime 静态库，仅用于 `LLVM_PGO_TYPE=LLVMPGO` 插装包。产物：
 
 - `libclang_rt.profile_ios.a`（真机）
-- `libclang_rt.profile_iossim.a`（模拟器）
+- `libclang_rt.profile_iossim.a`（模拟器，arm64 + x86_64 fat）
 
 **必须与 Kotlin/Native 插装所用的 LLVM 大版本一致**（本仓库 demo 对应 KN 自带的 LLVM16）。不要直接使用本机 Xcode（clang17+）自带的 `libclang_rt.profile_*.a`，否则会因 ABI / raw profile version 不匹配导致运行崩溃或 `llvm-profdata merge` 失败。
 

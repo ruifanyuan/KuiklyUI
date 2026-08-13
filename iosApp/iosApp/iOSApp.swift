@@ -14,6 +14,8 @@
  */
 
 import SwiftUI
+
+#if LLVM_PGO_INSTRUMENT
 import UIKit
 
 enum LLVMProfileBootstrap {
@@ -69,10 +71,13 @@ final class LLVMProfileAppDelegate: NSObject, UIApplicationDelegate {
         LLVMProfileBootstrap.writeIfAvailable()
     }
 }
+#endif
 
 @main
 struct iOSApp: App {
+#if LLVM_PGO_INSTRUMENT
     @UIApplicationDelegateAdaptor(LLVMProfileAppDelegate.self) var appDelegate
+#endif
 
     var body: some Scene {
         WindowGroup {

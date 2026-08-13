@@ -31,9 +31,9 @@ flowchart LR
 |------|------|------|
 | K/N 编译开关 | [`demo/build.gradle.kts`](../../demo/build.gradle.kts) | 读 `LLVM_PGO_TYPE`，覆盖 `clangOptFlags` / `clangDebugFlags` / `clangFlags`；插装侧带 `-mllvm -disable-vp` |
 | Profile 数据 | [`demo/llvmProfile/`](../../demo/llvmProfile/) | `profraw/` 原始数据，`real_ios.profdata` 合并结果 |
-| Profile Runtime Pod | [`iosApp/components/LLVMCompileRT/`](../../iosApp/components/LLVMCompileRT/) | 提供与 KN 同版本的 `libclang_rt.profile_ios.a` / `iossim`（由 setup 脚本从 LLVM16 compiler-rt 编译） |
+| Profile Runtime Pod | [`iosApp/components/LLVMCompileRT/`](../../iosApp/components/LLVMCompileRT/) | 提供与 KN 同版本的 `libclang_rt.profile_ios.a` / `iossim`（iossim 为 arm64+x86_64 fat；由 setup 脚本从 LLVM16 compiler-rt 编译） |
 | Pod 条件依赖 | [`iosApp/Podfile`](../../iosApp/Podfile) | 仅 `LLVMPGO` 时 `pod 'LLVMCompileRT'` |
-| 运行时落盘 | [`iosApp/iosApp/iOSApp.swift`](../../iosApp/iosApp/iOSApp.swift) | 设置 `LLVM_PROFILE_FILE`，定时 / 进后台调用 `__llvm_profile_write_file` |
+| 运行时落盘 | [`iosApp/iosApp/iOSApp.swift`](../../iosApp/iosApp/iOSApp.swift) | 仅 `#if LLVM_PGO_INSTRUMENT`：设置 profile 路径，定时 / 进后台调用 `__llvm_profile_write_file` |
 | 脚本 | [`iosApp/scripts/`](../../iosApp/scripts/) | 编译 runtime、插装构建、merge、优化构建 |
 
 ## 3. 一键脚本流程
@@ -46,7 +46,7 @@ flowchart LR
 bash iosApp/scripts/setup_llvm_compile_rt.sh
 ```
 
-用 Kotlin/Native 自带的 LLVM16 clang，从 compiler-rt 16.0.0 源码编译完整的 `libclang_rt.profile_*.a` 到 `LLVMCompileRT`（**不要**直接拷 Xcode clang17 的 profile runtime，ABI / raw profile 版本不匹配）。
+用 Kotlin/Native 自带的 LLVM16 clang，从 compiler-rt 16.0.0 源码编译完整的 `libclang_rt.profile_*.a` 到 `LLVMCompileRT`（**不要**直接拷 Xcode clang17 的 profile runtime，ABI / raw profile 版本不匹配）。`iossim` 会编 arm64 + x86_64 再用 `lipo` 合成 fat，以覆盖 `ios_simulator_arm64` / `ios_x64`。
 
 ### 步骤 2：打插装包
 
@@ -58,7 +58,7 @@ bash iosApp/scripts/build_pgo_instrumented.sh --simulator
 bash iosApp/scripts/build_pgo_instrumented.sh --device
 ```
 
-脚本会：`LLVM_PGO_TYPE=LLVMPGO` → `pod install`（引入 LLVMCompileRT）→ `xcodebuild`。
+脚本会：`LLVM_PGO_TYPE=LLVMPGO` → `pod install`（引入 LLVMCompileRT）→ `xcodebuild`，并传入 `SWIFT_ACTIVE_COMPILATION_CONDITIONS=LLVM_PGO_INSTRUMENT` 打开 App 侧落盘逻辑。普通包 / MachineOutliner 包**不要**传该宏，不会挂 3s 定时器。
 
 ### 步骤 3：运行并采集
 
@@ -178,6 +178,7 @@ bash ./gradlew :demo:syncFramework \
 | 运行崩溃在 `__llvm_profile_instrument_target` | 用了 **Xcode clang17** 的 `libclang_rt.profile_*.a`，与 KN **LLVM16** 插装的 value-profiling ABI 不匹配。必须用本仓库 setup 脚本从 **compiler-rt 16.0.0** 编出的完整 runtime |
 | 链接缺 `_lprofGetVPDataReader` / `_lprofSetupValueProfiler` 等 | 曾为避崩把 `InstrProfilingValue.o` 从 `.a` 里删掉 / stub。即便插装侧已 `-disable-vp`，runtime 仍需保留该目标文件以解析上述符号 |
 | 链接缺 `_lprofGetHostName` | 手动编 compiler-rt 时未定义 `COMPILER_RT_HAS_UNAME`（以及 Darwin 上常用的 `COMPILER_RT_HAS_FCNTL_LCK` / `ATOMICS`）。setup 脚本已补齐 |
+| Intel 模拟器链接 `symbol(s) not found for architecture x86_64` | 旧版 runtime 只有 arm64 slice。setup 脚本已对 `libclang_rt.profile_iossim.a` 做 arm64+x86_64 `lipo`；请重跑 `setup_llvm_compile_rt.sh` |
 
 ### 7.2 Value Profiling（VP）与 `truncated profile data`
 
@@ -197,8 +198,9 @@ Machine Outliner 主要依赖「热/冷」计数；关掉 VP 不影响本指引�
 |------|------------|
 | 没有 `.profraw` | 未链上 LLVM16 profile runtime；或进程被强杀未走落盘逻辑；看日志里 `[LLVM_PGO]` 的路径与 `write_file` 返回值 |
 | `.profraw` 体积成倍变大 | App 内定时 dump 可能对同一路径 **多次 append**；`llvm-profdata merge` 能吃拼接 raw，但导出前可先清 Documents 或只保留一份 |
-| Xcode 的 `llvm-profdata` 报 raw version mismatch（如 v8 vs v10） | KN 插装产出 **raw format version 8**；Xcode 17 工具期望更新版本。**必须用** `~/.konan/dependencies/llvm-16.0.0-*/bin/llvm-profdata` |
+| Xcode 的 `llvm-profdata` 报 raw version mismatch（如 v8 vs v10） | KN 插装产出 **raw format version 8**；Xcode 17 工具期望更新版本。**必须用** `~/.konan/dependencies/llvm-16.0.0-*-macos-*/bin/llvm-profdata`（`merge_profraw.sh` 优先 glob 匹配；命中非 16 会 warn） |
 | 用本机新版 clang 随便生成一份 seed `.profdata` 给 KN | format / 版本不兼容，PGO use 无效或报错。应用本仓库插装包真实跑出来的 profile 再 merge |
+| 正式包里每 3s 打 `[LLVM_PGO]` 日志 / 空转定时器 | 落盘逻辑已用 `#if LLVM_PGO_INSTRUMENT` 包起来；只有 `build_pgo_instrumented.sh` 会传该编译条件。普通 / MachineOutliner 包不要手动加该宏 |
 
 ### 7.4 Kotlin/Native / Gradle 编译
 

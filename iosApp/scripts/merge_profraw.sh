@@ -19,21 +19,18 @@ if [[ ${#PROFRAW_FILES[@]} -eq 0 ]]; then
 fi
 
 find_llvm_profdata() {
-  local candidates=(
-    "$HOME/.konan/dependencies/llvm-16.0.0-aarch64-macos-essentials-65/bin/llvm-profdata"
-    "$HOME/.konan/dependencies/llvm-19-aarch64-macos-essentials-79/bin/llvm-profdata"
-  )
-  local c
-  for c in "${candidates[@]}"; do
-    if [[ -x "$c" ]]; then
-      echo "$c"
-      return 0
-    fi
-  done
-  # 回退：任意 konan llvm-profdata / xcrun
+  # 优先：与插装同大版本的 KN LLVM16（glob，避免写死 essentials hash 后缀）
+  local llvm16
+  llvm16="$(ls -d "$HOME"/.konan/dependencies/llvm-16.0.0-*-macos-*/bin/llvm-profdata 2>/dev/null | sort -V | tail -1 || true)"
+  if [[ -n "$llvm16" && -x "$llvm16" ]]; then
+    echo "$llvm16"
+    return 0
+  fi
+
+  # 回退：任意 konan llvm-profdata / PATH / xcrun（可能与 LLVM16 不一致，调用方需 warn）
   local found
-  found="$(find "$HOME/.konan/dependencies" -name llvm-profdata -type f 2>/dev/null | head -1 || true)"
-  if [[ -n "$found" ]]; then
+  found="$(find "$HOME/.konan/dependencies" -name llvm-profdata -type f 2>/dev/null | sort -V | tail -1 || true)"
+  if [[ -n "$found" && -x "$found" ]]; then
     echo "$found"
     return 0
   fi
@@ -52,6 +49,15 @@ PROFDATA_BIN="$(find_llvm_profdata)" || {
   echo "error: 找不到 llvm-profdata" >&2
   exit 1
 }
+
+case "$PROFDATA_BIN" in
+  */llvm-16.0.0-*/bin/llvm-profdata) ;;
+  *)
+    echo "warning: 未命中 KN LLVM16 的 llvm-profdata，当前使用: $PROFDATA_BIN" >&2
+    echo "         插装产物为 LLVM16 raw profile；版本不匹配可能导致 merge 失败或静默损坏。" >&2
+    echo "         请先执行一次 iOS 构建以下载 ~/.konan/dependencies/llvm-16.0.0-*-macos-*。" >&2
+    ;;
+esac
 
 echo "Using: $PROFDATA_BIN"
 echo "Input: ${PROFRAW_FILES[*]}"

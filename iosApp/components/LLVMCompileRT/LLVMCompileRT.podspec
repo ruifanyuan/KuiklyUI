@@ -3,9 +3,9 @@ Pod::Spec.new do |s|
   s.version      = '1.0.0'
   s.summary      = 'LLVM Clang Profile Runtime，用于 KuiklyUI demo 的 LLVM PGO 插装链接'
   s.description  = <<-DESC
-    提供 libclang_rt.profile_ios.a / libclang_rt.profile_iossim.a，
+    提供 libclang_rt.profile_ios.a / libclang_rt.profile_iossim.a（iossim 为 arm64+x86_64 fat），
     仅在 LLVM_PGO_TYPE=LLVMPGO 插装包中引入，供运行时写出 .profraw。
-    请先执行 iosApp/scripts/setup_llvm_compile_rt.sh 从 Xcode 工具链拷贝静态库。
+    请先执行 iosApp/scripts/setup_llvm_compile_rt.sh（优先工具链自带同版本库，否则从 compiler-rt 源码编译）。
   DESC
   s.homepage     = 'https://github.com/Tencent-TDS/KuiklyUI'
   s.license      = { :type => 'MIT' }
