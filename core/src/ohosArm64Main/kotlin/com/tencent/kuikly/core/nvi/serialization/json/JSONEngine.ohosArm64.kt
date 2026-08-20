@@ -17,7 +17,7 @@ package com.tencent.kuikly.core.nvi.serialization.json
 
 actual object JSONEngine {
 
-    /** 文本解析走 [JSONTokener]：严格对象优先 cJSON 惰性树，其余回退宽松扫描。 */
+    /** 文本解析走 [JSONTokener]：严格对象优先 KRJSON 惰性树，其余回退宽松扫描。 */
     actual fun parse(jsonStr: String): Any? {
         return JSONTokener(jsonStr).nextValue()
     }

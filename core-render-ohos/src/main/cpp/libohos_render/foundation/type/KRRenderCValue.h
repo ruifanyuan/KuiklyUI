@@ -25,7 +25,7 @@
  */
 typedef struct KRRenderCValue {
     // 定义一个枚举类型来表示值的类型
-    // NATIVE_JSON: longValue 是 KRLazyCJsonBridge 的 shared_ptr 句柄，Kotlin 侧 retain 后惰性读取
+    // NATIVE_JSON: longValue 是 KRJSONValue 的位型（owned）；Kotlin 侧 KRJSONRetain 后惰性读取
     enum Type { NULL_VALUE, INT, LONG, FLOAT, DOUBLE, BOOL, STRING, BYTES, ARRAY, NATIVE_JSON } type;
 
     // 定义一个联合体来存储不同类型的值

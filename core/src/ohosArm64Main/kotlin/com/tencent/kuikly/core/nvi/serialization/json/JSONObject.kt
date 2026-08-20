@@ -35,14 +35,13 @@ actual class JSONObject internal actual constructor(
         actual fun quote(data: String?): String = quoteJSONString(data)
 
         /**
-         * 包装原生 cJSON 树（`KRLazyCJsonBridge` 的 shared_ptr 句柄），读取时按需转换。
-         * 句柄所有权仍属调用方。
+         * 包装原生 KRJSON 值（`NATIVE_JSON` 的位型），读取时按需转换。
+         * 调用方仍拥有传入字的所有权；这里会再 retain 一份。
          */
         internal fun fromCJsonOwner(ownerPtr: Long): JSONObject = LazyCJsonMap.fromOwner(ownerPtr)
 
         /**
-         * 同 [fromCJsonOwner]，但根节点是数组时返回 [JSONArray]（原生 Map / Array 都走
-         * `NATIVE_JSON`）。
+         * 同 [fromCJsonOwner]，但根节点是数组时返回 [JSONArray]。
          */
         internal fun fromCJsonOwnerAny(ownerPtr: Long): Any? = LazyCJsonMap.fromOwnerAny(ownerPtr)
     }

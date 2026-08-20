@@ -32,8 +32,8 @@
 #include <vector>
 #include "KRRenderCValue.h"
 #include "libohos_render/foundation/ark_ts.h"
-#include "libohos_render/foundation/type/KRLazyCJsonBridge.h"
 #include "libohos_render/foundation/type/KRRenderCValue.h"
+#include "libohos_render/utils/json/KRJSONValue.h"
 #include "libohos_render/utils/KRJsUtil.h"
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/NAPIUtil.h"
@@ -709,9 +709,9 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
             delete[] array_ptr_;
             array_ptr_ = nullptr;
         }
-        if (owned_cjson_owner_ != 0) {
-            kuikly_cjson_release(owned_cjson_owner_);
-            owned_cjson_owner_ = 0;
+        if (owned_krjson_ != 0) {
+            kuikly::util::json::Release(owned_krjson_);
+            owned_krjson_ = 0;
         }
     }
 
@@ -724,23 +724,26 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
     mutable std::string cached_string_for_c_value_;
     mutable KRRenderCValue c_value_;
     mutable KRRenderCValue *array_ptr_ = nullptr;  // 指向数组的指针, 用于防止数组元素copy
-    /** NATIVE_JSON 的 shared_ptr 句柄，Kotlin 侧 retain 一份，生命周期各自独立 */
-    mutable int64_t owned_cjson_owner_ = 0;
+    /**
+     * NATIVE_JSON 的 KRJSONValue 字（owned）。Kotlin 侧 KRJSONRetain 自己的一份，
+     * 本对象析构后子树仍可由 Kotlin 壳持有（异步派发必须如此）。与 iOS 对
+     * NSDictionary 的 retain 对齐：每个 object/array 节点独立引用计数。
+     */
+    mutable KRJSONValue owned_krjson_ = 0;
 
     /**
      * 用于 toCValue() 内部调用，调用时已持有锁。
      *
-     * Map / 无二进制元素的 Array 以 cJSON 树的共享所有权句柄传给 Kotlin（NATIVE_JSON），
-     * 不再 cJSON_PrintUnformatted + Kotlin 侧重新解析。Kotlin 侧会 retain 自己的句柄，
-     * 因此本对象析构后那棵树依然有效（异步派发场景必须如此）。
+     * Map / 无二进制元素的 Array 以 KRJSONValue 字传给 Kotlin（NATIVE_JSON），
+     * 不再 stringify + Kotlin 侧重新解析。
      */
     void ToNativeJsonLocked() const {
-        if (owned_cjson_owner_ == 0) {
-            owned_cjson_owner_ = kuikly_cjson_owner_create(toJson(this));
+        if (owned_krjson_ == 0) {
+            owned_krjson_ = toKRJSON(this);
         }
         c_value_.type = KRRenderCValue::Type::NATIVE_JSON;
         c_value_.size = 0;
-        c_value_.value.longValue = owned_cjson_owner_;
+        c_value_.value.longValue = static_cast<int64_t>(owned_krjson_);
     }
 
     JSVM_Status ToJsonMapOrArray(JSVM_Env js_env, JSVM_Value *js_value) const {
@@ -774,7 +777,52 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
         return false;
     }
 
-    // 使用原始指针避免 shared_from_this() 的线程安全问题
+    /** KRRenderValue → owned KRJSONValue（调用方负责 Release）。 */
+    static KRJSONValue toKRJSON(const KRRenderValue *value) {
+        namespace kjson = kuikly::util::json;
+        if (value->isMap()) {
+            KRJSONValue obj = kjson::NewObject();
+            auto map = value->toMap();
+            for (const auto &entry : map) {
+                KRJSONValue child = toKRJSON(entry.second.get());
+                kjson::ObjectPut(obj, entry.first.c_str(), entry.first.size(), child);
+                kjson::Release(child);
+            }
+            return obj;
+        }
+        if (value->isArray()) {
+            KRJSONValue arr = kjson::NewArray();
+            auto array = value->toArray();
+            for (const auto &element : array) {
+                KRJSONValue child = toKRJSON(element.get());
+                kjson::ArrayAppend(arr, child);
+                kjson::Release(child);
+            }
+            return arr;
+        }
+        if (value->isBool()) {
+            return kjson::NewBool(value->toBool());
+        }
+        if (value->isInt()) {
+            return kjson::NewInt(value->toInt());
+        }
+        if (value->isLong()) {
+            return kjson::NewInt(value->toLong());
+        }
+        if (value->isFloat()) {
+            return kjson::NewDouble(static_cast<double>(value->toFloat()));
+        }
+        if (value->isDouble()) {
+            return kjson::NewDouble(value->toDouble());
+        }
+        if (value->isString()) {
+            std::string s = value->toString();
+            return kjson::NewString(s.c_str(), s.size());
+        }
+        return kjson::NewNull();
+    }
+
+    // 使用原始指针避免 shared_from_this() 的线程安全问题（JSVM/NAPI stringify 仍走 cJSON）
     static cJSON *toJson(const KRRenderValue *value) {
         if (value->isMap()) {
             cJSON* obj = cJSON_CreateObject();
