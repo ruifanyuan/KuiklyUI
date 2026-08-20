@@ -16,8 +16,8 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
- * `NATIVE_JSON` 惰性桥接自检：构造一棵自持有的 cJSON 树，模拟原生产者在调用返回后
- * 立刻释放自己的句柄，验证 Kotlin 侧仍能安全读取（共享所有权）、子对象比父对象活得久、
+ * `NATIVE_JSON` 惰性桥接自检：构造一棵自持有的 KRJSON 树，模拟原生产者在调用返回后
+ * 立刻释放自己的引用，验证 Kotlin 侧仍能安全读取（节点 retain）、子对象比父对象活得久、
  * 以及物化后行为与其他平台一致。
  *
  * 返回 `OK ...` 或 `FAIL ...`，供 demo 的桥接回归页展示。放在 core 内是因为
@@ -30,7 +30,7 @@ fun verifyOhosLazyJsonBridge(): String {
 
     val owner = CJsonNative.ownerFromJson(json)
     if (owner == 0L) {
-        return "FAIL cjson owner create failed (render .so symbols missing?)"
+        return "FAIL KRJSON parse failed (render .so symbols missing?)"
     }
     val wrapped = JSONObject.fromCJsonOwnerAny(owner)
     // 生产者句柄立刻释放：之后所有读取都只依赖 Kotlin 自己 retain 的那一份
@@ -87,7 +87,7 @@ fun verifyOhosLazyJsonBridge(): String {
                 expectEquals(failures, "entry value before mid-iter put", value, 1)
                 scalarWrapped.put("z", 9)
             } else {
-                // 物化后 LazyEntry.value 走 map[key]，不得再碰已释放的 cJSON*
+                // 物化后 LazyEntry.value 走 map[key]，不得再碰已释放的原生树
                 expectEquals(failures, "entry value after mid-iter put ($key)", value, scalarWrapped.opt(key))
             }
         }
@@ -123,7 +123,7 @@ fun verifyOhosLazyJsonBridge(): String {
     }
 
     return if (failures.isEmpty()) {
-        "OK ohos lazy cJSON bridge (shared ownership + array root)"
+        "OK ohos lazy KRJSON bridge (per-node retain + array root)"
     } else {
         "FAIL ${failures.joinToString("; ")}"
     }

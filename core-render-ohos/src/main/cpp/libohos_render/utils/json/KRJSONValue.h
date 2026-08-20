@@ -141,6 +141,10 @@ const char *GetString(KRJSONValue v, size_t *out_len);
 size_t GetSize(KRJSONValue v);
 KRJSONValue ArrayGet(KRJSONValue array, size_t index);
 KRJSONValue ObjectGet(KRJSONValue object, const char *key, size_t key_len);
+/** O(1) indexed access over the insertion-ordered member vector. Missing → INVALID. */
+KRJSONValue ObjectValueAt(KRJSONValue object, size_t index);
+/** Borrowed key bytes, valid while `object` is retained. Missing → nullptr. */
+const char *ObjectKeyAt(KRJSONValue object, size_t index);
 void ObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata);
 
 std::string Dump(KRJSONValue v);

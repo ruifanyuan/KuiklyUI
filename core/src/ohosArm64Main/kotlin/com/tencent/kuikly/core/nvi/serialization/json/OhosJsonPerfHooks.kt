@@ -18,8 +18,14 @@ package com.tencent.kuikly.core.nvi.serialization.json
 import kotlin.system.getTimeNanos
 
 /**
+<<<<<<< HEAD
  * OHOS JSON 性能探针：供 demo `JsonPlatformTestPage` 做 A/B（宽松扫描 vs 惰性 KRJSON）。
  *
+=======
+ * OHOS JSON 性能探针：供 demo `JsonPlatformTestPage` 做 A/B（Abstract vs 惰性 KRJSON）。
+ *
+ * - [setForceAbstractTokener]：强制文本 parse 走 Abstract（模拟分支前语义）
+>>>>>>> 370319f1 (feat(ohos): bridge NATIVE_JSON via KRJSON per-node retain)
  * - [measureWrapAfterNativeParseNanos]：native `KRJSONParse` 完成后，仅计量 Kotlin 包装耗时
  */
 object OhosJsonPerfHooks {
@@ -57,12 +63,27 @@ object OhosJsonPerfHooks {
     fun bridgeReleaseOwner(owner: Long) = CJsonNative.release(owner)
 
     /**
+<<<<<<< HEAD
      * before 臂（分支前语义）：值 → `KRJSONDump` 成字符串 → 宽松扫描器全量 parse。
      * 覆盖旧路径「Native 打印字符串 + Kotlin 重新解析」两段成本。
      */
     fun bridgeBeforeArmRoot(owner: Long): Any? {
         if (owner == 0L) {
             return null
+=======
+     * before 臂（分支前语义）：值 → `KRJSONDump` 成字符串 → **Abstract** 全量 parse。
+     * 覆盖旧路径「Native 打印字符串 + Kotlin 重新解析」两段成本。
+     */
+    fun bridgeBeforeArmRoot(owner: Long): Any? {
+        if (owner == 0L) return null
+        val text = CJsonNative.print(owner) ?: return null
+        val prev = forceAbstractTokener
+        forceAbstractTokener = true
+        return try {
+            JSONTokener(text).nextValue()
+        } finally {
+            forceAbstractTokener = prev
+>>>>>>> 370319f1 (feat(ohos): bridge NATIVE_JSON via KRJSON per-node retain)
         }
         val text = CJsonNative.print(owner) ?: return null
         return LenientJSONTokener(text).nextValue()

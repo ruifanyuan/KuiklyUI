@@ -93,6 +93,12 @@ KRJSONValue KRJSONArrayGet(KRJSONValue array, size_t index) {
 KRJSONValue KRJSONObjectGet(KRJSONValue object, const char *key) {
     return kjson::ObjectGet(object, key, key != nullptr ? std::strlen(key) : 0);
 }
+KRJSONValue KRJSONObjectValueAt(KRJSONValue object, size_t index) {
+    return kjson::ObjectValueAt(object, index);
+}
+const char *KRJSONObjectKeyAt(KRJSONValue object, size_t index) {
+    return kjson::ObjectKeyAt(object, index);
+}
 void KRJSONObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata) {
     kjson::ObjectForEach(object, visitor, userdata);
 }

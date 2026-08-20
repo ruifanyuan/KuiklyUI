@@ -280,6 +280,24 @@ KRJSONValue ObjectGet(KRJSONValue object, const char *key, size_t key_len) {
     }
     return KRJSON_INVALID;
 }
+KRJSONValue ObjectValueAt(KRJSONValue object, size_t index) {
+    if (TagOf(object) == kTagObject) {
+        auto &members = static_cast<KRObjectBox *>(AsBox(object))->members;
+        if (index < members.size()) {
+            return members[index].second;  // borrowed
+        }
+    }
+    return KRJSON_INVALID;
+}
+const char *ObjectKeyAt(KRJSONValue object, size_t index) {
+    if (TagOf(object) == kTagObject) {
+        auto &members = static_cast<KRObjectBox *>(AsBox(object))->members;
+        if (index < members.size()) {
+            return members[index].first.c_str();
+        }
+    }
+    return nullptr;
+}
 void ObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata) {
     if (TagOf(object) != kTagObject || visitor == nullptr) {
         return;

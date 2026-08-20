@@ -93,7 +93,11 @@ KUIKLY_EXPORT KRJSONValue KRJSONArrayGet(KRJSONValue array, size_t index);
 /** Object member by key; BORROWED. KRJSON_INVALID if missing. O(n) linear scan
  *  over the flat member list (fast for the small objects on the render path). */
 KUIKLY_EXPORT KRJSONValue KRJSONObjectGet(KRJSONValue object, const char *key);
-/** Iterate object members (order unspecified). */
+/** Object member by insertion index; BORROWED. KRJSON_INVALID if out of range. */
+KUIKLY_EXPORT KRJSONValue KRJSONObjectValueAt(KRJSONValue object, size_t index);
+/** Borrowed key C string, valid while `object` is retained. NULL if out of range. */
+KUIKLY_EXPORT const char *KRJSONObjectKeyAt(KRJSONValue object, size_t index);
+/** Iterate object members in insertion order. */
 KUIKLY_EXPORT void KRJSONObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata);
 
 // ---- constructors (return OWNED values) ----

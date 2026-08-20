@@ -20,80 +20,60 @@ import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.createCleaner
 
 /**
- * cJSON 数组之上的惰性 List，是 OHOS 平台 [JSONArray] 的底层容器之一。
+ * KRJSON array 之上的惰性 List，是 OHOS 平台 [JSONArray] 的底层容器之一。
  * 与 [LazyCJsonMap] / Apple [LazyNSArrayList] 同构：读时按需转换，写时物化。
  */
 @OptIn(ExperimentalNativeApi::class)
 internal class LazyCJsonList private constructor(
-    private var ownerPtr: Long,
-    private var nodePtr: Long,
-    private var releaseToken: OwnerRelease?,
+    private var native: Long,
+    private var releaseToken: ValueRelease?,
     private var cleaner: Any?,
 ) : AbstractMutableList<Any?>() {
 
-    private class OwnerRelease(private val ptr: Long) {
+    private class ValueRelease(private val bits: Long) {
         private val done = AtomicInt(0)
 
         fun releaseOnce() {
-            if (done.compareAndSet(0, 1) && ptr != 0L) {
-                CJsonNative.release(ptr)
+            if (done.compareAndSet(0, 1)) {
+                CJsonNative.release(bits)
             }
         }
     }
 
     private var containerCache: MutableMap<Int, Any?>? = null
     private var materialized: MutableList<Any?>? = null
-
-    /** 顺序游标：cJSON 是链表，缓存「上次访问的下标 → child*」让顺序遍历均摊 O(1)。 */
-    private var cursorIndex: Int = -1
-    private var cursorNode: Long = 0L
-
-    /** cJSON_GetArraySize 是 O(n)，缓存一次避免每次 get(i) 都重扫成 O(n²)。 */
     private var cachedSize: Int = -1
 
     companion object {
-        fun fromOwner(ownerPtr: Long): JSONArray {
-            if (ownerPtr == 0L) {
+        fun fromOwner(bits: Long): JSONArray {
+            if (bits == 0L || CJsonNative.isInvalid(bits)) {
                 return JSONArray()
             }
-            val held = CJsonNative.retain(ownerPtr)
-            if (held == 0L) {
-                return JSONArray()
-            }
-            val root = CJsonNative.ownerRoot(held)
-            if (root == 0L || CJsonNative.nodeKind(root) != CJSON_KIND_ARRAY) {
+            val held = CJsonNative.retain(bits)
+            if (CJsonNative.type(held) != KRJSON_KIND_ARRAY) {
                 CJsonNative.release(held)
                 return JSONArray()
             }
-            return JSONArray(wrap(held, root))
+            return JSONArray(wrap(held))
         }
 
-        fun fromNode(ownerPtr: Long, nodePtr: Long): JSONArray {
-            if (ownerPtr == 0L || nodePtr == 0L) {
-                return JSONArray()
-            }
-            val held = CJsonNative.retain(ownerPtr)
-            if (held == 0L) {
-                return JSONArray()
-            }
-            return JSONArray(wrap(held, nodePtr))
-        }
+        internal fun fromValue(bits: Long): JSONArray = fromOwner(bits)
 
-        private fun wrap(held: Long, nodePtr: Long): LazyCJsonList {
-            val token = OwnerRelease(held)
+        private fun wrap(held: Long): LazyCJsonList {
+            val token = ValueRelease(held)
             val cleaner = createCleaner(token) { it.releaseOnce() }
-            return LazyCJsonList(held, nodePtr, token, cleaner)
+            return LazyCJsonList(held, token, cleaner)
         }
     }
 
     override val size: Int
         get() {
             materialized?.let { return it.size }
-            if (nodePtr == 0L) {
+            if (native == 0L) {
                 return 0
             }
             if (cachedSize < 0) {
-                cachedSize = CJsonNative.size(nodePtr)
+                cachedSize = CJsonNative.size(native)
             }
             return cachedSize
         }
@@ -141,67 +121,32 @@ internal class LazyCJsonList private constructor(
         releaseToken?.releaseOnce()
         releaseToken = null
         cleaner = null
-        ownerPtr = 0L
-        nodePtr = 0L
-        cursorIndex = -1
-        cursorNode = 0L
+        native = 0L
         cachedSize = -1
     }
 
-    /**
-     * 出桥快路径：未物化、未派生过子容器且原生树仍在时，直接 `cJSON_PrintUnformatted`。
-     * 派生过子容器可能被就地改写，cJSON 树会过期，故保守回退 [commonStringify]。
-     */
     internal fun nativePrintCompactOrNull(): String? {
-        if (materialized != null || containerCache != null || nodePtr == 0L) {
+        if (materialized != null || containerCache != null || native == 0L) {
             return null
         }
-        return CJsonNative.print(nodePtr)
-    }
-
-    /** 取第 index 个 child*：顺序访问走兄弟指针 O(1)，随机访问回退 item_at O(n)。 */
-    private fun childPtrAt(index: Int): Long {
-        if (nodePtr == 0L) {
-            return 0L
-        }
-        val node = when {
-            cursorNode != 0L && index == cursorIndex -> cursorNode
-            cursorNode != 0L && index == cursorIndex + 1 -> CJsonNative.nextSibling(cursorNode)
-            index == 0 -> CJsonNative.firstChild(nodePtr)
-            else -> CJsonNative.itemAt(nodePtr, index)
-        }
-        cursorIndex = index
-        cursorNode = node
-        return node
+        return CJsonNative.print(native)
     }
 
     private fun optAt(index: Int): Any? {
-        if (nodePtr == 0L) {
+        if (native == 0L) {
             return null
         }
-        val child = childPtrAt(index)
-        if (child == 0L) {
+        val child = CJsonNative.arrayGet(native, index)
+        if (CJsonNative.isInvalid(child)) {
             return null
         }
-        return when (CJsonNative.nodeKind(child)) {
-            0 -> null
-            CJSON_KIND_BOOL -> CJsonNative.asBool(child, false)
-            CJSON_KIND_NUMBER -> numberFromCJson(CJsonNative.asNumber(child, 0.0))
-            CJSON_KIND_STRING -> CJsonNative.asString(child)
-            CJSON_KIND_OBJECT -> {
-                if (ownerPtr == 0L) {
-                    null
-                } else {
-                    cacheContainer(index, LazyCJsonMap.fromNode(ownerPtr, child))
-                }
-            }
-            CJSON_KIND_ARRAY -> {
-                if (ownerPtr == 0L) {
-                    null
-                } else {
-                    cacheContainer(index, fromNode(ownerPtr, child))
-                }
-            }
+        return when (CJsonNative.type(child)) {
+            KRJSON_KIND_NULL -> null
+            KRJSON_KIND_BOOL -> CJsonNative.asBool(child, false)
+            KRJSON_KIND_INT, KRJSON_KIND_UINT, KRJSON_KIND_DOUBLE -> numberFromKRJSON(child)
+            KRJSON_KIND_STRING -> CJsonNative.asString(child)
+            KRJSON_KIND_OBJECT -> cacheContainer(index, LazyCJsonMap.fromValue(child))
+            KRJSON_KIND_ARRAY -> cacheContainer(index, fromValue(child))
             else -> null
         }
     }

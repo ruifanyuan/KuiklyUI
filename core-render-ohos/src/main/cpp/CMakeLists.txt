@@ -96,7 +96,6 @@ set(SOURCE_SET
         libohos_render/utils/json/KRJSONReader.cpp
         libohos_render/utils/json/KRJSONDomBuilder.cpp
         libohos_render/api/src/KRJson.cpp
-        libohos_render/foundation/type/KRLazyCJsonBridge.cpp
         libohos_render/utils/KRStringUtil.cpp
         libohos_render/utils/KRViewUtil.cpp
         libohos_render/utils/KRThreadChecker.cpp
