@@ -1,4 +1,4 @@
-headers = ../include/KRRenderCValue.h
+headers = ../include/KRRenderCValue.h ../include/KRJson.h
 ---
 #include <sys/time.h>
 #include <dlfcn.h>
