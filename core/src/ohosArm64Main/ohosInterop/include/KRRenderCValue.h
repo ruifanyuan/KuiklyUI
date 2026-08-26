@@ -16,3 +16,5 @@
 // Redirect to the canonical version in core-render-ohos.
 // Do not duplicate content here; all typedefs and structs live there.
 #include "foundation/type/KRRenderCValue.h"
+// Lazy cJSON FFI for Kotlin/Native cinterop (NATIVE_JSON bridge).
+#include "foundation/type/KRLazyCJsonBridge.h"

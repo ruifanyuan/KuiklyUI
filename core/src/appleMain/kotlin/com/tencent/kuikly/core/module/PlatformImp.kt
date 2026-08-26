@@ -16,6 +16,8 @@
 
 package com.tencent.kuikly.core.module
 
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.get
 import kotlinx.cinterop.addressOf
@@ -30,6 +32,15 @@ actual fun Any.toPlatformObject(): Any {
     }
     if (this is Array<*>) {
         return this.toList()
+    }
+    // 结构化出参：JSONObject / JSONArray 转成 Foundation 容器，端上可直接当
+    // NSDictionary / NSArray 用；否则 Kotlin 对象只能以不可用的代理形式过桥。
+    // 嵌套的 ByteArray 会转成 NSData，二进制不丢。
+    if (this is JSONObject) {
+        return this.toNSDictionary()
+    }
+    if (this is JSONArray) {
+        return this.toNSArray()
     }
     return this
 }

@@ -1,236 +1,75 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
-import com.tencent.kuikly.core.log.KLog
-
 /**
  * Created by kam on 2022/4/11.
+ *
+ * 各平台底层容器不同（Android/JVM/JS：Kotlin 集合；Apple：Foundation 字典；
+ * OHOS：cJSON 树），故声明为 expect 类，公共读写实现见 [AbstractJSONObject]。
  */
-class JSONObject internal constructor(nameValuePairs: MutableMap<String, Any?>) {
-    companion object{
-        private const val TAG = "JSONObject"
+expect class JSONObject {
 
-        fun quote(data: String?): String {
-            if (data == null) {
-                return "\"\""
-            }
-            val stringer = JSONStringer()
-            stringer.open(JSONStringer.Scope.NULL_OBJ, "")
-            stringer.value(data)
-            stringer.close(JSONStringer.Scope.NULL_OBJ, JSONStringer.Scope.NULL_OBJ, "")
-            return stringer.toString()
-        }
+    internal constructor(nameValuePairs: MutableMap<String, Any?>)
 
-    }
+    constructor()
+
+    @Throws(JSONException::class)
+    constructor(json: String)
+
+    @Throws(JSONException::class)
+    constructor(jsonTokener: JSONTokener)
 
     internal var nameValuePairs: MutableMap<String, Any?>
 
-    init {
-        this.nameValuePairs = nameValuePairs
-    }
+    fun length(): Int
 
-    constructor(): this(JSONEngine.getMutableMap())
+    fun put(name: String, value: Boolean): JSONObject
 
-    @Throws(JSONException::class)
-    constructor(json: String) : this(
-        (JSONEngine.parse(json).also { result ->
-            if (result !is JSONObject) {
-                throw JSON.typeMismatch(result, "JSONObject")
-            }
-        } as JSONObject).nameValuePairs
-    )
+    fun put(name: String, value: Int): JSONObject
 
-    @Throws(JSONException::class)
-    constructor(jsonTokener: JSONTokener) : this(
-        (jsonTokener.nextValue().also { result ->
-            if (result !is JSONObject) {
-                throw JSON.typeMismatch(result, "JSONObject")
-            }
-        } as JSONObject).nameValuePairs
-    )
+    fun put(name: String, value: Long): JSONObject
 
-    fun length(): Int {
-        return nameValuePairs.size
-    }
+    fun put(name: String, value: Double): JSONObject
 
-    fun put(name: String, value: Boolean): JSONObject {
-        nameValuePairs[name] = value
-        return this
-    }
+    fun put(name: String, value: Any?): JSONObject
 
-    fun put(name: String, value: Int): JSONObject {
-        nameValuePairs[name] = value
-        return this
-    }
+    fun has(name: String): Boolean
 
-    fun put(name: String, value: Long): JSONObject {
-        nameValuePairs[name] = value
-        return this
-    }
+    fun opt(name: String): Any?
 
-    fun put(name: String, value: Double): JSONObject {
-        nameValuePairs[name] = value
-        return this
-    }
+    fun optBoolean(name: String): Boolean
 
-    fun put(name: String, value: Any?): JSONObject {
-        nameValuePairs[name] = value
-        return this
-    }
+    fun optBoolean(name: String, fallback: Boolean): Boolean
 
-    fun has(name: String): Boolean {
-        return nameValuePairs.containsKey(name)
-    }
+    fun optDouble(name: String): Double
 
-    fun opt(name: String): Any? {
-        return nameValuePairs[name]
-    }
+    fun optDouble(name: String, fallback: Double): Double
 
-    fun optBoolean(name: String): Boolean {
-        return optBoolean(name, false)
-    }
+    fun optInt(name: String): Int
 
-    fun optBoolean(name: String, fallback: Boolean): Boolean {
-        val o = opt(name)
-        val result = JSON.toBoolean(o)
-        return result ?: fallback
-    }
+    fun optInt(name: String, fallback: Int): Int
 
-    fun optDouble(name: String): Double {
-        return optDouble(name, 0.0)
-    }
+    fun optLong(name: String): Long
 
-    fun optDouble(name: String, fallback: Double): Double {
-        val o = opt(name)
-        val result = JSON.toDouble(o)
-        return result ?: fallback
-    }
+    fun optLong(name: String, fallback: Long): Long
 
-    fun optInt(name: String): Int {
-        return optInt(name, 0)
-    }
+    fun optString(name: String): String
 
-    fun optInt(name: String, fallback: Int): Int {
-        val o = opt(name)
-        val result = JSON.toInteger(o)
-        return result ?: fallback
-    }
+    fun optString(name: String, fallback: String): String
 
-    fun optLong(name: String): Long {
-        return optLong(name, 0L)
-    }
+    fun optJSONArray(name: String): JSONArray?
 
-    fun optLong(name: String, fallback: Long): Long {
-        val o = opt(name)
-        val result = JSON.toLong(o)
-        return result ?: fallback
-    }
+    fun optJSONObject(name: String): JSONObject?
 
-    fun optString(name: String): String {
-        return optString(name, "")
-    }
+    fun keys(): Iterator<String>
 
-    fun optString(name: String, fallback: String): String {
-        val o = opt(name)
-        val result = JSON.toString(o)
-        return result ?: fallback
-    }
+    fun keySet(): Set<String>
 
-    fun optJSONArray(name: String): JSONArray? {
-        return when (val value = opt(name)) {
-            is JSONArray -> {
-                value
-            }
-
-            is String -> {
-                try {
-                    JSONArray(value)
-                } catch (e: JSONException) {
-                    KLog.e(TAG, "$value can not convert to json")
-                    null
-                }
-            }
-
-            else -> {
-                null
-            }
-        }
-    }
-
-    fun optJSONObject(name: String): JSONObject? {
-        return when (val value = opt(name)) {
-            is JSONObject -> {
-                value
-            }
-            is String -> {
-                try {
-                    JSONObject(value)
-                } catch (e: JSONException) {
-                    KLog.e(TAG, "$value can not convert to json")
-                    null
-                }
-            }
-            else -> {
-                null
-            }
-        }
-    }
-
-    fun keys(): Iterator<String> {
-        return nameValuePairs.keys.iterator()
-    }
-
-    fun keySet(): Set<String> {
-        return nameValuePairs.keys
-    }
-
-    override fun toString(): String {
-        return try {
-            JSONEngine.stringify(this)
-        } catch (e: JSONException) {
-            "{}"
-        }
-    }
-
-    fun toMap(): MutableMap<String, Any> {
-        val map = mutableMapOf<String, Any>()
-        val keys = keys()
-        for (key in keys) {
-            when (val value = opt(key)) {
-                is Int -> {
-                    map[key] = value
-                }
-                is Long -> {
-                    map[key] = value
-                }
-                is Double -> {
-                    map[key] = value
-                }
-                is Float -> {
-                    map[key] = value
-                }
-                is String -> {
-                    map[key] = value
-                }
-                is Boolean -> {
-                    map[key] = value
-                }
-                is JSONObject -> {
-                    map[key] = value.toMap()
-                }
-                is JSONArray -> {
-                    map[key] = value.toList()
-                }
-            }
-        }
-        return map
-    }
+    fun toMap(): MutableMap<String, Any>
 
     @Throws(JSONException::class)
-    fun writeTo(stringer: JSONStringer) {
-        stringer.startObject()
-        for ((key, value) in nameValuePairs) {
-            stringer.key(key).value(value)
-        }
-        stringer.endObject()
+    fun writeTo(stringer: JSONStringer)
+
+    companion object {
+        fun quote(data: String?): String
     }
 }

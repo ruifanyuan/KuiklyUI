@@ -312,7 +312,7 @@ export class KRNativeRenderController {
     const data: KRRecord = {};
     data[KRWidthKey] = width;
     data[KRHeightKey] = height;
-    render.sendEvent(this.instanceId, KRWindowSizeDidChangedEventKey, JSON.stringify(data));
+    render.sendEvent(this.instanceId, KRWindowSizeDidChangedEventKey, data);
   }
 
   paramsReady(): boolean {
@@ -361,7 +361,7 @@ export class KRNativeRenderController {
     render.updateConfig(this.instanceId, JSON.stringify(data));
 
     // notify core to mark text elements dirty
-    render.sendEvent(this.instanceId, KRConfigurationUpdateEventKey, JSON.stringify(data));
+    render.sendEvent(this.instanceId, KRConfigurationUpdateEventKey, data);
   }
 
   onSafeAreaInsetsChanged(rect: KRRect) {
@@ -591,10 +591,11 @@ export class KRNativeRenderController {
   private doSendEvent(event: string, data: KRRecord, sync?: boolean) {
     this.runKRRenderTask(() => {
       const shouldSync = sync ?? this.syncSendEvent(event);
+      // Record 直接下发：Native 侧构造 Map → NATIVE_JSON，避免 JSON.stringify + Kotlin 重解析
       if (shouldSync) {
-        render.sendEventSync(this.instanceId, event, KRConvertUtil.anyToCObject(data), true);
+        render.sendEventSync(this.instanceId, event, data, true);
       } else {
-        render.sendEvent(this.instanceId, event, KRConvertUtil.anyToCObject(data));
+        render.sendEvent(this.instanceId, event, data);
       }
     });
   }

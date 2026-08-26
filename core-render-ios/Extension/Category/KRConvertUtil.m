@@ -772,6 +772,13 @@ const NSString *lineargradientPrefix = @"linear-gradient(";
     return ocObject;
 }
 
++ (id)nativeObjectToKotlinBridgeArg:(id)ocObject {
+    // callKotlin 入参不再做 JSON 序列化：NSDictionary / NSArray 直接透传，Kotlin 入口
+    // 用 toKotlinBridgeArg() 包成惰性 JSONObject / JSONArray（按需转换，不整树拷贝）。
+    // 含 NSData 的数组同样透传，Kotlin 侧继续按二进制处理。
+    return ocObject;
+}
+
 
 /**
  * 获取当前 KeyWindow

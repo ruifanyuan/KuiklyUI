@@ -32,6 +32,8 @@ class IOSMultiTargetEntryBuilder(private val catchException: Boolean, private va
                     .build()
             )
         } else {
+            // 与 IOSTargetEntryBuilder 一致：callKotlin 入参需要 toKotlinBridgeArg()
+            builder.addImport("com.tencent.kuikly.core.utils", "toKotlinBridgeArg")
             builder.addType(
                 TypeSpec.classBuilder(entryFileName())
                         .addProperty(createDelegateProperty())

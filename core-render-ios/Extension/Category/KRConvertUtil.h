@@ -97,6 +97,8 @@ typedef NS_ENUM(NSInteger, KRTextDecorationLineType) {
 + (UIAccessibilityTraits)kr_accessibilityTraits:(id)value;
 + (BOOL)hr_isJsonArray:(id)value;
 + (id)nativeObjectToKotlinObject:(id)ocObject;
+/// Native→Kotlin callKotlin 入参：集合原样透传，由 Kotlin 入口包成惰性 JSONObject/JSONArray
++ (id)nativeObjectToKotlinBridgeArg:(id)ocObject;
 + (UIBezierPath *)hr_parseClipPath:(NSString *)pathData density:(CGFloat)density;
 + (UIWindow *)keyWindow;
 
