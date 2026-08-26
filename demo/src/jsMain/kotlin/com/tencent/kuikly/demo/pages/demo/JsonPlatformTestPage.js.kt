@@ -22,6 +22,18 @@ private const val TOKENER_COMMON = "JSONTokener(common)"
 
 actual fun parseWithTokener(json: String): Any? = JSONTokener(json).nextValue()
 
+actual fun measureNativeParsedWrapNanos(json: String): Long = -1L
+
+actual fun bridgeSupported(): Boolean = false
+
+actual fun bridgeBuildOwner(json: String): Long = 0L
+
+actual fun bridgeReleaseOwner(owner: Long) {}
+
+actual fun bridgeBeforeArmRoot(owner: Long): Any? = null
+
+actual fun bridgeAfterArmRoot(owner: Long): Any? = null
+
 actual fun tokenerVariants(): List<TokenerVariant> = listOf(
     TokenerVariant(TOKENER_COMMON) { JSONTokener(it).nextValue() }
 )
@@ -33,6 +45,8 @@ actual fun currentTokenerName(): String = TOKENER_COMMON
 actual fun selectTokener(name: String) {
     // 只有一份实现，无可切换
 }
+
+actual fun platformPreservesJsonTextKeyOrder(): Boolean = true
 
 actual fun collectGarbage() {
     // JS: no-op, GC is managed by the JS engine

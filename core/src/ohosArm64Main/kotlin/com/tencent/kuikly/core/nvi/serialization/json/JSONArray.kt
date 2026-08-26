@@ -16,9 +16,8 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
- * OHOS 实现：底层容器为 Kotlin List。cJSON 数组不直接惰性包装——cJSON 不区分整数与
- * 浮点，若逐个节点转换会与其他平台的数字选型不一致，故由 [LazyCJsonMap] 打印后交给
- * 宽松扫描器还原（见 `LazyCJsonMap.optFromCJson`）。
+ * OHOS 实现：底层容器可以是 Kotlin List（代码构造）或原生 cJSON 数组
+ * （`NATIVE_JSON` / [JSONTokener] 快路径，见 [LazyCJsonList]）。
  */
 actual class JSONArray internal actual constructor(
     values: MutableList<Any?>
@@ -31,4 +30,7 @@ actual class JSONArray internal actual constructor(
 
     @Throws(JSONException::class)
     actual constructor(jsonTokener: JSONTokener) : this(requireJSONArrayValues(jsonTokener.nextValue()))
+
+    /** 包装原生 cJSON 数组，读取时按需转换，不做整树拷贝。 */
+    internal constructor(list: LazyCJsonList) : this(list as MutableList<Any?>)
 }

@@ -21,6 +21,7 @@ import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.manager.BridgeManager
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONException
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.reactive.handler.observable
@@ -38,6 +39,35 @@ import com.tencent.kuikly.demo.pages.demo.base.NavBar
  * `JSONTokenerOhos`（K/N 专项优化版），其余平台走 commonMain 的 `JSONTokener`。
  */
 expect fun parseWithTokener(json: String): Any?
+
+/**
+ * Native 侧已完成 parse 后，仅计量 Kotlin 包装耗时。
+ * OHOS：cJSON owner → fromCJsonOwnerAny；不支持返回 -1。
+ */
+expect fun measureNativeParsedWrapNanos(json: String): Long
+
+/**
+ * 结构化入桥 A/B（C++→Kotlin）：以下四个 expect 用一棵**已建好的 cJSON owner** 为起点，
+ * 排除两端共有的建树成本（`toJson`），只对比 Kotlin 收口方式。
+ * - before 臂：`cJSON_Print` → Kotlin String → **Abstract** 全量 parse（分支前语义）
+ * - after 臂：`fromCJsonOwnerAny` → 惰性 `LazyCJsonMap/List`（分支后语义）
+ * 不支持的平台：[bridgeSupported] 返回 false，其余为空操作。
+ */
+expect fun bridgeSupported(): Boolean
+
+/** 由 JSON 文本建一棵自持有 cJSON owner；不支持返回 0。计时外调用。 */
+expect fun bridgeBuildOwner(json: String): Long
+
+expect fun bridgeReleaseOwner(owner: Long)
+
+/** before 臂：owner root → 打印字符串 → Abstract parse，得到根对象。 */
+expect fun bridgeBeforeArmRoot(owner: Long): Any?
+
+/** after 臂：owner → 惰性壳包装，得到根对象。 */
+expect fun bridgeAfterArmRoot(owner: Long): Any?
+
+/** 结构化入桥消费模式（对应真实业务对入参的使用方式）。 */
+enum class ConsumeMode { ROOT, READ5, WALK, PUT, TOSTRING }
 
 /**
  * 平台桥接自检：验证该平台 callKotlin 入参的结构化转换（iOS Foundation 容器、
@@ -86,7 +116,11 @@ data class TestMetrics(
     val avgNanos: Long,
     val medianNanos: Long,
     val p99Nanos: Long,
-    val throughput: Double
+    val throughput: Double,
+    /** Native 已 parse 完成后，仅 Kotlin 包装 median；不支持为 -1。 */
+    val wrapMedianNanos: Long = -1L,
+    /** 对 parse 结果全量 walk k/v 的 median（惰性路径含首次物化）。 */
+    val walkMedianNanos: Long = -1L
 )
 
 /**
@@ -113,6 +147,9 @@ internal class JsonPlatformTestPage : BasePager() {
     private val metricsList = mutableListOf<TestMetrics>()
     private var dumpedGcPools = false
     private var autoStarted = false
+    private var benchBridge = false
+    private var bridgeStringSink: Int = 0
+    private var bridgeFinished = false
     private var conformancePassed = false
     private var perfPassed = false
     private var bridgePassed = false
@@ -135,6 +172,8 @@ internal class JsonPlatformTestPage : BasePager() {
 
     override fun created() {
         super.created()
+        // 结构化入桥 A/B：aa start --ps bench bridge
+        benchBridge = pageData.params.optString("bench", "") == "bridge"
         jsonSmall1KB = generateJson(1024)
         jsonMedium10KB = generateJson(10240)
         jsonLarge100KB = generateJson(102400)
@@ -144,6 +183,7 @@ internal class JsonPlatformTestPage : BasePager() {
         jsonEscaped = generateEscapedStringJson()
         tokenerText = "Tokener: ${currentTokenerName()}"
         statusText = "Ready. Auto-run starts on appear."
+        logMachine("PERF_MODE tokener=${currentTokenerName()} benchBridge=$benchBridge")
     }
 
     /**
@@ -465,6 +505,12 @@ internal class JsonPlatformTestPage : BasePager() {
             logMachine("OVERALL status=FAIL reason=${if (!conformanceOk) "conformance" else "bridge"}")
             return
         }
+        if (benchBridge) {
+            perfResultText = "PERF: RUNNING"
+            statusText = "Auto: running structured-inbound A/B..."
+            runBridgeMatrix()
+            return
+        }
         perfResultText = "PERF: RUNNING"
         statusText = "Auto: running performance suite..."
         runAllTests(fromAuto = true)
@@ -738,8 +784,11 @@ internal class JsonPlatformTestPage : BasePager() {
         // Warm-up parse
         try { parseWithTokener(json) } catch (_: Exception) {}
 
-        // GC before measurement
-        try { collectGarbage() } catch (_: Exception) {}
+        // GC before measurement（OHOS auto-run 跳过：sync GC 会弄坏后续 setTimeout 队列）
+        val skipGcHelpers = isRunningAll && getPlatformName().contains("OHOS")
+        if (!skipGcHelpers) {
+            try { collectGarbage() } catch (_: Exception) {}
+        }
         if (!dumpedGcPools) {
             dumpedGcPools = true
             val pools = getGcPoolsDebug()
@@ -759,7 +808,10 @@ internal class JsonPlatformTestPage : BasePager() {
             val epochBefore = try { getGcEpoch() } catch (_: Exception) { -1L }
             val elapsed: Long
             try {
-                setGcSuspended(true)
+                // OHOS auto-run：跳过 GC.suspend——suspend/resume 后 setTimeout 链会断。
+                if (!skipGcHelpers) {
+                    setGcSuspended(true)
+                }
                 val startIter = getTimeNanosPlatform()
                 try {
                     val result = parseWithTokener(json)
@@ -772,7 +824,9 @@ internal class JsonPlatformTestPage : BasePager() {
                 }
                 elapsed = getTimeNanosPlatform() - startIter
             } finally {
-                setGcSuspended(false)
+                if (!skipGcHelpers) {
+                    setGcSuspended(false)
+                }
             }
             val epochAfter = try { getGcEpoch() } catch (_: Exception) { -1L }
             val clean = epochBefore < 0 || epochAfter <= epochBefore
@@ -808,23 +862,16 @@ internal class JsonPlatformTestPage : BasePager() {
             logSummary("WARN: $metricsName too few clean samples ($cleanCount/$iterations)")
         }
 
-        // Untimed pass: accumulate sweptCount as allocation-volume proxy (object granularity).
-        // Kept outside the timed loop so polling / final GC do not pollute Median.
-        val sweptCount = measureSweptChurn(json, iterations, lines)
-
-        // Retained size of one parsed tree (object bytes, not page watermark).
-        val retainedBytes = measureRetainedBytes(json, lines)
+        // Untimed pass / retained：auto-run on OHOS 同样跳过（见 runBenchmark）。
+        val sweptCount = if (skipGcHelpers) -1L else measureSweptChurn(json, iterations, lines)
+        val retainedBytes = if (skipGcHelpers) -1L else measureRetainedBytes(json, lines)
 
         // Statistics
         durations.sort()
         val minNanos = durations.first()
         val maxNanos = durations.last()
         val avgNanos = totalNanos / sampleCount
-        val medianNanos = if (sampleCount % 2 == 0) {
-            (durations[sampleCount / 2 - 1] + durations[sampleCount / 2]) / 2
-        } else {
-            durations[sampleCount / 2]
-        }
+        val medianNanos = medianOfSorted(durations)
         val p95Idx = ((sampleCount.toDouble() * 0.95).toLong().coerceAtMost((sampleCount - 1).toLong())).toInt()
         val p99Idx = ((sampleCount.toDouble() * 0.99).toLong().coerceAtMost((sampleCount - 1).toLong())).toInt()
         val p95Nanos = durations[p95Idx]
@@ -832,6 +879,17 @@ internal class JsonPlatformTestPage : BasePager() {
 
         val seconds = totalNanos.toDouble() / 1_000_000_000.0
         val throughput = if (seconds > 0) sampleCount.toDouble() / seconds else 0.0
+
+        // Native 已解析 → Kotlin 包装（OHOS cJSON）；其它平台 -1。
+        // wrap/walk 用较少样本，避免 OHOS 预挂 timer 槽超时叠跑。
+        val sideIters = when {
+            json.length >= 500_000 -> minOf(iterations, 5)
+            json.length >= 50_000 -> minOf(iterations, 10)
+            else -> minOf(iterations, 20)
+        }
+        val wrapMedianNanos = measureWrapOnlyMedian(json, sideIters, lines)
+        // Parse 后全量 walk k/v（惰性路径含首次物化）。
+        val walkMedianNanos = measureWalkAllMedian(json, sideIters, lines)
 
         lines.add("  --- Parse Time (GC-free samples only: $sampleCount/$iterations) ---")
         lines.add("  Total:      ${formatNanos(totalNanos)}")
@@ -843,6 +901,12 @@ internal class JsonPlatformTestPage : BasePager() {
         lines.add("  P99:        ${formatNanos(p99Nanos)}")
         lines.add("  Throughput: ${formatDouble(throughput, 1)} parses/sec")
         lines.add("  GC hits:    $gcEpochDelta (excluded from stats)")
+        if (wrapMedianNanos >= 0) {
+            lines.add("  Wrap-only:  ${formatNanos(wrapMedianNanos)} (after native parse)")
+        }
+        if (walkMedianNanos >= 0) {
+            lines.add("  Walk-all:   ${formatNanos(walkMedianNanos)} (full k/v visit)")
+        }
         speedText = "Avg: ${formatNanos(avgNanos)} | Median: ${formatNanos(medianNanos)} | P99: ${formatNanos(p99Nanos)}"
 
         if (memDelta >= 0) {
@@ -875,10 +939,254 @@ internal class JsonPlatformTestPage : BasePager() {
                 TestMetrics(
                     metricsName, memBefore, memAfter, gcEpochDelta,
                     sweptCount, retainedBytes,
-                    avgNanos, medianNanos, p99Nanos, throughput
+                    avgNanos, medianNanos, p99Nanos, throughput,
+                    wrapMedianNanos, walkMedianNanos
                 )
             )
         }
+    }
+
+    /** Native 侧已 parse 完成后，仅计量 Kotlin 包装；不支持返回 -1。 */
+    private fun measureWrapOnlyMedian(json: String, iterations: Int, lines: MutableList<String>): Long {
+        val probe = try {
+            measureNativeParsedWrapNanos(json)
+        } catch (_: Exception) {
+            -1L
+        }
+        if (probe < 0) {
+            return -1L
+        }
+        val samples = LongArray(iterations)
+        var ok = 0
+        for (i in 0 until iterations) {
+            val ns = try {
+                measureNativeParsedWrapNanos(json)
+            } catch (_: Exception) {
+                -1L
+            }
+            if (ns < 0) {
+                lines.add("  WARN: wrap-only failed at iteration $i")
+                return -1L
+            }
+            samples[ok++] = ns
+        }
+        samples.sort()
+        return medianOfSorted(samples)
+    }
+
+    /**
+     * 每次：计时外 parse，再全量 walk k/v。
+     * Abstract：树已物化，walk 近似纯遍历；Lazy：首次 walk 触发按需物化。
+     */
+    private fun measureWalkAllMedian(json: String, iterations: Int, lines: MutableList<String>): Long {
+        val samples = LongArray(iterations)
+        for (i in 0 until iterations) {
+            val root = try {
+                parseWithTokener(json)
+            } catch (e: Exception) {
+                lines.add("  WARN: walk prep parse failed at $i: ${e.message}")
+                return -1L
+            }
+            val start = getTimeNanosPlatform()
+            walkAllKv(root)
+            samples[i] = getTimeNanosPlatform() - start
+        }
+        samples.sort()
+        return medianOfSorted(samples)
+    }
+
+    private fun walkAllKv(value: Any?): Int {
+        var visited = 0
+        when (value) {
+            is JSONObject -> {
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    visited += 1 + walkAllKv(value.opt(k))
+                }
+            }
+            is JSONArray -> {
+                val n = value.length()
+                for (i in 0 until n) {
+                    visited += 1 + walkAllKv(value.opt(i))
+                }
+            }
+            else -> visited += 1
+        }
+        // 防止被优化掉
+        walkSink = visited
+        return visited
+    }
+
+    private var walkSink: Int = 0
+
+    private fun medianOfSorted(sorted: LongArray): Long {
+        val n = sorted.size
+        if (n == 0) return -1L
+        return if (n % 2 == 0) {
+            (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+        } else {
+            sorted[n / 2]
+        }
+    }
+
+    // ============================================================
+    // 结构化入桥 A/B（C++→Kotlin）：before=打印+Abstract 重解析，after=惰性壳
+    // 起点均为已建好的 cJSON owner（建树成本两端共有，排除在计时外）。
+    // ============================================================
+
+    private fun consumeBridge(root: Any?, mode: ConsumeMode) {
+        when (mode) {
+            ConsumeMode.ROOT -> walkSink = if (root == null) 0 else 1
+            ConsumeMode.READ5 -> readFewKv(root, 5)
+            ConsumeMode.WALK -> walkAllKv(root)
+            ConsumeMode.PUT -> firstPut(root)
+            ConsumeMode.TOSTRING -> bridgeStringSink = root?.toString()?.length ?: 0
+        }
+    }
+
+    private fun readFewKv(root: Any?, n: Int) {
+        var c = 0
+        when (root) {
+            is JSONObject -> {
+                val it = root.keys()
+                while (it.hasNext() && c < n) {
+                    sinkFieldValue(root.opt(it.next()))
+                    c++
+                }
+            }
+            is JSONArray -> {
+                val len = root.length()
+                var i = 0
+                while (i < len && c < n) {
+                    sinkFieldValue(root.opt(i))
+                    i++; c++
+                }
+            }
+        }
+    }
+
+    /**
+     * READ5 只想量「读到该字段」的成本：标量按值 hash；容器只登记「读到壳」，
+     * 绝不对容器调 `hashCode()`——那是内容哈希（数组会全表扫），会把「读 5 个字段」
+     * 测成「全量遍历」，污染惰性 vs Abstract 的对比。
+     */
+    private fun sinkFieldValue(v: Any?) {
+        walkSink += when (v) {
+            null -> 1
+            is JSONObject, is JSONArray -> 1
+            else -> v.hashCode()
+        }
+    }
+
+    private fun firstPut(root: Any?) {
+        when (root) {
+            is JSONObject -> root.put("__bench_probe", 1)
+            is JSONArray -> root.put(1)
+        }
+    }
+
+    private fun measureBridgeArm(owner: Long, before: Boolean, mode: ConsumeMode, iters: Int): Long {
+        val s = LongArray(iters)
+        for (i in 0 until iters) {
+            val t0 = getTimeNanosPlatform()
+            val root = if (before) bridgeBeforeArmRoot(owner) else bridgeAfterArmRoot(owner)
+            consumeBridge(root, mode)
+            s[i] = getTimeNanosPlatform() - t0
+        }
+        s.sort()
+        return medianOfSorted(s)
+    }
+
+    private fun bridgeItersFor(json: String): Int = when {
+        json.length >= 500_000 -> 3
+        json.length >= 50_000 -> 8
+        else -> 20
+    }
+
+    /** 单个 fixture：建 owner（计时外）→ 逐 mode 测 before/after → 记录 → 释放。 */
+    private fun runBridgeFixture(name: String, json: String) {
+        val owner = bridgeBuildOwner(json)
+        if (owner == 0L) {
+            logMachine("BRIDGE_PERF case=$name status=SKIP reason=owner_build_failed")
+            return
+        }
+        val iters = bridgeItersFor(json)
+        try {
+            for (mode in ConsumeMode.values()) {
+                val before = measureBridgeArm(owner, before = true, mode, iters)
+                val after = measureBridgeArm(owner, before = false, mode, iters)
+                val speedup = if (after > 0) before.toDouble() / after.toDouble() else -1.0
+                logMachine(
+                    "BRIDGE_PERF case=$name mode=$mode iters=$iters" +
+                        " before_ns=$before after_ns=$after speedup=${formatDouble(speedup, 2)}"
+                )
+            }
+        } finally {
+            bridgeReleaseOwner(owner)
+        }
+    }
+
+    /** 结构化入桥 A/B：OHOS 预挂 timer 逐 fixture 跑，避免重负载后 setTimeout 失效。 */
+    private fun runBridgeMatrix() {
+        isRunning = true
+        isRunningAll = true
+        bridgeFinished = false
+        metricsList.clear()
+        logMachine("BRIDGE_PERF_START platform=${getPlatformName()} supported=${bridgeSupported()}")
+        if (!bridgeSupported()) {
+            logMachine("BRIDGE_PERF_SUMMARY status=SKIP reason=unsupported")
+            perfResultText = "PERF: SKIPPED (bridge n/a)"
+            perfPassed = true
+            isRunning = false
+            isRunningAll = false
+            statusText = "Structured-inbound A/B not supported on this platform."
+            publishOverall()
+            return
+        }
+        val fixtures = listOf(
+            "Small_1KB" to jsonSmall1KB,
+            "Medium_10KB" to jsonMedium10KB,
+            "Large_100KB" to jsonLarge100KB,
+            "Huge_1MB" to jsonHuge1MB,
+            "Deep_50lv" to jsonDeepNest,
+            "Array_1000" to jsonArray1000,
+            "Escaped" to jsonEscaped
+        )
+        val slotMs = 12000
+        logMachine("BRIDGE_PERF_ARM slots=${fixtures.size} slot_ms=$slotMs")
+        for (i in fixtures.indices) {
+            val index = i
+            val (name, json) = fixtures[index]
+            this.setTimeout(timeout = 50 + index * slotMs) {
+                statusText = "Bridge A/B ${index + 1}/${fixtures.size}: $name"
+                logMachine("BRIDGE_PERF_SLOT index=${index + 1}/${fixtures.size} case=$name")
+                runBridgeFixture(name, json)
+                if (index == fixtures.lastIndex) {
+                    finishBridgeMatrix()
+                }
+            }
+        }
+        this.setTimeout(timeout = 50 + fixtures.size * slotMs + 5000) {
+            if (isRunningAll || isRunning) {
+                logMachine("BRIDGE_PERF_WATCHDOG")
+                finishBridgeMatrix()
+            }
+        }
+    }
+
+    private fun finishBridgeMatrix() {
+        if (bridgeFinished) {
+            return
+        }
+        bridgeFinished = true
+        logMachine("BRIDGE_PERF_SUMMARY status=PASS")
+        perfPassed = true
+        perfResultText = "PERF: PASS (bridge A/B)"
+        isRunning = false
+        isRunningAll = false
+        statusText = "Structured-inbound A/B completed."
+        publishOverall()
     }
 
     /**
@@ -972,6 +1280,7 @@ internal class JsonPlatformTestPage : BasePager() {
             overallResultText = "OVERALL: RUNNING"
             perfResultText = "PERF: RUNNING"
         }
+        val isOhos = getPlatformName().contains("OHOS")
         val allLines = mutableListOf<String>()
         allLines.add("╔══════════════════════════════════╗")
         allLines.add("║   AUTO-RUN ALL TESTS STARTED    ║")
@@ -979,7 +1288,11 @@ internal class JsonPlatformTestPage : BasePager() {
         allLines.add("")
         allLines.add("  Total tests: 7")
         allLines.add("  Tokener: ${currentTokenerName()}")
-        allLines.add("  Post-test cleanup: 3x GC @ 2s intervals")
+        if (isOhos) {
+            allLines.add("  OHOS auto: pre-armed timers + lighter iters (no post-case setTimeout)")
+        } else {
+            allLines.add("  Post-test cleanup: yield 500ms between cases")
+        }
         allLines.add("")
         if (!fromAuto) {
             resultLines.clear()
@@ -991,57 +1304,107 @@ internal class JsonPlatformTestPage : BasePager() {
         metricsList.clear()
         logMachine("PERF_START cases=7 tokener=${currentTokenerName()}")
 
+        // OHOS auto：timer 预挂 + 跳过 GC helpers；Array 已走惰性 cJSON，可用全量规模。
+        val itSmall = if (isOhos) 30 else 100
+        val itMedium = if (isOhos) 30 else 100
+        val itLarge = if (isOhos) 15 else 50
+        val itHuge = if (isOhos) 5 else 25
+        val itDeep = if (isOhos) 40 else 200
+        val itArray = if (isOhos) 50 else 100
+        val itEscaped = if (isOhos) 40 else 200
+
         val queue = listOf<(String) -> Unit>(
-            { label -> runTest("Small (1KB)", jsonSmall1KB, 100); statusText = "[1/7] $label" },
-            { label -> runTest("Medium (10KB)", jsonMedium10KB, 100); statusText = "[2/7] $label" },
-            { label -> runTest("Large (100KB)", jsonLarge100KB, 50); statusText = "[3/7] $label" },
+            { label -> runTest("Small (1KB)", jsonSmall1KB, itSmall); statusText = "[1/7] $label" },
+            { label -> runTest("Medium (10KB)", jsonMedium10KB, itMedium); statusText = "[2/7] $label" },
+            { label -> runTest("Large (100KB)", jsonLarge100KB, itLarge); statusText = "[3/7] $label" },
             // 1MB allocates enough to trigger GC on most iterations; run enough of them
             // that the GC-free subset is still a usable sample.
-            { label -> runTest("Huge (1MB)", jsonHuge1MB, 25); statusText = "[4/7] $label" },
-            { label -> runTest("Deep (50lv)", jsonDeepNest, 200, "depth: 50"); statusText = "[5/7] $label" },
-            { label -> runTest("Array 1000", jsonArray1000, 100, "items: 1000"); statusText = "[6/7] $label" },
-            { label -> runTest("Escaped Str", jsonEscaped, 200); statusText = "[7/7] $label" },
+            { label -> runTest("Huge (1MB)", jsonHuge1MB, itHuge); statusText = "[4/7] $label" },
+            { label -> runTest("Deep (50lv)", jsonDeepNest, itDeep, "depth: 50"); statusText = "[5/7] $label" },
+            { label -> runTest("Array 1000", jsonArray1000, itArray, "items: 1000"); statusText = "[6/7] $label" },
+            { label -> runTest("Escaped Str", jsonEscaped, itEscaped); statusText = "[7/7] $label" },
         )
 
-        executeAutoQueue(0, queue)
+        if (isOhos) {
+            armOhosAutoPerfQueue(queue)
+        } else {
+            executeAutoQueue(0, queue)
+        }
+    }
+
+    /**
+     * OHOS：在任何 PERF 解析开始前一次性注册整条 timer 链。
+     * 实测在 cJSON 重负载之后再 [setTimeout]，native 回调经常不再触发，
+     * UI 会永远停在「Scheduling next test...」。
+     */
+    private fun armOhosAutoPerfQueue(queue: List<(String) -> Unit>) {
+        // wrap + walk 追加后单 case 更长；槽间距要大于最慢 case（Huge）。
+        val slotMs = 12000
+        statusText = "OHOS PERF: armed ${queue.size} slots @ ${slotMs}ms"
+        logMachine("PERF_ARM slots=${queue.size} slot_ms=$slotMs")
+        for (i in queue.indices) {
+            val index = i
+            this.setTimeout(timeout = 50 + index * slotMs) {
+                statusText = "Running test ${index + 1}/${queue.size}..."
+                logMachine("PERF_SLOT index=${index + 1}/${queue.size}")
+                queue[index]("Running test ${index + 1}/${queue.size}...")
+                logMachine("PERF_SLOT_DONE index=${index + 1}/${queue.size}")
+                if (index == queue.lastIndex) {
+                    finishAutoPerf(queue.size)
+                }
+            }
+        }
+        // 若末槽回调丢失，仍尽量收口，避免 OVERALL 永久 RUNNING。
+        this.setTimeout(timeout = 50 + queue.size * slotMs + 5000) {
+            if (isRunningAll) {
+                logMachine("PERF_WATCHDOG metrics=${metricsList.size}/${queue.size}")
+                finishAutoPerf(queue.size)
+            }
+        }
+    }
+
+    private fun finishAutoPerf(expectedCases: Int) {
+        val summary = buildSummaryTable()
+        logSummary("===== SUMMARY TABLE (lines=${summary.size}) =====")
+        for (line in summary) {
+            logSummary(line)
+        }
+        logSummary("===== END SUMMARY TABLE =====")
+        for (m in metricsList) {
+            val caseKey = m.name.replace(' ', '_').replace("(", "").replace(")", "")
+            logMachine(
+                "PERF case=$caseKey median_ns=${m.medianNanos} p99_ns=${m.p99Nanos}" +
+                    " wrap_ns=${m.wrapMedianNanos} walk_ns=${m.walkMedianNanos}" +
+                    " swept=${m.sweptCount} retained=${m.retainedBytes} gc_hits=${m.gcEpochDelta}"
+            )
+        }
+        perfPassed = metricsList.size == expectedCases
+        perfResultText = if (perfPassed) "PERF: PASS" else "PERF: FAIL"
+        logMachine(
+            "PERF_SUMMARY cases=${metricsList.size}/$expectedCases" +
+                " status=${if (perfPassed) "PASS" else "FAIL"}"
+        )
+        resultLines.addAll(summary)
+        isRunning = false
+        isRunningAll = false
+        statusText = "All $expectedCases tests completed!"
+        publishOverall()
     }
 
     private fun executeAutoQueue(index: Int, queue: List<(String) -> Unit>) {
         if (index >= queue.size) {
-            // All tests done — generate summary table
-            val summary = buildSummaryTable()
-            logSummary("===== SUMMARY TABLE (lines=${summary.size}) =====")
-            for (line in summary) {
-                logSummary(line)
-            }
-            logSummary("===== END SUMMARY TABLE =====")
-            for (m in metricsList) {
-                val caseKey = m.name.replace(' ', '_').replace("(", "").replace(")", "")
-                logMachine(
-                    "PERF case=$caseKey median_ns=${m.medianNanos} p99_ns=${m.p99Nanos}" +
-                        " swept=${m.sweptCount} retained=${m.retainedBytes} gc_hits=${m.gcEpochDelta}"
-                )
-            }
-            // Baseline: PASS when every scheduled case produced metrics (no early hard fail).
-            perfPassed = metricsList.size == queue.size
-            perfResultText = if (perfPassed) "PERF: PASS" else "PERF: FAIL"
-            logMachine(
-                "PERF_SUMMARY cases=${metricsList.size}/${queue.size}" +
-                    " status=${if (perfPassed) "PASS" else "FAIL"}"
-            )
-            resultLines.addAll(summary)
-            isRunning = false
-            isRunningAll = false
-            statusText = "All 7 tests completed!"
-            publishOverall()
+            finishAutoPerf(queue.size)
             return
         }
 
         val label = "Running test ${index + 1}/${queue.size}..."
         queue[index](label)
 
-        // After each test, do 3 GC collects with 1-second intervals
-        scheduleGCCollects(3, 1000) {
+        // After each test, yield briefly before the next case.
+        // 不要在 timer 回调里同步 GC.collect() / 不要在 timed loop 里 GC.suspend：
+        // OHOS K/N 上二者都会弄坏后续 setTimeout（OHOS 走 [armOhosAutoPerfQueue]）。
+        statusText = "Scheduling next test..."
+        this.setTimeout(timeout = 500) {
             executeAutoQueue(index + 1, queue)
         }
     }
@@ -1052,13 +1415,7 @@ internal class JsonPlatformTestPage : BasePager() {
             return
         }
         statusText = "GC cleanup (${times} remaining)..."
-        try { collectGarbage() } catch (_: Exception) {}
-        // 必须使用 PagerScope.setTimeout（通过 this 显式指定接收者），
-        // 否则会匹配到已废弃的顶层 setTimeout(callback, timeout)，它依赖
-        // BridgeManager.currentPageId —— 该值仅在 native→Kotlin 同步调用栈中有效，
-        // 在异步回调链中可能为空，导致 GlobalFunctions 注册到空 pagerId，
-        // 回调永远无法被路由回来 → executeAutoQueue 无法推进到 index >= queue.size，
-        // summary table 永远不生成。
+        // 先挂 timer 再 GC，避免 GC 阻塞导致回调永不注册。
         if (times == 1) {
             this.setTimeout(timeout = delayMs) { onComplete() }
         } else {
@@ -1066,6 +1423,7 @@ internal class JsonPlatformTestPage : BasePager() {
                 scheduleGCCollects(times - 1, delayMs, onComplete)
             }
         }
+        try { collectGarbage() } catch (_: Exception) {}
     }
 
     private fun buildSummaryTable(): List<String> {
@@ -1078,7 +1436,7 @@ internal class JsonPlatformTestPage : BasePager() {
             return lines
         }
         // GcHits = GC epochs that slipped into a timed iteration (0 = clean; suspend worked).
-        lines.add(TableUtil.formatRow("TestName", "Swept", "Retained", "GcHits", "Median", "P99"))
+        lines.add(TableUtil.formatRow("TestName", "Swept", "Retained", "GcHits", "Median", "Wrap", "Walk", "P99"))
         lines.add("--------------------------------------------------")
 
         for (m in metricsList) {
@@ -1087,8 +1445,10 @@ internal class JsonPlatformTestPage : BasePager() {
             val retained = m.retainedBytes.toString()
             val gcHits = m.gcEpochDelta.toString()
             val med = formatNanosCompact(m.medianNanos)
+            val wrap = if (m.wrapMedianNanos >= 0) formatNanosCompact(m.wrapMedianNanos) else "-"
+            val walk = if (m.walkMedianNanos >= 0) formatNanosCompact(m.walkMedianNanos) else "-"
             val p99 = formatNanosCompact(m.p99Nanos)
-            lines.add(TableUtil.formatRow(name, swept, retained, gcHits, med, p99))
+            lines.add(TableUtil.formatRow(name, swept, retained, gcHits, med, wrap, walk, p99))
         }
 
         lines.add("==================================================")
@@ -1096,15 +1456,11 @@ internal class JsonPlatformTestPage : BasePager() {
     }
 
     private object TableUtil {
-        fun formatRow(c1: String, c2: String, c3: String, c4: String, c5: String, c6: String): String {
-            val padded = listOf(
-                padRight(c1, 17),
-                padRight(c2, 10),
-                padRight(c3, 10),
-                padRight(c4, 6),
-                padRight(c5, 9),
-                c6
-            )
+        fun formatRow(vararg cols: String): String {
+            val widths = intArrayOf(17, 10, 10, 6, 9, 9, 9, 9)
+            val padded = cols.mapIndexed { i, c ->
+                if (i < widths.size) padRight(c, widths[i]) else c
+            }
             return padded.joinToString(" | ")
         }
 

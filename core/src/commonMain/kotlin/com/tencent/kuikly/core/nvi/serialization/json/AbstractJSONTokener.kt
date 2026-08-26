@@ -38,8 +38,11 @@ abstract class AbstractJSONTokener internal constructor(json: String) {
         }
     }
 
+    /**
+     * 平台 actual 可覆盖：先走原生解析快路径，失败再 `super.nextValue()` 回退到这里。
+     */
     @Throws(JSONException::class)
-    fun nextValue(): Any? {
+    open fun nextValue(): Any? {
         val c: Int = nextCleanInternal()
         return when (c) {
             -1 -> throw syntaxError("End of input")
@@ -312,3 +315,10 @@ abstract class AbstractJSONTokener internal constructor(json: String) {
         return jsonStr.substring(start)
     }
 }
+
+/**
+ * 仅走宽松扫描的内部入口。平台 [JSONTokener] 的原生快路径在物化嵌套数组等场景
+ * 需要再解析一段 JSON 文本时必须走这里，避免 `JSONTokener` → 原生 → 再打印 →
+ * `JSONTokener` 的重入循环。
+ */
+internal class LenientJSONTokener(json: String) : AbstractJSONTokener(json)

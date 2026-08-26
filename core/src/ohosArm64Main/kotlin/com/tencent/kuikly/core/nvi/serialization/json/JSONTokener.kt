@@ -16,11 +16,53 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
- * OHOS 实现：字符串解析用宽松扫描器。
+ * OHOS 实现：严格 JSON 对象 / 数组优先走 KRJSON（RapidJSON SAX），结果包成惰性
+ * [LazyCJsonMap] / [LazyCJsonList]；注释与无引号键等历史写法回退到 [AbstractJSONTokener]。
  *
- * 不走 cJSON：cJSON 的 number 只有一个 `double`，无法区分 `1000` 与 `1e3`
- * （宽松扫描器分别给 `Int` 与 `Double`），用它解析字符串会改变既有的数字选型。
- * cJSON 只用于原生已经构造好的树（`NATIVE_JSON`，见 [LazyCJsonMap]），那条路径上
- * 原本就没有文本可参照。
+ * KRJSON 对象重复 key 是 last-wins（与 org.json 一致），因此不再因重复键回退。
  */
-actual class JSONTokener actual constructor(json: String) : AbstractJSONTokener(json)
+actual class JSONTokener actual constructor(json: String) : AbstractJSONTokener(json) {
+
+    private val source = json
+
+    @Throws(JSONException::class)
+    actual override fun nextValue(): Any? {
+        tryNative()?.let { return it }
+        return super.nextValue()
+    }
+
+    private fun tryNative(): Any? {
+        if (source.isEmpty()) {
+            return null
+        }
+        val rootChar = firstNonWhitespace(source) ?: return null
+        if (rootChar != '{' && rootChar != '[') {
+            return null
+        }
+        val owned = CJsonNative.ownerFromJson(source)
+        if (owned == 0L) {
+            return null
+        }
+        return try {
+            when (CJsonNative.type(owned)) {
+                KRJSON_KIND_OBJECT -> LazyCJsonMap.fromOwner(owned)
+                KRJSON_KIND_ARRAY -> LazyCJsonList.fromOwner(owned)
+                else -> null
+            }
+        } finally {
+            CJsonNative.release(owned)
+        }
+    }
+}
+
+private fun firstNonWhitespace(text: String): Char? {
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            return c
+        }
+        i++
+    }
+    return null
+}

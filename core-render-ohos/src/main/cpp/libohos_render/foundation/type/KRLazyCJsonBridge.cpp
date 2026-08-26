@@ -212,6 +212,84 @@ int64_t kuikly_cjson_get_array(int64_t ptr, const char *key) {
     return static_cast<int64_t>(reinterpret_cast<intptr_t>(item));
 }
 
+int64_t kuikly_cjson_item_at(int64_t ptr, int index) {
+    if (ptr == 0 || index < 0) {
+        return 0;
+    }
+    // cJSON_GetArrayItem 按 child 链表下标取元素，对 array / object 均适用。
+    cJSON *item = cJSON_GetArrayItem(Node(ptr), index);
+    if (item == nullptr) {
+        return 0;
+    }
+    return static_cast<int64_t>(reinterpret_cast<intptr_t>(item));
+}
+
+int64_t kuikly_cjson_first_child(int64_t ptr) {
+    if (ptr == 0) {
+        return 0;
+    }
+    cJSON *node = Node(ptr);
+    if (node == nullptr || node->child == nullptr) {
+        return 0;
+    }
+    return static_cast<int64_t>(reinterpret_cast<intptr_t>(node->child));
+}
+
+int64_t kuikly_cjson_next(int64_t ptr) {
+    if (ptr == 0) {
+        return 0;
+    }
+    cJSON *node = Node(ptr);
+    if (node == nullptr || node->next == nullptr) {
+        return 0;
+    }
+    return static_cast<int64_t>(reinterpret_cast<intptr_t>(node->next));
+}
+
+const char *kuikly_cjson_child_key(int64_t ptr) {
+    if (ptr == 0) {
+        return nullptr;
+    }
+    cJSON *node = Node(ptr);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    return node->string;
+}
+
+int kuikly_cjson_as_bool(int64_t ptr, int fallback) {
+    if (ptr == 0) {
+        return fallback;
+    }
+    cJSON *item = Node(ptr);
+    if (item == nullptr || !cJSON_IsBool(item)) {
+        return fallback;
+    }
+    return cJSON_IsTrue(item) ? 1 : 0;
+}
+
+double kuikly_cjson_as_number(int64_t ptr, double fallback) {
+    if (ptr == 0) {
+        return fallback;
+    }
+    cJSON *item = Node(ptr);
+    if (item == nullptr || !cJSON_IsNumber(item)) {
+        return fallback;
+    }
+    return cJSON_GetNumberValue(item);
+}
+
+const char *kuikly_cjson_as_string(int64_t ptr) {
+    if (ptr == 0) {
+        return nullptr;
+    }
+    cJSON *item = Node(ptr);
+    if (item == nullptr || !cJSON_IsString(item)) {
+        return nullptr;
+    }
+    return cJSON_GetStringValue(item);
+}
+
 char *kuikly_cjson_print(int64_t ptr) {
     if (ptr == 0) {
         return nullptr;

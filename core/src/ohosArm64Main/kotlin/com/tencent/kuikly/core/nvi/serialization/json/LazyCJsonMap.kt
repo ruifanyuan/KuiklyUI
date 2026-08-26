@@ -50,6 +50,12 @@ internal class LazyCJsonMap private constructor(
 
     private var containerCache: MutableMap<String, Any?>? = null
 
+    /**
+     * key → child cJSON* 一次性索引：cJSON 是链表，按 key 查是 O(n)；建一次索引后
+     * 后续 get/containsKey 均摊 O(1)，把「逐字段读」从 O(n²) 降到 O(n)。值仍惰性转换。
+     */
+    private var keyIndex: HashMap<String, Long>? = null
+
     /** After first mutation (or forced materialize), native tree is released. */
     private var materialized: MutableMap<String, Any?>? = null
 
@@ -75,9 +81,8 @@ internal class LazyCJsonMap private constructor(
         }
 
         /**
-         * 原生 `KRRenderValue` 的 Map 与（无二进制元素的）Array 都以 `NATIVE_JSON` 下发，
-         * 因此根节点可能是 object 也可能是 array：object 走惰性包装，array 沿用
-         * 「打印 + 宽松扫描」以保持与其他平台一致的数字选型。
+         * 原生 `KRRenderValue` 的 Map 与（无二进制元素的）Array 都以 `NATIVE_JSON` 下发：
+         * object → [LazyCJsonMap]，array → [LazyCJsonList]，与 Apple 惰性路径对齐。
          */
         fun fromOwnerAny(ownerPtr: Long): Any? {
             if (ownerPtr == 0L) {
@@ -92,21 +97,24 @@ internal class LazyCJsonMap private constructor(
                 CJsonNative.release(held)
                 return null
             }
-            if (CJsonNative.nodeKind(root) == KIND_ARRAY) {
-                val printed = CJsonNative.print(root)
-                CJsonNative.release(held)
-                return printed?.let {
+            return when (CJsonNative.nodeKind(root)) {
+                CJSON_KIND_ARRAY -> {
+                    // fromOwner 会再 retain；释放本次句柄，只留 list 持有的那份。
                     try {
-                        JSONArray(it)
-                    } catch (_: JSONException) {
-                        null
+                        LazyCJsonList.fromOwner(held)
+                    } finally {
+                        CJsonNative.release(held)
                     }
                 }
+                CJSON_KIND_OBJECT -> JSONObject(wrap(held, root))
+                else -> {
+                    CJsonNative.release(held)
+                    null
+                }
             }
-            return JSONObject(wrap(held, root))
         }
 
-        private fun fromNode(ownerPtr: Long, nodePtr: Long): JSONObject {
+        internal fun fromNode(ownerPtr: Long, nodePtr: Long): JSONObject {
             if (ownerPtr == 0L || nodePtr == 0L) {
                 return JSONObject()
             }
@@ -127,12 +135,16 @@ internal class LazyCJsonMap private constructor(
     override val size: Int
         get() {
             materialized?.let { return it.size }
+            keyIndex?.let { return it.size }
             return if (nodePtr != 0L) CJsonNative.size(nodePtr) else 0
         }
 
     override fun containsKey(key: String): Boolean {
         materialized?.let { return it.containsKey(key) }
-        return nodePtr != 0L && CJsonNative.hasKey(nodePtr, key)
+        if (nodePtr == 0L) {
+            return false
+        }
+        return ensureKeyIndex().containsKey(key)
     }
 
     override fun containsValue(value: Any?): Boolean {
@@ -146,6 +158,27 @@ internal class LazyCJsonMap private constructor(
             return null
         }
         return optFromCJson(key)
+    }
+
+    /**
+     * 遍历一次 child 链表建立 key → child 指针索引。cJSON 允许重复键，这里保留首个，
+     * 与 cJSON 按 key 查找（返回首个匹配）语义一致。
+     */
+    private fun ensureKeyIndex(): HashMap<String, Long> {
+        keyIndex?.let { return it }
+        val index = HashMap<String, Long>()
+        if (nodePtr != 0L) {
+            var child = CJsonNative.firstChild(nodePtr)
+            while (child != 0L) {
+                val key = CJsonNative.childKey(child)
+                if (key != null && !index.containsKey(key)) {
+                    index[key] = child
+                }
+                child = CJsonNative.nextSibling(child)
+            }
+        }
+        keyIndex = index
+        return index
     }
 
     override fun put(key: String, value: Any?): Any? {
@@ -170,10 +203,13 @@ internal class LazyCJsonMap private constructor(
         materialized?.let { return it }
         val map: MutableMap<String, Any?> = JSONEngine.getMutableMap()
         if (nodePtr != 0L) {
-            val n = CJsonNative.size(nodePtr)
-            for (i in 0 until n) {
-                val key = CJsonNative.keyAt(nodePtr, i) ?: continue
-                map[key] = optFromCJson(key)
+            var child = CJsonNative.firstChild(nodePtr)
+            while (child != 0L) {
+                val key = CJsonNative.childKey(child)
+                if (key != null && !map.containsKey(key)) {
+                    map[key] = cachedOrConvert(key, child)
+                }
+                child = CJsonNative.nextSibling(child)
             }
         }
         releaseNativeOwnership()
@@ -185,6 +221,7 @@ internal class LazyCJsonMap private constructor(
         nodePtr = 0L
         ownerPtr = 0L
         containerCache = null
+        keyIndex = null
         val token = releaseToken
         releaseToken = null
         cleaner = null
@@ -197,36 +234,34 @@ internal class LazyCJsonMap private constructor(
                 return it[name]
             }
         }
-        return when (CJsonNative.valueKind(nodePtr, name)) {
-            KIND_BOOL -> CJsonNative.getBool(nodePtr, name, false)
-            KIND_NUMBER -> numberFromCJson(CJsonNative.getNumber(nodePtr, name, 0.0))
-            KIND_STRING -> CJsonNative.getString(nodePtr, name)
-            KIND_OBJECT -> {
-                val child = CJsonNative.getObjectPtr(nodePtr, name)
-                if (child == 0L || ownerPtr == 0L) {
-                    null
-                } else {
-                    cacheContainer(name, fromNode(ownerPtr, child))
-                }
+        val child = ensureKeyIndex()[name] ?: return null
+        return convertChild(name, child)
+    }
+
+    /**
+     * 复用已派生（可能已被就地修改）的子容器实例；否则由 child 指针新转换。
+     * 保证「先取子对象改它，再从父读」看到的是同一实例（mutation 可见性）。
+     */
+    private fun cachedOrConvert(name: String, child: Long): Any? {
+        containerCache?.let {
+            if (it.containsKey(name)) {
+                return it[name]
             }
-            KIND_ARRAY -> {
-                val child = CJsonNative.getArrayPtr(nodePtr, name)
-                if (child == 0L) {
-                    null
-                } else {
-                    // cJSON 不区分整数与浮点，数组转换沿用「打印 + 宽松扫描」以保持
-                    // 与其他平台一致的数字选型。
-                    val printed = CJsonNative.print(child)
-                    if (printed == null) {
-                        null
-                    } else {
-                        try {
-                            cacheContainer(name, JSONArray(printed))
-                        } catch (_: JSONException) {
-                            null
-                        }
-                    }
-                }
+        }
+        return convertChild(name, child)
+    }
+
+    /** 由 child cJSON* 直接转换（node_kind + as_*），object/array 结果缓存复用同一实例。 */
+    private fun convertChild(name: String, child: Long): Any? {
+        return when (CJsonNative.nodeKind(child)) {
+            CJSON_KIND_BOOL -> CJsonNative.asBool(child, false)
+            CJSON_KIND_NUMBER -> numberFromCJson(CJsonNative.asNumber(child, 0.0))
+            CJSON_KIND_STRING -> CJsonNative.asString(child)
+            CJSON_KIND_OBJECT -> {
+                if (ownerPtr == 0L) null else cacheContainer(name, fromNode(ownerPtr, child))
+            }
+            CJSON_KIND_ARRAY -> {
+                if (ownerPtr == 0L) null else cacheContainer(name, LazyCJsonList.fromNode(ownerPtr, child))
             }
             else -> null
         }
@@ -238,16 +273,15 @@ internal class LazyCJsonMap private constructor(
         return value
     }
 
-    private fun numberFromCJson(number: Double): Any {
-        val asLong = number.toLong()
-        if (number != asLong.toDouble()) {
-            return number
+    /**
+     * 出桥快路径：未物化、未派生过子容器且原生树仍在时，直接 `cJSON_PrintUnformatted`。
+     * 派生过子容器可能被就地改写，cJSON 树会过期，故保守回退 [commonStringify]。
+     */
+    internal fun nativePrintCompactOrNull(): String? {
+        if (materialized != null || containerCache != null || nodePtr == 0L) {
+            return null
         }
-        return if (asLong >= Int.MIN_VALUE.toLong() && asLong <= Int.MAX_VALUE.toLong()) {
-            asLong.toInt()
-        } else {
-            asLong
-        }
+        return CJsonNative.print(nodePtr)
     }
 
     /**
@@ -271,21 +305,22 @@ internal class LazyCJsonMap private constructor(
             if (nodePtr == 0L) {
                 return mutableListOf<MutableMap.MutableEntry<String, Any?>>().iterator()
             }
-            val n = CJsonNative.size(nodePtr)
-            val keys = ArrayList<String>(n)
-            for (i in 0 until n) {
-                CJsonNative.keyAt(nodePtr, i)?.let { keys.add(it) }
-            }
-            val keyIterator = keys.iterator()
+            // 顺着 child 链表游标遍历，O(n)；每个 entry 直接携带 child 指针，取值 O(1)。
             return object : MutableIterator<MutableMap.MutableEntry<String, Any?>> {
+                private var next = CJsonNative.firstChild(nodePtr)
                 private var lastKey: String? = null
 
-                override fun hasNext(): Boolean = keyIterator.hasNext()
+                override fun hasNext(): Boolean = next != 0L
 
                 override fun next(): MutableMap.MutableEntry<String, Any?> {
-                    val key = keyIterator.next()
+                    val child = next
+                    if (child == 0L) {
+                        throw NoSuchElementException()
+                    }
+                    next = CJsonNative.nextSibling(child)
+                    val key = CJsonNative.childKey(child) ?: ""
                     lastKey = key
-                    return LazyEntry(key)
+                    return LazyEntry(key, child)
                 }
 
                 override fun remove() {
@@ -297,9 +332,20 @@ internal class LazyCJsonMap private constructor(
         }
     }
 
-    private inner class LazyEntry(override val key: String) : MutableMap.MutableEntry<String, Any?> {
+    private inner class LazyEntry(
+        override val key: String,
+        private val childPtr: Long,
+    ) : MutableMap.MutableEntry<String, Any?> {
         override val value: Any?
-            get() = this@LazyCJsonMap[key]
+            get() {
+                materialized?.let { return it[key] }
+                containerCache?.let {
+                    if (it.containsKey(key)) {
+                        return it[key]
+                    }
+                }
+                return if (childPtr != 0L) cachedOrConvert(key, childPtr) else this@LazyCJsonMap[key]
+            }
 
         override fun setValue(newValue: Any?): Any? {
             val old = this@LazyCJsonMap[key]
@@ -308,10 +354,3 @@ internal class LazyCJsonMap private constructor(
         }
     }
 }
-
-/** cJSON 值类型，与 `kuikly_cjson_value_kind` 的返回值一一对应。 */
-private const val KIND_BOOL = 1
-private const val KIND_NUMBER = 2
-private const val KIND_STRING = 3
-private const val KIND_OBJECT = 4
-private const val KIND_ARRAY = 5

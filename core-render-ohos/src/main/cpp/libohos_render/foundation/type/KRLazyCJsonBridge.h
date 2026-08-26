@@ -66,6 +66,19 @@ KR_CJSON_EXPORT double kuikly_cjson_get_number(int64_t ptr, const char *key, dou
 KR_CJSON_EXPORT const char *kuikly_cjson_get_string(int64_t ptr, const char *key);
 KR_CJSON_EXPORT int64_t kuikly_cjson_get_object(int64_t ptr, const char *key);
 KR_CJSON_EXPORT int64_t kuikly_cjson_get_array(int64_t ptr, const char *key);
+/** 按下标取子节点（array / object 的 child 链均可），返回 cJSON* 或 0 */
+KR_CJSON_EXPORT int64_t kuikly_cjson_item_at(int64_t ptr, int index);
+/**
+ * 子节点游标：把 object/array 的 child 链表暴露给 Kotlin，避免按下标反复 O(n) 重扫。
+ * first_child 取第一个孩子；next 取兄弟节点；child_key 取孩子在 object 中的键（array 元素为 null）。
+ */
+KR_CJSON_EXPORT int64_t kuikly_cjson_first_child(int64_t ptr);
+KR_CJSON_EXPORT int64_t kuikly_cjson_next(int64_t ptr);
+KR_CJSON_EXPORT const char *kuikly_cjson_child_key(int64_t ptr);
+/** 节点自身的标量访问（配合 item_at，用于惰性 JSONArray） */
+KR_CJSON_EXPORT int kuikly_cjson_as_bool(int64_t ptr, int fallback);
+KR_CJSON_EXPORT double kuikly_cjson_as_number(int64_t ptr, double fallback);
+KR_CJSON_EXPORT const char *kuikly_cjson_as_string(int64_t ptr);
 KR_CJSON_EXPORT char *kuikly_cjson_print(int64_t ptr);
 KR_CJSON_EXPORT void kuikly_cjson_free_string(char *s);
 
