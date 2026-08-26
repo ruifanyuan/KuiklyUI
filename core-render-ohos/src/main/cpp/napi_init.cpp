@@ -25,6 +25,15 @@
 #include "libohos_render/utils/NAPIUtil.h"
 #include "napi/native_api.h"
 
+#ifndef NDEBUG
+#include <cmath>
+#include <cstring>
+#include <string>
+#include <vector>
+#include "libohos_render/api/include/Kuikly/KRAnyData.h"
+#include "libohos_render/api/src/KRAnyDataInternal.h"
+#endif
+
 //  ArkTs层页面加载事件
 static napi_value OnLaunchStart(napi_env env, napi_callback_info info) {
     size_t argc = 1;
@@ -220,8 +229,225 @@ static napi_value isBackPressConsumed(napi_env env, napi_callback_info info) {
     return result;
 }
 
+#ifndef NDEBUG
+namespace {
+
+struct KRAnyDataCApiTestResult {
+    int passed = 0;
+    int failed = 0;
+    std::string first_failure;
+};
+
+void Expect(KRAnyDataCApiTestResult *result, bool ok, const char *name) {
+    if (ok) {
+        ++result->passed;
+        return;
+    }
+    ++result->failed;
+    if (result->first_failure.empty()) {
+        result->first_failure = name;
+    }
+    KR_LOG_ERROR << "[KRAnyDataCApi] FAIL " << name;
+}
+
+KRAnyData WrapAny(KRRenderValue value) {
+    auto *internal = new KRAnyDataInternal();
+    internal->anyValue = std::move(value);
+    return internal;
+}
+
+void TestScalars(KRAnyDataCApiTestResult *r) {
+    KRAnyDataDestroy(nullptr);
+
+    KRAnyData empty = KRAnyDataCreate();
+    Expect(r, empty != nullptr, "create_empty");
+    Expect(r, !KRAnyDataIsString(empty) && !KRAnyDataIsInt(empty) && !KRAnyDataIsLong(empty) &&
+                  !KRAnyDataIsFloat(empty) && !KRAnyDataIsBool(empty) && !KRAnyDataIsBytes(empty) &&
+                  !KRAnyDataIsArray(empty) && !KRAnyDataIsMap(empty),
+           "empty_type_predicates");
+    KRAnyDataDestroy(empty);
+
+    KRAnyData i = KRAnyDataCreateInt(42);
+    int32_t iv = 0;
+    Expect(r, KRAnyDataIsInt(i) && KRAnyDataGetInt(i, &iv) == KRANYDATA_SUCCESS && iv == 42, "int_roundtrip");
+    Expect(r, KRAnyDataGetInt(nullptr, &iv) == KRANYDATA_NULL_INPUT, "get_int_null_input");
+    Expect(r, KRAnyDataGetInt(i, nullptr) == KRANYDATA_NULL_OUTPUT, "get_int_null_output");
+    KRAnyDataDestroy(i);
+
+    KRAnyData l = KRAnyDataCreateLong(1LL << 40);
+    int64_t lv = 0;
+    Expect(r, KRAnyDataIsLong(l) && KRAnyDataGetLong(l, &lv) == KRANYDATA_SUCCESS && lv == (1LL << 40),
+           "long_roundtrip");
+    KRAnyDataDestroy(l);
+
+    KRAnyData f = KRAnyDataCreateFloat(1.5f);
+    float fv = 0;
+    Expect(r, KRAnyDataIsFloat(f) && KRAnyDataGetFloat(f, &fv) == KRANYDATA_SUCCESS && std::fabs(fv - 1.5f) < 1e-6f,
+           "float_roundtrip");
+    KRAnyDataDestroy(f);
+
+    KRAnyData b = KRAnyDataCreateBool(true);
+    bool bv = false;
+    Expect(r, KRAnyDataIsBool(b) && KRAnyDataGetBool(b, &bv) == KRANYDATA_SUCCESS && bv, "bool_roundtrip");
+    KRAnyDataDestroy(b);
+
+    KRAnyData s = KRAnyDataCreateString("hello");
+    const char *sv = nullptr;
+    Expect(r, KRAnyDataIsString(s) && std::strcmp(KRAnyDataGetString(s), "hello") == 0, "string_get");
+    Expect(r, KRAnyDataGetStr(s, &sv) == KRANYDATA_SUCCESS && sv && std::strcmp(sv, "hello") == 0, "string_get_str");
+    Expect(r, KRAnyDataGetStr(s, nullptr) == KRANYDATA_NULL_OUTPUT, "get_str_null_output");
+    KRAnyDataDestroy(s);
+
+    const char bytes[] = {'a', 'b', '\0', 'c'};
+    KRAnyData bin = KRAnyDataCreateBytes(bytes, 4);
+    const char *bp = nullptr;
+    int bsize = 0;
+    Expect(r, KRAnyDataIsBytes(bin) && KRAnyDataGetBytes(bin, &bp, &bsize) == KRANYDATA_SUCCESS && bsize == 4 &&
+                  bp && std::memcmp(bp, bytes, 4) == 0,
+           "bytes_roundtrip");
+    KRAnyDataDestroy(bin);
+}
+
+void TestArray(KRAnyDataCApiTestResult *r) {
+    KRAnyData arr = KRAnyDataCreateArray(2);
+    int size = -1;
+    Expect(r, KRAnyDataIsArray(arr) && KRAnyDataGetArraySize(arr, &size) == KRANYDATA_SUCCESS && size == 2,
+           "array_create_size");
+    Expect(r, KRAnyDataGetArraySize(nullptr, &size) == KRANYDATA_NULL_INPUT, "array_size_null_input");
+    Expect(r, KRAnyDataGetArraySize(arr, nullptr) == KRANYDATA_NULL_OUTPUT, "array_size_null_output");
+
+    KRAnyData a0 = KRAnyDataCreateInt(10);
+    KRAnyData a1 = KRAnyDataCreateString("x");
+    Expect(r, KRAnyDataSetArrayElement(arr, a0, 0) == KRANYDATA_SUCCESS, "array_set_0");
+    Expect(r, KRAnyDataSetArrayElement(arr, a1, 1) == KRANYDATA_SUCCESS, "array_set_1");
+    Expect(r, KRAnyDataSetArrayElement(arr, a0, 2) == KRANYDATA_OUT_OF_INDEX, "array_set_oob");
+    Expect(r, KRAnyDataSetArrayElement(arr, a0, -1) == KRANYDATA_OUT_OF_INDEX, "array_set_neg");
+    Expect(r, KRAnyDataSetArrayElement(nullptr, a0, 0) == KRANYDATA_NULL_INPUT, "array_set_null_data");
+    Expect(r, KRAnyDataSetArrayElement(arr, nullptr, 0) == KRANYDATA_NULL_INPUT, "array_set_null_value");
+
+    KRAnyData got = nullptr;
+    int32_t iv = 0;
+    Expect(r, KRAnyDataGetArrayElement(arr, &got, 0) == KRANYDATA_SUCCESS && got && KRAnyDataIsInt(got) &&
+                  KRAnyDataGetInt(got, &iv) == KRANYDATA_SUCCESS && iv == 10,
+           "array_get_0");
+    Expect(r, KRAnyDataGetArrayElement(arr, &got, 1) == KRANYDATA_SUCCESS && got && KRAnyDataIsString(got) &&
+                  std::strcmp(KRAnyDataGetString(got), "x") == 0,
+           "array_get_1");
+    Expect(r, KRAnyDataGetArrayElement(arr, &got, 2) == KRANYDATA_OUT_OF_INDEX, "array_get_oob");
+    Expect(r, KRAnyDataGetArrayElement(arr, nullptr, 0) == KRANYDATA_NULL_OUTPUT, "array_get_null_out");
+
+    KRAnyData extra = KRAnyDataCreateInt(99);
+    Expect(r, KRAnyDataAddArrayElement(arr, extra) == KRANYDATA_SUCCESS &&
+                  KRAnyDataGetArraySize(arr, &size) == KRANYDATA_SUCCESS && size == 3,
+           "array_add");
+    Expect(r, KRAnyDataGetArrayElement(arr, &got, 2) == KRANYDATA_SUCCESS && KRAnyDataGetInt(got, &iv) == KRANYDATA_SUCCESS &&
+                  iv == 99,
+           "array_add_read");
+
+    KRAnyData not_arr = KRAnyDataCreateInt(1);
+    Expect(r, KRAnyDataGetArraySize(not_arr, &size) == KRANYDATA_SUCCESS && size == 0, "array_size_non_array");
+    Expect(r, KRAnyDataGetArrayElement(not_arr, &got, 0) == KRANYDATA_OUT_OF_INDEX, "array_get_non_array");
+    Expect(r, KRAnyDataSetArrayElement(not_arr, extra, 0) == KRANYDATA_TYPE_MISMATCH, "array_set_type_mismatch");
+    Expect(r, KRAnyDataAddArrayElement(not_arr, extra) == KRANYDATA_TYPE_MISMATCH, "array_add_type_mismatch");
+
+    KRRenderValue::Array shared_items;
+    shared_items.emplace_back(KRRenderValue::Make(1));
+    shared_items.emplace_back(KRRenderValue::Make(2));
+    KRRenderValue shared_root = KRRenderValue::Make(shared_items);
+    KRAnyData h1 = WrapAny(shared_root);
+    KRAnyData h2 = WrapAny(shared_root);
+    KRAnyData three = KRAnyDataCreateInt(3);
+    Expect(r, KRAnyDataSetArrayElement(h1, three, 0) == KRANYDATA_SUCCESS, "array_cow_set");
+    Expect(r, KRAnyDataGetArrayElement(h1, &got, 0) == KRANYDATA_SUCCESS && KRAnyDataGetInt(got, &iv) == KRANYDATA_SUCCESS &&
+                  iv == 3,
+           "array_cow_writer");
+    Expect(r, KRAnyDataGetArrayElement(h2, &got, 0) == KRANYDATA_SUCCESS && KRAnyDataGetInt(got, &iv) == KRANYDATA_SUCCESS &&
+                  iv == 1,
+           "array_cow_reader");
+
+    KRAnyDataDestroy(arr);
+    KRAnyDataDestroy(a0);
+    KRAnyDataDestroy(a1);
+    KRAnyDataDestroy(extra);
+    KRAnyDataDestroy(not_arr);
+    KRAnyDataDestroy(h1);
+    KRAnyDataDestroy(h2);
+    KRAnyDataDestroy(three);
+}
+
+void TestMap(KRAnyDataCApiTestResult *r) {
+    KRRenderValue::Map members;
+    members["name"] = KRRenderValue::Make("kuikly");
+    members["count"] = KRRenderValue::Make(static_cast<int32_t>(7));
+    KRAnyData map = WrapAny(KRRenderValue::Make(std::move(members)));
+    Expect(r, KRAnyDataIsMap(map), "map_is_map");
+
+    KRAnyData child = nullptr;
+    Expect(r, KRAnyDataGetMapValue(map, "name", &child) == KRANYDATA_SUCCESS && child && KRAnyDataIsString(child) &&
+                  std::strcmp(KRAnyDataGetString(child), "kuikly") == 0,
+           "map_get_name");
+    int32_t iv = 0;
+    Expect(r, KRAnyDataGetMapValue(map, "count", &child) == KRANYDATA_SUCCESS && KRAnyDataIsInt(child) &&
+                  KRAnyDataGetInt(child, &iv) == KRANYDATA_SUCCESS && iv == 7,
+           "map_get_count");
+    Expect(r, KRAnyDataGetMapValue(map, "missing", &child) == KRANYDATA_KEY_NOT_FOUND && child == nullptr,
+           "map_get_missing");
+    Expect(r, KRAnyDataGetMapValue(map, nullptr, &child) == KRANYDATA_NULL_OUTPUT, "map_get_null_key");
+    Expect(r, KRAnyDataGetMapValue(map, "name", nullptr) == KRANYDATA_NULL_OUTPUT, "map_get_null_out");
+
+    struct VisitAcc {
+        int count = 0;
+        bool saw_name = false;
+        bool saw_count = false;
+    } acc;
+    auto visitor = [](const char *key, KRAnyData value, void *userData) {
+        auto *out = static_cast<VisitAcc *>(userData);
+        ++out->count;
+        if (key && std::strcmp(key, "name") == 0 && KRAnyDataIsString(value)) {
+            out->saw_name = std::strcmp(KRAnyDataGetString(value), "kuikly") == 0;
+        }
+        if (key && std::strcmp(key, "count") == 0 && KRAnyDataIsInt(value)) {
+            int32_t n = 0;
+            out->saw_count = KRAnyDataGetInt(value, &n) == KRANYDATA_SUCCESS && n == 7;
+        }
+    };
+    Expect(r, KRAnyDataVisitMap(map, visitor, &acc) == KRANYDATA_SUCCESS && acc.count == 2 && acc.saw_name &&
+                  acc.saw_count,
+           "map_visit");
+    Expect(r, KRAnyDataVisitMap(map, nullptr, &acc) == KRANYDATA_INVALID_PARAM, "map_visit_null_visitor");
+
+    KRAnyData not_map = KRAnyDataCreateString("nope");
+    Expect(r, KRAnyDataVisitMap(not_map, visitor, &acc) == KRANYDATA_TYPE_MISMATCH, "map_visit_type_mismatch");
+    Expect(r, KRAnyDataGetMapValue(not_map, "name", &child) == KRANYDATA_TYPE_MISMATCH, "map_get_type_mismatch");
+    Expect(r, KRAnyDataIsMap(nullptr) == false && KRAnyDataIsArray(nullptr) == false, "null_predicates");
+
+    KRAnyDataDestroy(map);
+    KRAnyDataDestroy(not_map);
+}
+
+void RunKRAnyDataCApiTests() {
+    KRAnyDataCApiTestResult result;
+    TestScalars(&result);
+    TestArray(&result);
+    TestMap(&result);
+    std::string report = "KRAnyData C API tests: passed=" + std::to_string(result.passed) +
+                         " failed=" + std::to_string(result.failed);
+    if (result.failed > 0) {
+        report += " first=" + result.first_failure;
+        KR_LOG_ERROR << report;
+    } else {
+        KR_LOG_INFO << report;
+    }
+}
+
+}  // namespace
+#endif  // NDEBUG
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
+#ifndef NDEBUG
+    RunKRAnyDataCApiTests();
+#endif
     napi_property_descriptor desc[] = {
         //  { "add", nullptr, Add, nullptr, nullptr, nullptr, napi_default, nullptr },
         {"onRenderViewSizeChanged", nullptr, OnRenderViewSizeChanged, nullptr, nullptr, nullptr, napi_default, nullptr},
