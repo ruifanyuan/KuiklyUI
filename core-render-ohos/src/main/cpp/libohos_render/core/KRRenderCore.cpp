@@ -104,7 +104,8 @@ void KRRenderCore::DidInit() {
     auto sync = context_->ExecuteMode()->IsContextSyncInit();
     KRContextScheduler::DirectRunOnMainThread(sync, [strongSelf = shared_from_this(), sync] {
         auto page_name = KRRenderValue::Make(strongSelf->context_->PageName());
-        auto page_data = KRRenderValue::Make(strongSelf->context_->PageData()->toString());
+        // PageData 以结构化 Map 下发（toCValue → NATIVE_JSON），省掉 toString() 与 Kotlin 侧重新解析
+        auto page_data = strongSelf->context_->PageData();
         auto null_arg = strongSelf->defaultNullValue_;
         strongSelf->notifyInitState(KRInitState::kStateInitContextStart);
         strongSelf->contextHandler_->InitContext();
@@ -126,16 +127,32 @@ void KRRenderCore::SendEvent(std::string event_name, const std::string &json_dat
     if (auto rv = renderView_.lock()) {
         needSync = rv->syncSendEvent(event_name);
     }
-    SendEvent(event_name, json_data, needSync);
+    SendEvent(std::move(event_name), json_data, needSync);
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const std::string &json_data, bool need_sync) {
-    auto task = [self = shared_from_this(), need_sync, event_name, json_data] {
+    // 历史字符串接口保持字符串下发：这里若解析成 Map 再转 cJSON，key 顺序会变成
+    // unordered_map 的顺序，Kotlin 侧拿到的 JSONObject 顺序与原始文本不再一致。
+    // Kotlin 的 PagerManager 同时接受 JSON 字符串与结构化 JSONObject。
+    SendEvent(std::move(event_name), KRRenderValue::Make(json_data), need_sync);
+}
+
+void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
+    bool needSync = false;
+    if (auto rv = renderView_.lock()) {
+        needSync = rv->syncSendEvent(event_name);
+    }
+    SendEvent(std::move(event_name), data, needSync);
+}
+
+void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync) {
+    auto task = [self = shared_from_this(), need_sync, event_name, data] {
         auto event = KRRenderValue::Make(event_name);
-        auto data = KRRenderValue::Make(json_data);
+        // Map / Array 负载走 toCValue 的 NATIVE_JSON；字符串负载原样下发
+        auto payload = data ? data : KRRenderValue::Make(KRRenderValue::Map{});
         auto nullValue = self->defaultNullValue_;
-        self->CallKotlinMethod(KuiklyRenderContextMethod::KuiklyRenderContextMethodUpdateInstance, event, data, nullValue,
-                               nullValue, nullValue);
+        self->CallKotlinMethod(KuiklyRenderContextMethod::KuiklyRenderContextMethodUpdateInstance, event, payload,
+                               nullValue, nullValue, nullValue);
         if (need_sync) {
             self->uiScheduler_->PerformSyncMainQueueTasksBlockIfNeed(true);
         }

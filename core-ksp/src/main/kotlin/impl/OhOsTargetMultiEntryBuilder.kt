@@ -70,23 +70,45 @@ class OhOsTargetMultiEntryBuilder(private val catchException: Boolean, private v
             .addStatement("}\n")
             .addStatement("""
                 return com_tencent_kuikly_SetCallKotlin(staticCFunction { methodId, arg0, arg1, arg2, arg3, arg4, arg5 ->
+                            // 与 OhOsTargetEntryBuilder 一致：只转换该方法真正使用的入参
                             val callKotlinClosure = {
-                                if (methodId == KotlinMethod.CREATE_INSTANCE) {
-                                    val nativeBridge = NativeBridge()
-                                    nativeBridge.callNativeCallback = { methodId, arg0, arg1, arg2, arg3, arg4, arg5 ->
-                                        callNative(methodId, arg0, arg1, arg2, arg3, arg4, arg5)
+                                when (methodId) {
+                                    KotlinMethod.CREATE_INSTANCE -> {
+                                        val instanceId = arg0.asString()
+                                        val nativeBridge = NativeBridge()
+                                        nativeBridge.callNativeCallback = { methodId, arg0, arg1, arg2, arg3, arg4, arg5 ->
+                                            callNative(methodId, arg0, arg1, arg2, arg3, arg4, arg5)
+                                        }
+                                        BridgeManager.registerNativeBridge(instanceId, nativeBridge)
+                                        BridgeManager.callKotlinMethod(
+                                            methodId, instanceId, arg1.toAny(), arg2.toAny(), null, null, null
+                                        )
                                     }
-                                    BridgeManager.registerNativeBridge(arg0.asString(), nativeBridge)
+                                    KotlinMethod.LAYOUT_VIEW -> {
+                                        BridgeManager.callKotlinMethod(methodId, arg0.toAny(), null, null, null, null, null)
+                                    }
+                                    KotlinMethod.FIRE_VIEW_EVENT -> {
+                                        BridgeManager.callKotlinMethod(
+                                            methodId, arg0.toAny(), arg1.toAny(), arg2.toAny(), arg3.toAny(), null, null
+                                        )
+                                    }
+                                    KotlinMethod.FIRE_CALLBACK, KotlinMethod.UPDATE_INSTANCE, KotlinMethod.DESTROY_INSTANCE -> {
+                                        BridgeManager.callKotlinMethod(
+                                            methodId, arg0.toAny(), arg1.toAny(), arg2.toAny(), null, null, null
+                                        )
+                                    }
+                                    else -> {
+                                        BridgeManager.callKotlinMethod(
+                                             methodId,
+                                             arg0.toAny(),
+                                             arg1.toAny(),
+                                             arg2.toAny(),
+                                             arg3.toAny(),
+                                             arg4.toAny(),
+                                             arg5.toAny()
+                                        )
+                                    }
                                 }
-                                BridgeManager.callKotlinMethod(
-                                     methodId,
-                                     arg0.toAny(),
-                                     arg1.toAny(),
-                                     arg2.toAny(),
-                                     arg3.toAny(),
-                                     arg4.toAny(),
-                                     arg5.toAny()
-                                )
                             }
                             if(BridgeManager.catchException){
                                 try {

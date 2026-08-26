@@ -24,6 +24,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import kotlinx.cinterop.*
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import ohos.KRRenderCValue
 import ohos.Type
 import platform.ohos.OH_LOG_Print
@@ -111,6 +112,9 @@ fun KRRenderCValue.toAny(): Any? {
         Type.STRING -> value.stringValue?.toKString()
         Type.BYTES -> toByteArray()
         Type.ARRAY -> value.arrayValue?.arrayToAny(size)
+        // 原生已构造好的 cJSON 树：retain 句柄后惰性读取，避免整棵树先序列化成字符串。
+        // 根节点是数组时返回 JSONArray（原生 Map 与无二进制元素的 Array 都走 NATIVE_JSON）
+        Type.NATIVE_JSON -> JSONObject.fromCJsonOwnerAny(value.longValue)
         else -> null
     }
 }

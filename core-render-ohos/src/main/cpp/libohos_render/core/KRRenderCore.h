@@ -75,6 +75,9 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
      */
     void SendEvent(std::string event_name, const std::string &json_data);
     void SendEvent(std::string event_name, const std::string &json_data, bool need_sync);
+    /** 结构化数据入口（Map/Array）：toCValue 走 NATIVE_JSON，不做 JSON 序列化 */
+    void SendEvent(std::string event_name, const KRAnyValue &data);
+    void SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync);
 
     /**
      * 获取渲染节点视图（要求在主线程调用）

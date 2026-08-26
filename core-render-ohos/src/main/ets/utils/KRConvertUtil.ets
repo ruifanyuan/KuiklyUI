@@ -30,15 +30,14 @@ export class KRConvertUtil {
       return null
     }
     if (Array.isArray(value)) {
-      if (KRConvertUtil.hasByteArrayElement(value as KRArray)) {
-        return value as KRArray
-      } else {
-        return JSON.stringify(value);
-      }
+      // 数组一律结构化透传（含 ArrayBuffer 元素的数组同样保持原样），Native 侧按
+      // Map/Array 构造 KRRenderValue，再以 NATIVE_JSON 交给 Kotlin，不做 JSON.stringify
+      return value as KRArray
     } else if (value instanceof ArrayBuffer) {
       return value;
     } else if (typeof value === 'object') {
-      return JSON.stringify(value);
+      // Record 透传：Native 侧建 Map → 惰性 NATIVE_JSON
+      return value as KRValue;
     } else {
       return value as KRValue;
     }

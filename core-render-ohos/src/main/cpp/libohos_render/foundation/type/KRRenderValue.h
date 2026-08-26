@@ -32,6 +32,7 @@
 #include <vector>
 #include "KRRenderCValue.h"
 #include "libohos_render/foundation/ark_ts.h"
+#include "libohos_render/foundation/type/KRLazyCJsonBridge.h"
 #include "libohos_render/foundation/type/KRRenderCValue.h"
 #include "libohos_render/utils/KRJsUtil.h"
 #include "libohos_render/utils/KRRenderLoger.h"
@@ -575,7 +576,7 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
                 c_value_.size = byte_array->size();
                 c_value_.value.bytesValue = reinterpret_cast<char *>(byte_array->data());
             } else if (isMap()) {
-                ToJsonMapOrArrayLocked();
+                ToNativeJsonLocked();
             } else if (isArray()) {
                 auto array = toArray();
                 if (HadByteArrayElement(array)) {  // 有二进制元素的话, 不进行 json 序列化，直接传递数组
@@ -591,7 +592,7 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
                     }
                     c_value_.value.arrayValue = array_ptr_;
                 } else {
-                    ToJsonMapOrArrayLocked();
+                    ToNativeJsonLocked();
                 }
             } else {
                 c_value_.type = KRRenderCValue::Type::NULL_VALUE;
@@ -708,6 +709,10 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
             delete[] array_ptr_;
             array_ptr_ = nullptr;
         }
+        if (owned_cjson_owner_ != 0) {
+            kuikly_cjson_release(owned_cjson_owner_);
+            owned_cjson_owner_ = 0;
+        }
     }
 
  private:
@@ -716,20 +721,26 @@ class KRRenderValue : public std::enable_shared_from_this<KRRenderValue> {
         value_;
     
     mutable std::once_flag c_value_once_flag_;
-    mutable std::string map_or_array_json_value_;  // 缓存经过序列化的 map或者 array, 用于缓存经过序列化的std::string
     mutable std::string cached_string_for_c_value_;
     mutable KRRenderCValue c_value_;
     mutable KRRenderCValue *array_ptr_ = nullptr;  // 指向数组的指针, 用于防止数组元素copy
+    /** NATIVE_JSON 的 shared_ptr 句柄，Kotlin 侧 retain 一份，生命周期各自独立 */
+    mutable int64_t owned_cjson_owner_ = 0;
 
-    // 用于 toCValue() 内部调用，调用时已持有锁
-    void ToJsonMapOrArrayLocked() const {
-        cJSON* cjson = toJson(this);
-        char* p = cJSON_PrintUnformatted(cjson);
-        map_or_array_json_value_ = p;
-        c_value_.type = KRRenderCValue::Type::STRING;
-        c_value_.value.stringValue = const_cast<char *>(map_or_array_json_value_.c_str());
-        cJSON_free(p);
-        cJSON_Delete(cjson);
+    /**
+     * 用于 toCValue() 内部调用，调用时已持有锁。
+     *
+     * Map / 无二进制元素的 Array 以 cJSON 树的共享所有权句柄传给 Kotlin（NATIVE_JSON），
+     * 不再 cJSON_PrintUnformatted + Kotlin 侧重新解析。Kotlin 侧会 retain 自己的句柄，
+     * 因此本对象析构后那棵树依然有效（异步派发场景必须如此）。
+     */
+    void ToNativeJsonLocked() const {
+        if (owned_cjson_owner_ == 0) {
+            owned_cjson_owner_ = kuikly_cjson_owner_create(toJson(this));
+        }
+        c_value_.type = KRRenderCValue::Type::NATIVE_JSON;
+        c_value_.size = 0;
+        c_value_.value.longValue = owned_cjson_owner_;
     }
 
     JSVM_Status ToJsonMapOrArray(JSVM_Env js_env, JSVM_Value *js_value) const {

@@ -23,6 +23,9 @@ import com.squareup.kotlinpoet.*
 open class IOSTargetEntryBuilder(private val catchException: Boolean) : KuiklyCoreAbsEntryBuilder() {
 
     override fun build(builder: FileSpec.Builder, pagesAnnotations: List<PageInfo>) {
+        // Foundation 容器（NSDictionary / NSArray）在进 BridgeManager 前包成惰性
+        // JSONObject / JSONArray，对应 OHOS 的 KRRenderCValue.toAny()
+        builder.addImport("com.tencent.kuikly.core.utils", "toKotlinBridgeArg")
         builder.addType(
             TypeSpec.classBuilder(entryFileName())
                 .apply {
@@ -98,7 +101,15 @@ open class IOSTargetEntryBuilder(private val catchException: Boolean) : KuiklyCo
             }
             BridgeManager.registerNativeBridge(arg0 as String, nativeBridge)
         }
-        BridgeManager.callKotlinMethod(methodId, arg0, arg1, arg2, arg3, arg4, arg5)
+        BridgeManager.callKotlinMethod(
+            methodId,
+            arg0.toKotlinBridgeArg(),
+            arg1.toKotlinBridgeArg(),
+            arg2.toKotlinBridgeArg(),
+            arg3.toKotlinBridgeArg(),
+            arg4.toKotlinBridgeArg(),
+            arg5.toKotlinBridgeArg()
+        )
     }
     
     if (BridgeManager.catchException){
