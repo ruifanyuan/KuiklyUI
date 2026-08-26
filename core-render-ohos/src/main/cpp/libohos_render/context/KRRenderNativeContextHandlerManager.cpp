@@ -57,35 +57,11 @@ void KRRenderNativeContextHandlerManager::UnregisterContextHandler(const std::st
     context_handler_map_.Erase(instanceId);
 }
 
-void KRRenderNativeContextHandlerManager::ScheduleDeallocRenderValues(
-    std::shared_ptr<KRRenderValue> will_dealloc_render_value) {
-    {
-        KRScopedSpinLock lock(&pending_dealloc_render_values_lock_);
-        pending_dealloc_render_values_.push_back(std::move(will_dealloc_render_value));
-    }
-    bool expected = false;
-    if (scheduling_dealloc_render_values_.compare_exchange_strong(expected, true)) {
-    KRContextScheduler::ScheduleTask(16, [this]() {
-            // `this` is safe to be captured in the closure, because it is an singleton.
-            decltype(pending_dealloc_render_values_) values;
-            {
-                KRScopedSpinLock lock(&pending_dealloc_render_values_lock_);
-                values.swap(pending_dealloc_render_values_);
-            }
-            // 必须先把标志位重置为 false 再让 values 离开作用域析构，
-            // 否则若析构过程中又触发 ScheduleDeallocRenderValues，将无法再投递新一轮调度任务。
-            KRRenderNativeContextHandlerManager::GetInstance()
-                .scheduling_dealloc_render_values_.store(false);
-            // values 在这里析构 -> shared_ptr<KRRenderValue> release，全部发生在 context 线程
-        });
-    }
-}
-
 static inline std::shared_ptr<KRRenderValue> MakeFromCValue(const KRRenderCValue &cValue) {
-    if (cValue.type == KRRenderCValue::NULL_VALUE) {
+    if (kuikly::util::json::GetType(cValue) == KRJSON_NULL) {
         return KRRenderValue::MakeNull();  // 复用静态单例，避免堆分配
     }
-    return KRRenderValue::Make(cValue);
+    return KRRenderValue::MakeBorrowed(cValue);
 }
 
 KRRenderCValue KRRenderNativeContextHandlerManager::DispatchCallNative(
@@ -96,14 +72,7 @@ KRRenderCValue KRRenderNativeContextHandlerManager::DispatchCallNative(
     // context_handler_map_ 中存在 handler 就意味着实例有效（注册/注销是配对的），
     // 额外的 GetRenderView 每次都要获取 SpinLock + unordered_map 查找，纯属浪费。
     if (!handler) {
-        // 注意：必须使用值初始化（{}）而非默认初始化。
-        // KRRenderCValue 是聚合类型，其 union value 的首成员为 int32_t 且无
-        // 初始化器，size 为 int32_t 无默认值；若写作 `KRRenderCValue null_cv;`
-        // 则 value / size 均为未初始化的栈上残留字节，随后 return 触发
-        // 结构体值拷贝会 memcpy 未初始化字节，越 napi C ABI 传给 Kotlin 侧
-        // 属于未定义行为（MSan/UBSan 必报）。此处 `{}` 会对整个聚合执行
-        // 值初始化，将 type 归零至 NULL_VALUE、union 首成员归零、size 归零。
-        return KRRenderCValue{};
+        return kuikly::util::json::NewNull();
     }
     // 优化：cv0（原 instanceId 槽位）已被 ICallNativeCallback::OnCallNative 的接口契约声明为
     // “保留位”，实现方不得依赖其内容；此处直接传入 KRRenderValue::MakeNull() 静态单例，
@@ -120,10 +89,9 @@ KRRenderCValue KRRenderNativeContextHandlerManager::DispatchCallNative(
     auto return_value =
         handler->OnCallNative(static_cast<KuiklyRenderNativeMethod>(methodId), cv0, cv1, cv2, cv3, cv4, cv5);
     if (return_value == nullptr || return_value->isNull()) {
-        // 同上：值初始化，避免 union value / size 字段残留未初始化字节
-        // 经 napi C ABI 传出导致 UB。
-        return KRRenderCValue{};
+        return kuikly::util::json::NewNull();
     }
-    ScheduleDeallocRenderValues(return_value);
-    return return_value->toCValue();
+    // The C result is an owned reference. Kotlin converts it immediately and
+    // releases this transfer reference; containers retain their own shell ref.
+    return kuikly::util::json::Retain(return_value->jsonValue());
 }

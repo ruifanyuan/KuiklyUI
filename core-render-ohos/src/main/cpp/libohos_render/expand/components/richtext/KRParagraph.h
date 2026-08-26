@@ -21,6 +21,7 @@
 #include "libohos_render/foundation/type/KRRenderValue.h"
 #include "libohos_render/utils/KRLinearGradientParser.h"
 
+struct NativeResourceManager;
 
 class KRParagraph final {
   public:

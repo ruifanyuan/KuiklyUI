@@ -50,7 +50,7 @@ bool KRAnyDataIsFloat(KRAnyData data) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return false;
     }
-    return internal->anyValue->isDouble();
+    return internal->anyValue->isFloat() || internal->anyValue->isDouble();
 }
 
 bool KRAnyDataIsBool(KRAnyData data) {
@@ -127,7 +127,7 @@ int KRAnyDataGetMapValue(KRAnyData data, const char* key, KRAnyData* value) {
         *value = nullptr;
         return KRANYDATA_KEY_NOT_FOUND;
     }
-    *value = it->second.get();
+    *value = internal->Borrow(it->second);
     return KRANYDATA_SUCCESS;
 }
 
@@ -137,7 +137,7 @@ const char *KRAnyDataGetString(KRAnyData data) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return nullptr;
     }
-    return internal->anyValue->toCValue().value.stringValue;
+    return kuikly::util::json::GetString(internal->anyValue->jsonValue(), nullptr);
 }
 
 int KRAnyDataGetInt(KRAnyData data, int32_t* value) {
@@ -148,7 +148,7 @@ int KRAnyDataGetInt(KRAnyData data, int32_t* value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *value = internal->anyValue->toCValue().value.intValue;
+    *value = internal->anyValue->toInt();
     return KRANYDATA_SUCCESS;
 }
 
@@ -160,7 +160,7 @@ int KRAnyDataGetLong(KRAnyData data, int64_t* value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *value = internal->anyValue->toCValue().value.longValue;
+    *value = internal->anyValue->toLong();
     return KRANYDATA_SUCCESS;
 }
 
@@ -172,7 +172,7 @@ int KRAnyDataGetFloat(KRAnyData data, float* value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *value = internal->anyValue->toCValue().value.doubleValue;
+    *value = internal->anyValue->toFloat();
     return KRANYDATA_SUCCESS;
 }
 
@@ -184,7 +184,7 @@ int KRAnyDataGetBool(KRAnyData data, bool* value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *value = internal->anyValue->toCValue().value.boolValue;
+    *value = internal->anyValue->toBool();
     return KRANYDATA_SUCCESS;
 }
 
@@ -196,9 +196,10 @@ int KRAnyDataGetBytes(KRAnyData data, const char** value, int *size) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    auto cValue = internal->anyValue->toCValue();
-    *value = cValue.value.bytesValue;
-    *size = cValue.size; 
+    size_t byteSize = 0;
+    const uint8_t *bytes = kuikly::util::json::GetBytes(internal->anyValue->jsonValue(), &byteSize);
+    *value = reinterpret_cast<const char *>(bytes);
+    *size = static_cast<int>(byteSize);
     return 0;
 }
 
@@ -210,8 +211,7 @@ int KRAnyDataGetStr(KRAnyData data, const char** value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    auto cValue = internal->anyValue->toCValue();
-    *value = cValue.value.stringValue;
+    *value = kuikly::util::json::GetString(internal->anyValue->jsonValue(), nullptr);
     return KRANYDATA_SUCCESS;
 }
 
@@ -239,7 +239,7 @@ int KRAnyDataGetArrayElement(KRAnyData data, KRAnyData* value, int index) {
     if (index < 0 || index >= array.size()) {
         return KRANYDATA_OUT_OF_INDEX;
     }
-    *value = array[index].get();
+    *value = internal->Borrow(array[index]);
     return KRANYDATA_SUCCESS;
 }
 

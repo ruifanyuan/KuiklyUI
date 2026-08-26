@@ -1132,7 +1132,7 @@ ParsedTextInputState ParseTextInputStateJson(const std::string &json) {
         return ret;
     }
     auto value = NewKRRenderValue(json);
-    auto map = value->toMap();  // KRRenderValue::toMap() 在字符串场景下走 cJSON_Parse
+    auto map = value->toMap();  // KRRenderValue::toMap() 在字符串场景下走 KRJSON Parse
     auto text_it = map.find(kKeyText);
     if (text_it != map.end() && text_it->second) {
         ret.text = text_it->second->toString();

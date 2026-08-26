@@ -18,7 +18,7 @@ package com.tencent.kuikly.core.nvi.serialization.json
 /**
  * 把桥接层送来的数据归一成 [JSONObject]。
  *
- * 平台侧结构化数据（OHOS 的 cJSON `NATIVE_JSON`、iOS 的 `NSDictionary`）在各平台
+ * 平台侧结构化数据（OHOS 的 KRJSON、iOS 的 `NSDictionary`）在各平台
  * callKotlin 入口已经包成惰性 [JSONObject]，直接返回；历史路径送来的是 JSON 字符串，
  * 按原有语义解析（非法文本照旧抛 [JSONException]）。其余类型（含二进制 `ByteArray`）
  * 不是 JSON 对象，返回 `null` 由调用方决定如何处理。

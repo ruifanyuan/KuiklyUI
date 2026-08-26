@@ -17,7 +17,7 @@ package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
  * OHOS 实现：底层容器可以是 Kotlin List（代码构造）或原生 KRJSON 数组
- * （`NATIVE_JSON` / [JSONTokener] 快路径，见 [LazyJsonList]）。
+ * （统一 KRJSON 桥接 / [JSONTokener] 快路径，见 [LazyJsonList]）。
  */
 actual class JSONArray internal actual constructor(
     values: MutableList<Any?>
