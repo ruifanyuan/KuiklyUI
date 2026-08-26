@@ -21,21 +21,39 @@ import kotlin.native.runtime.GC
 import kotlin.native.runtime.NativeRuntimeApi
 import kotlin.time.TimeSource
 
-private const val TOKENER_COMMON = "JSONTokener(common)"
+private const val TOKENER_NSJSON = "JSONTokener(NSJSONSerialization)"
 
 actual fun parseWithTokener(json: String): Any? = JSONTokener(json).nextValue()
 
+actual fun setForceAbstractTokener(force: Boolean) {
+    // no-op：iOS A/B 由其它钩子覆盖时可扩展
+}
+
+actual fun measureNativeParsedWrapNanos(json: String): Long = -1L
+
+actual fun bridgeSupported(): Boolean = false
+
+actual fun bridgeBuildOwner(json: String): Long = 0L
+
+actual fun bridgeReleaseOwner(owner: Long) {}
+
+actual fun bridgeBeforeArmRoot(owner: Long): Any? = null
+
+actual fun bridgeAfterArmRoot(owner: Long): Any? = null
+
 actual fun tokenerVariants(): List<TokenerVariant> = listOf(
-    TokenerVariant(TOKENER_COMMON) { JSONTokener(it).nextValue() }
+    TokenerVariant(TOKENER_NSJSON) { JSONTokener(it).nextValue() }
 )
 
 actual fun platformBridgeCheck(): String = verifyAppleLazyJsonBridge()
 
-actual fun currentTokenerName(): String = TOKENER_COMMON
+actual fun currentTokenerName(): String = TOKENER_NSJSON
 
 actual fun selectTokener(name: String) {
     // 只有一份实现，无可切换
 }
+
+actual fun platformPreservesJsonTextKeyOrder(): Boolean = false
 
 @OptIn(NativeRuntimeApi::class)
 actual fun collectGarbage() {

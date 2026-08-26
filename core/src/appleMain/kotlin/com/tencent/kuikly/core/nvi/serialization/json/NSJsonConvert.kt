@@ -50,11 +50,7 @@ internal fun nsNumberToKotlin(number: NSNumber): Any {
             val double = number.doubleValue
             val long = number.longLongValue
             if (double == long.toDouble()) {
-                if (long >= Int.MIN_VALUE.toLong() && long <= Int.MAX_VALUE.toLong()) {
-                    long.toInt()
-                } else {
-                    long
-                }
+                narrowIntegralNumber(long)
             } else {
                 double
             }
@@ -74,7 +70,13 @@ internal fun nsValueToKotlin(value: Any?): Any? {
     return when (value) {
         is JSONObject, is JSONArray -> value
         is String -> value
-        is Boolean, is Int, is Long, is Double, is Float, is ByteArray -> value
+        is Boolean -> value
+        is Int -> value
+        // NSDictionary 取值时 NSNumber 常被 K/N 直接映成 Long/Double，需与宽松扫描器选型对齐。
+        is Long -> narrowIntegralNumber(value)
+        is Double -> value
+        is Float -> value.toDouble()
+        is ByteArray -> value
         is NSNumber -> nsNumberToKotlin(value)
         is NSData -> value.toByteArray()
         is NSDictionary -> JSONObject(value)
@@ -82,6 +84,15 @@ internal fun nsValueToKotlin(value: Any?): Any? {
         is Map<*, *> -> toBridgeJSONObject(value)
         is List<*> -> toBridgeJSONArray(value)
         else -> value.toString()
+    }
+}
+
+/** 整型在 `Int` 范围内收窄为 `Int`，与 [AbstractJSONTokener] 数字选型一致。 */
+internal fun narrowIntegralNumber(value: Long): Any {
+    return if (value >= Int.MIN_VALUE.toLong() && value <= Int.MAX_VALUE.toLong()) {
+        value.toInt()
+    } else {
+        value
     }
 }
 

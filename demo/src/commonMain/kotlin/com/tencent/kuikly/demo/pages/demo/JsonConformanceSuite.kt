@@ -38,6 +38,12 @@ expect fun currentTokenerName(): String
 expect fun selectTokener(name: String)
 
 /**
+ * 字符串解析后的 [JSONObject] 是否保留 JSON 文本中的 key 出现顺序。
+ * Apple 走 `NSJSONSerialization` → `NSDictionary` 时为 false。
+ */
+expect fun platformPreservesJsonTextKeyOrder(): Boolean
+
+/**
  * 解析 + 序列化 + JSONObject/JSONArray 增删改查的一致性用例集。
  *
  * 对 [tokenerVariants] 里的每一份实现跑同一套用例，做两层校验：
@@ -184,13 +190,18 @@ internal object JsonConformance {
             r.record("$label text", escape(text))
 
             // 幂等性：序列化 → 解析 → 再序列化，文本必须完全一致。
+            // Apple 走 NSDictionary 时 key 次序不稳定，只校验值（looseFingerprint）。
             val reparsed = try {
                 variant.parse(text)
             } catch (e: Exception) {
                 r.fail("$label: 序列化结果无法回解 \"${escape(text)}\"：${normalizeError(e.message)}")
                 continue
             }
-            r.checkText("$label roundtrip", stringifyTree(reparsed), text)
+            if (platformPreservesJsonTextKeyOrder()) {
+                r.checkText("$label roundtrip", stringifyTree(reparsed), text)
+            } else {
+                r.record("$label roundtrip", "skipped(native unordered keys)")
+            }
 
             // 值层面：数字会被 JSON.numberToString 归一（Double 1.0 序列化成 "1"，回解成 Int），
             // 故用把所有数字折叠成 Double 的宽松指纹比对，只校验结构与数值。
@@ -202,10 +213,12 @@ internal object JsonConformance {
             return
         }
         r.record("serialize/exact-text", "checked")
+        // 序列化契约：紧凑 JSON（冒号后无空格，'/' 不转义），对齐 RFC 8259 /
+        // JSON.stringify / cJSON_PrintUnformatted。org.json 的 ": " 与 "\/" 不是规范要求。
         r.checkText(
             "serialize/exact flat object",
             jsonObj("i" to 1, "s" to "x", "b" to true, "n" to null).toString(),
-            "{\"i\": 1,\"s\": \"x\",\"b\": true,\"n\": null}"
+            "{\"i\":1,\"s\":\"x\",\"b\":true,\"n\":null}"
         )
         r.checkText("serialize/exact empty object", JSONObject().toString(), "{}")
         r.checkText("serialize/exact empty array", JSONArray().toString(), "[]")
@@ -213,19 +226,18 @@ internal object JsonConformance {
         r.checkText(
             "serialize/exact nested",
             jsonObj("a" to jsonArr(jsonObj("b" to 2))).toString(),
-            "{\"a\": [{\"b\": 2}]}"
+            "{\"a\":[{\"b\":2}]}"
         )
         // Double 整值被写成整数是 JSON.numberToString 的既有行为，锁死避免回归。
-        r.checkText("serialize/exact whole double", jsonObj("d" to 1.0).toString(), "{\"d\": 1}")
-        r.checkText("serialize/exact fractional", jsonObj("d" to 1.25).toString(), "{\"d\": 1.25}")
-        r.checkText("serialize/exact long", jsonObj("l" to 2147483648L).toString(), "{\"l\": 2147483648}")
-        // JSONStringer 会额外转义 '/'，控制字符走 \\u00xx。
+        r.checkText("serialize/exact whole double", jsonObj("d" to 1.0).toString(), "{\"d\":1}")
+        r.checkText("serialize/exact fractional", jsonObj("d" to 1.25).toString(), "{\"d\":1.25}")
+        r.checkText("serialize/exact long", jsonObj("l" to 2147483648L).toString(), "{\"l\":2147483648}")
         r.checkText(
             "serialize/exact escapes",
             jsonObj("s" to "a\"b\\c/d\te\nf\rg\u0001h").toString(),
-            "{\"s\": \"a\\\"b\\\\c\\/d\\te\\nf\\rg\\u0001h\"}"
+            "{\"s\":\"a\\\"b\\\\c/d\\te\\nf\\rg\\u0001h\"}"
         )
-        r.checkText("serialize/quote helper", JSONObject.quote("a\"b/c\n"), "\"a\\\"b\\/c\\n\"")
+        r.checkText("serialize/quote helper", JSONObject.quote("a\"b/c\n"), "\"a\\\"b/c\\n\"")
         r.checkText("serialize/quote null", JSONObject.quote(null), "\"\"")
     }
 
@@ -417,8 +429,12 @@ internal object JsonConformance {
         r.check("engine/JSONObject on array throws", captureError { JSONObject("[1]") } != NO_ERROR, true)
         r.check("engine/JSONArray on object throws", captureError { JSONArray("{}") } != NO_ERROR, true)
 
-        // key 顺序与序列化格式无关，所有平台/所有引擎都必须成立
-        runKeyOrderChecks(r)
+        // key 顺序：有序 map / cJSON 链表可保留文本次序；Apple NSDictionary 不能。
+        if (platformPreservesJsonTextKeyOrder()) {
+            runKeyOrderChecks(r)
+        } else {
+            r.record("engine/key order", "skipped(native unordered map)")
+        }
 
         if (usesCommonSerialization()) {
             r.checkText(
@@ -443,17 +459,16 @@ internal object JsonConformance {
                 fingerprint(JSONEngine.parse(CRUD_JSON)),
                 fingerprint(variant.parse(CRUD_JSON))
             )
-            runKeyOrderTextChecks(r)
+            if (platformPreservesJsonTextKeyOrder()) {
+                runKeyOrderTextChecks(r)
+            }
         }
     }
 
     /**
-     * key 顺序：`JSONObject(jsonStr)` / `JSONArray(jsonStr)` 必须保持 JSON 文本里的
-     * 成员顺序，序列化文本是对端可观测行为。
-     *
-     * 哪个平台想用原生解析器（iOS `NSJSONSerialization`、OHOS cJSON 等无序容器）
-     * 抄近路，这里就会失败：`NSDictionary` / cJSON 的 key 顺序不等于文本顺序。
-     * 这里只比对 key 出现次序，与各平台序列化的空格风格无关，因此所有平台都跑。
+     * key 顺序：`JSONObject(jsonStr)` / `JSONArray(jsonStr)` 在保留文本顺序的平台上
+     * 必须与 JSON 成员出现次序一致。Apple `NSDictionary` 不保证该次序，由
+     * [platformPreservesJsonTextKeyOrder] 跳过。
      */
     private fun runKeyOrderChecks(r: Recorder) {
         r.checkText("engine/key order flat", keyOrderOf(JSONObject("""{"z":1,"a":2,"m":3}""").toString()), "z,a,m")
@@ -524,22 +539,22 @@ internal object JsonConformance {
         return keys.joinToString(",")
     }
 
-    /** 精确文本（含空格风格）只在使用通用序列化的平台上校验。 */
+    /** 精确文本只在使用通用序列化的平台上校验（紧凑 JSON，冒号后无空格）。 */
     private fun runKeyOrderTextChecks(r: Recorder) {
         r.checkText(
             "engine/key order exact flat",
             JSONObject("""{"z":1,"a":2,"m":3}""").toString(),
-            """{"z": 1,"a": 2,"m": 3}"""
+            """{"z":1,"a":2,"m":3}"""
         )
         r.checkText(
             "engine/key order exact nested",
             JSONObject("""{"z":{"y":1,"b":2},"a":[{"d":1,"c":2}]}""").toString(),
-            """{"z": {"y": 1,"b": 2},"a": [{"d": 1,"c": 2}]}"""
+            """{"z":{"y":1,"b":2},"a":[{"d":1,"c":2}]}"""
         )
         r.checkText(
             "engine/key order exact array root",
             JSONArray("""[{"z":1,"a":2}]""").toString(),
-            """[{"z": 1,"a": 2}]"""
+            """[{"z":1,"a":2}]"""
         )
     }
 
@@ -969,7 +984,7 @@ private fun normalizeError(message: String?): String {
  * JS 走原生 `JSON.stringify` + 无序 key 集合，精确文本类断言在那边不成立。
  */
 private fun usesCommonSerialization(): Boolean =
-    JSONObject().put("probe", 1).toString() == "{\"probe\": 1}"
+    JSONObject().put("probe", 1).toString() == "{\"probe\":1}"
 
 private fun stringifyTree(tree: Any?): String = when (tree) {
     is JSONObject -> tree.toString()

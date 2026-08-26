@@ -78,8 +78,8 @@ fun verifyOhosLazyJsonBridge(): String {
     expectEquals(failures, "roundtrip int", text.opt("i"), 1)
     expectEquals(failures, "roundtrip child", text.optJSONObject("child")?.optString("ck"), "cv")
 
-    // 数组根同样走 NATIVE_JSON
-    val arrayOwner = CJsonNative.ownerFromJson("""[{"k":1},2,"three"]""")
+    // 数组根同样走惰性 List（不再 print + 宽松重解析）
+    val arrayOwner = CJsonNative.ownerFromJson("""[1,"two",{"ak":3},[9]]""")
     if (arrayOwner == 0L) {
         failures.add("array owner create failed")
     } else {
@@ -87,11 +87,15 @@ fun verifyOhosLazyJsonBridge(): String {
         CJsonNative.release(arrayOwner)
         val rootArray = wrappedArray as? JSONArray
         if (rootArray == null) {
-            failures.add("array root not wrapped as JSONArray")
+            failures.add("array root not wrapped as JSONArray: ${wrappedArray?.let { it::class.simpleName }}")
         } else {
-            expectEquals(failures, "array root length", rootArray.length(), 3)
-            expectEquals(failures, "array root nested", rootArray.optJSONObject(0)?.opt("k"), 1)
-            expectEquals(failures, "array root text", rootArray.toString(), """[{"k": 1},2,"three"]""")
+            expectEquals(failures, "array root length", rootArray.length(), 4)
+            expectEquals(failures, "array root int", rootArray.opt(0), 1)
+            expectEquals(failures, "array root nested obj", rootArray.optJSONObject(2)?.opt("ak"), 3)
+            expectEquals(failures, "array root nested arr", rootArray.optJSONArray(3)?.opt(0), 9)
+            val roundtrip = JSONArray(rootArray.toString())
+            expectEquals(failures, "array root roundtrip length", roundtrip.length(), 4)
+            expectEquals(failures, "array root roundtrip nested", roundtrip.optJSONObject(2)?.opt("ak"), 3)
         }
     }
 

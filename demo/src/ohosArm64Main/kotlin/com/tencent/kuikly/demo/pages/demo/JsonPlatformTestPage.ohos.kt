@@ -15,27 +15,46 @@
 
 package com.tencent.kuikly.demo.pages.demo
 
+import com.tencent.kuikly.core.nvi.serialization.json.JSONException
+import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 import com.tencent.kuikly.core.nvi.serialization.json.JSONTokener
+import com.tencent.kuikly.core.nvi.serialization.json.OhosJsonPerfHooks
 import com.tencent.kuikly.core.nvi.serialization.json.verifyOhosLazyJsonBridge
 import kotlin.native.runtime.GC
 import kotlin.native.runtime.NativeRuntimeApi
-import kotlin.time.TimeSource
+import kotlin.system.getTimeNanos
 
-private const val TOKENER_COMMON = "JSONTokener(common)"
+private const val TOKENER_CJSON = "JSONTokener(cJSON)"
 
 actual fun parseWithTokener(json: String): Any? = JSONTokener(json).nextValue()
 
+actual fun measureNativeParsedWrapNanos(json: String): Long =
+    OhosJsonPerfHooks.measureWrapAfterNativeParseNanos(json)
+
+actual fun bridgeSupported(): Boolean = true
+
+actual fun bridgeBuildOwner(json: String): Long = OhosJsonPerfHooks.bridgeBuildOwner(json)
+
+actual fun bridgeReleaseOwner(owner: Long) = OhosJsonPerfHooks.bridgeReleaseOwner(owner)
+
+actual fun bridgeBeforeArmRoot(owner: Long): Any? = OhosJsonPerfHooks.bridgeBeforeArmRoot(owner)
+
+actual fun bridgeAfterArmRoot(owner: Long): Any? = OhosJsonPerfHooks.bridgeAfterArmRoot(owner)
+
 actual fun tokenerVariants(): List<TokenerVariant> = listOf(
-    TokenerVariant(TOKENER_COMMON) { JSONTokener(it).nextValue() }
+    TokenerVariant(TOKENER_CJSON) { JSONTokener(it).nextValue() }
 )
 
 actual fun platformBridgeCheck(): String = verifyOhosLazyJsonBridge()
 
-actual fun currentTokenerName(): String = TOKENER_COMMON
+actual fun currentTokenerName(): String = TOKENER_CJSON
 
 actual fun selectTokener(name: String) {
     // 只有一份实现，无可切换
 }
+
+actual fun platformPreservesJsonTextKeyOrder(): Boolean = true
 
 @OptIn(NativeRuntimeApi::class)
 actual fun collectGarbage() {
@@ -109,5 +128,6 @@ actual fun getPlatformName(): String {
 }
 
 actual fun getTimeNanosPlatform(): Long {
-    return TimeSource.Monotonic.markNow().elapsedNow().inWholeNanoseconds
+    // markNow().elapsedNow() 每次都是新 mark，差值接近 0；用 monotonic 绝对纳秒。
+    return getTimeNanos()
 }
