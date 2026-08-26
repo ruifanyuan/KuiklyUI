@@ -36,7 +36,6 @@
 #include "libohos_render/foundation/type/KRRenderCValue.h"
 #include "libohos_render/utils/KRJsUtil.h"
 #include "libohos_render/utils/NAPIUtil.h"
-#include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/json/Reader.h"
 #include "libohos_render/utils/json/Value.h"
 
@@ -46,46 +45,96 @@ struct NapiValue {
     napi_value value = nullptr;
 };
 
+class KRRenderValue;
+using KRRenderValueMap = std::unordered_map<std::string, KRRenderValue>;
+using KRRenderValueArray = std::vector<KRRenderValue>;
+
 /**
  * Compatibility façade over the unified KRJSONValue storage.
  *
  * Every ordinary bridge value is represented by one tagged KRJSONValue word.
- * The shared_ptr custom deleter owns/releases that word. Raw NAPI handles are
- * intentionally kept as an ArkTS-only side channel because they are not data
- * values and must never cross the Kotlin ABI.
+ * This façade is an RAII value type: copy retains, move transfers and destruction
+ * releases the word. Raw NAPI handles are intentionally kept as an ArkTS-only
+ * shared side channel because they are not data values and must never cross the
+ * Kotlin ABI.
  */
 class KRRenderValue {
  public:
-    using Map = std::unordered_map<std::string, std::shared_ptr<KRRenderValue>>;
-    using Array = std::vector<std::shared_ptr<KRRenderValue>>;
+    using Map = KRRenderValueMap;
+    using Array = KRRenderValueArray;
     using ByteArray = std::shared_ptr<std::vector<uint8_t>>;
 
-    KRRenderValue(const KRRenderValue &) = delete;
-    KRRenderValue &operator=(const KRRenderValue &) = delete;
-    KRRenderValue(KRRenderValue &&) = delete;
-    KRRenderValue &operator=(KRRenderValue &&) = delete;
+    // Default/nullptr construction preserves the old empty shared_ptr state.
+    // KRRenderValue::Make() creates a present JSON null instead.
+    KRRenderValue() = default;
+    KRRenderValue(std::nullptr_t) {}
+
+    KRRenderValue(const KRRenderValue &other)
+        : value_(kuikly::util::json::Retain(other.value_)), raw_napi_(other.raw_napi_) {}
+
+    KRRenderValue &operator=(const KRRenderValue &other) {
+        if (this != &other) {
+            const KRJSONValue retained = kuikly::util::json::Retain(other.value_);
+            kuikly::util::json::Release(value_);
+            value_ = retained;
+            raw_napi_ = other.raw_napi_;
+        }
+        return *this;
+    }
+
+    KRRenderValue(KRRenderValue &&other) noexcept
+        : value_(std::exchange(other.value_, KRJSON_INVALID)), raw_napi_(std::move(other.raw_napi_)) {}
+
+    KRRenderValue &operator=(KRRenderValue &&other) noexcept {
+        if (this != &other) {
+            kuikly::util::json::Release(value_);
+            value_ = std::exchange(other.value_, KRJSON_INVALID);
+            raw_napi_ = std::move(other.raw_napi_);
+        }
+        return *this;
+    }
+
+    KRRenderValue &operator=(std::nullptr_t) {
+        kuikly::util::json::Release(value_);
+        value_ = KRJSON_INVALID;
+        raw_napi_.reset();
+        return *this;
+    }
+
+    ~KRRenderValue() {
+        kuikly::util::json::Release(value_);
+    }
+
+    explicit operator bool() const {
+        return value_ != KRJSON_INVALID || raw_napi_ != nullptr;
+    }
+    bool operator==(std::nullptr_t) const { return !static_cast<bool>(*this); }
+    bool operator!=(std::nullptr_t) const { return static_cast<bool>(*this); }
+
+    // Transitional compatibility: existing KRAnyValue call sites may keep `value->`.
+    KRRenderValue *operator->() { return this; }
+    const KRRenderValue *operator->() const { return this; }
 
     template<typename... Args>
-    static std::shared_ptr<KRRenderValue> Make(Args &&...args) {
+    static KRRenderValue Make(Args &&...args) {
         return MakeOwned(Build(std::forward<Args>(args)...));
     }
 
-    static std::shared_ptr<KRRenderValue> MakeNull() {
-        static auto value = MakeOwned(kuikly::util::json::NewNull());
+    static KRRenderValue MakeNull() {
+        return MakeOwned(kuikly::util::json::NewNull());
+    }
+
+    static KRRenderValue MakeEmptyString() {
+        static const auto value = MakeOwned(kuikly::util::json::NewString("", 0));
         return value;
     }
 
-    static std::shared_ptr<KRRenderValue> MakeEmptyString() {
-        static auto value = MakeOwned(kuikly::util::json::NewString("", 0));
-        return value;
-    }
-
-    static std::shared_ptr<KRRenderValue> MakeBorrowed(KRJSONValue value) {
+    static KRRenderValue MakeBorrowed(KRJSONValue value) {
         return MakeOwned(kuikly::util::json::Retain(value));
     }
 
-    static std::shared_ptr<KRRenderValue> Make(NapiValue value) {
-        return MakeOwned(Build(), std::make_unique<NapiValue>(value));
+    static KRRenderValue Make(NapiValue value) {
+        return MakeOwned(Build(), std::make_shared<NapiValue>(value));
     }
 
     KRJSONValue jsonValue() const {
@@ -232,7 +281,7 @@ class KRRenderValue {
     }
 
     KRJSONValue toCValue() const {
-        return raw_napi_ ? kuikly::util::json::NewNull() : value_;
+        return !static_cast<bool>(*this) || raw_napi_ ? kuikly::util::json::NewNull() : value_;
     }
 
     void ToNapiValue(const napi_env &env, napi_value *result, napi_status &status) const {
@@ -317,16 +366,12 @@ class KRRenderValue {
     }
 
  private:
-    explicit KRRenderValue(KRJSONValue value, std::unique_ptr<NapiValue> raw_napi = nullptr)
+    explicit KRRenderValue(KRJSONValue value, std::shared_ptr<NapiValue> raw_napi = nullptr)
         : value_(value), raw_napi_(std::move(raw_napi)) {}
 
-    static std::shared_ptr<KRRenderValue> MakeOwned(
-        KRJSONValue value, std::unique_ptr<NapiValue> raw_napi = nullptr) {
-        auto *holder = new KRRenderValue(value, std::move(raw_napi));
-        return std::shared_ptr<KRRenderValue>(holder, [](KRRenderValue *owned) {
-            kuikly::util::json::Release(owned->value_);
-            delete owned;
-        });
+    static KRRenderValue MakeOwned(
+        KRJSONValue value, std::shared_ptr<NapiValue> raw_napi = nullptr) {
+        return KRRenderValue(value, std::move(raw_napi));
     }
 
     static KRJSONValue Build() { return kuikly::util::json::NewNull(); }
@@ -374,7 +419,7 @@ class KRRenderValue {
         return FromJsVm(env, value);
     }
 
-    static std::shared_ptr<KRRenderValue> MakeParsed(const std::string &json) {
+    static KRRenderValue MakeParsed(const std::string &json) {
         std::string error;
         KRJSONValue parsed = kuikly::util::json::Reader::Parse(json.data(), json.size(), &error);
         return parsed == KRJSON_INVALID ? MakeNull() : MakeOwned(parsed);
@@ -558,12 +603,12 @@ class KRRenderValue {
         return raw_napi_ ? KRJSON_NULL : kuikly::util::json::GetType(value_);
     }
 
-    KRJSONValue value_;
-    std::unique_ptr<NapiValue> raw_napi_;
+    KRJSONValue value_ = KRJSON_INVALID;
+    std::shared_ptr<NapiValue> raw_napi_;
 };
 
 template<>
-inline std::shared_ptr<KRRenderValue> KRRenderValue::Make<const char *>(const char *&&value) {
+inline KRRenderValue KRRenderValue::Make<const char *>(const char *&&value) {
     return value == nullptr || value[0] == '\0' ? MakeEmptyString() : MakeOwned(Build(value));
 }
 

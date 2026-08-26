@@ -166,7 +166,7 @@ void KRArkTSManager::FireCallbackFromArkTS(napi_env env, napi_value *args, size_
         bool arg_prefer_raw_napi_value = false;
         auto callback = renderView->GetArgCallback(callback_id, arg_prefer_raw_napi_value);
         if (callback != nullptr) {
-            std::shared_ptr<KRRenderValue> data;
+            KRAnyValue data;
             if (arg_prefer_raw_napi_value) {
                 data = KRRenderValue::Make(NapiValue(env, args[3]));
             } else {

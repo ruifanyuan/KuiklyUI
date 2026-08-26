@@ -57,9 +57,9 @@ void KRRenderNativeContextHandlerManager::UnregisterContextHandler(const std::st
     context_handler_map_.Erase(instanceId);
 }
 
-static inline std::shared_ptr<KRRenderValue> MakeFromCValue(const KRRenderCValue &cValue) {
+static inline KRAnyValue MakeFromCValue(const KRRenderCValue &cValue) {
     if (kuikly::util::json::GetType(cValue) == KRJSON_NULL) {
-        return KRRenderValue::MakeNull();  // 复用静态单例，避免堆分配
+        return KRRenderValue::MakeNull();
     }
     return KRRenderValue::MakeBorrowed(cValue);
 }
@@ -74,12 +74,9 @@ KRRenderCValue KRRenderNativeContextHandlerManager::DispatchCallNative(
     if (!handler) {
         return kuikly::util::json::NewNull();
     }
-    // 优化：cv0（原 instanceId 槽位）已被 ICallNativeCallback::OnCallNative 的接口契约声明为
-    // “保留位”，实现方不得依赖其内容；此处直接传入 KRRenderValue::MakeNull() 静态单例，
-    // 避免每次调用都构造一个 std::string 并分配 shared_ptr。
-    // 如未来需要恢复 instanceId 传递，请先同步修改 IKRRenderNativeContextHandler.h 中
-    // ICallNativeCallback::OnCallNative 的契约注释，再改本处构造逻辑，避免形成静默约定。
-    auto cv0 = KRRenderValue::MakeNull();
+    // arg0 是 Kotlin 传入的 instanceId（KRJSON string）。值类型下只是 Retain
+    // 已有节点，不再额外分配 façade，因此原样下发给 OnCallNative。
+    auto cv0 = MakeFromCValue(arg0);
     auto cv1 = MakeFromCValue(arg1);
     auto cv2 = MakeFromCValue(arg2);
     auto cv3 = MakeFromCValue(arg3);
@@ -92,6 +89,6 @@ KRRenderCValue KRRenderNativeContextHandlerManager::DispatchCallNative(
         return kuikly::util::json::NewNull();
     }
     // The C result is an owned reference. Kotlin converts it immediately and
-    // releases this transfer reference; containers retain their own shell ref.
+    // releases this transfer reference; containers retain their own node reference.
     return kuikly::util::json::Retain(return_value->jsonValue());
 }

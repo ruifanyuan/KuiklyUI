@@ -102,7 +102,7 @@ class KRForwardRenderModule : public IKRRenderModuleExport {
 
             if (val) {
                 KRAnyDataInternal* internal = static_cast<KRAnyDataInternal*>(val);
-                std::shared_ptr<KRRenderValue> v = internal->anyValue;
+                KRAnyValue v = internal->anyValue;
                 KRAnyDataDestroy(val);
                 return v;
             }

@@ -26,7 +26,7 @@
  */
 class KRRenderContextParams {
  public:
-    KRRenderContextParams(const std::string &page_name, const std::shared_ptr<KRRenderValue> &page_data,
+    KRRenderContextParams(const std::string &page_name, const KRRenderValue &page_data,
                           const std::string &instance_id, const std::string &configJsonStr) {
         this->page_name_ = page_name;
         this->instance_id_ = instance_id;
@@ -60,10 +60,10 @@ class KRRenderContextParams {
     const std::string &InstanceId() const {
         return instance_id_;
     }
-    const std::shared_ptr<KRRenderValue> &PageData() const {
+    const KRRenderValue &PageData() const {
         return page_data_;
     }
-    const std::shared_ptr<KRRenderValue> PageParam() const {
+    KRRenderValue PageParam() const {
         return page_data_->toMap().find("param")->second;
     }
     const std::shared_ptr<KRConfig> &Config() const {
@@ -88,7 +88,7 @@ class KRRenderContextParams {
      */
     std::string context_code_;
     /** 页面携带透传的数据，对标kotlin侧的pagerData.params */
-    std::shared_ptr<KRRenderValue> page_data_;
+    KRRenderValue page_data_;
     /** 配置数据 */
     std::shared_ptr<KRConfig> config_;
 };

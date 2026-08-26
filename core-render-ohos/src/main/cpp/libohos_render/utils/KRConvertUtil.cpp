@@ -14,7 +14,9 @@
  */
 
 #include "libohos_render/utils/KRConvertUtil.h"
+#include "libohos_render/adapter/KRRenderAdapterManager.h"
 #include "libohos_render/foundation/KRConfig.h"
+#include "libohos_render/utils/KRRenderLoger.h"
 #include <codecvt>
 #include <iostream>
 #include <locale>

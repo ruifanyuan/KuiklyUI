@@ -20,12 +20,9 @@
 extern CallKotlin callKotlin_;
 
 void DefaultRenderNativeContextHandler::CallKotlinMethod(const KuiklyRenderContextMethod &method,
-                                                         const std::shared_ptr<KRRenderValue> &arg0,
-                                                         const std::shared_ptr<KRRenderValue> &arg1,
-                                                         const std::shared_ptr<KRRenderValue> &arg2,
-                                                         const std::shared_ptr<KRRenderValue> &arg3,
-                                                         const std::shared_ptr<KRRenderValue> &arg4,
-                                                         const std::shared_ptr<KRRenderValue> &arg5) {
+                                                         const KRAnyValue &arg0, const KRAnyValue &arg1,
+                                                         const KRAnyValue &arg2, const KRAnyValue &arg3,
+                                                         const KRAnyValue &arg4, const KRAnyValue &arg5) {
     if (callKotlin_ == nullptr) {
         __assert_fail("Tips: make sure initKuikly() has been called!", __FILE__, __LINE__, __func__);
     }
