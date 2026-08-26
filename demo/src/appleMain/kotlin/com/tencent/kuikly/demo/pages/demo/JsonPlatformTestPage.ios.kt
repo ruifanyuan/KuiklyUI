@@ -15,6 +15,7 @@
 
 package com.tencent.kuikly.demo.pages.demo
 
+import com.tencent.kuikly.core.nvi.serialization.json.AppleJsonPerfHooks
 import com.tencent.kuikly.core.nvi.serialization.json.JSONTokener
 import com.tencent.kuikly.core.nvi.serialization.json.verifyAppleLazyJsonBridge
 import kotlin.native.runtime.GC
@@ -25,21 +26,18 @@ private const val TOKENER_NSJSON = "JSONTokener(NSJSONSerialization)"
 
 actual fun parseWithTokener(json: String): Any? = JSONTokener(json).nextValue()
 
-actual fun setForceAbstractTokener(force: Boolean) {
-    // no-op：iOS A/B 由其它钩子覆盖时可扩展
-}
+actual fun measureNativeParsedWrapNanos(json: String): Long =
+    AppleJsonPerfHooks.measureWrapAfterNativeParseNanos(json)
 
-actual fun measureNativeParsedWrapNanos(json: String): Long = -1L
+actual fun bridgeSupported(): Boolean = true
 
-actual fun bridgeSupported(): Boolean = false
+actual fun bridgeBuildOwner(json: String): Long = AppleJsonPerfHooks.bridgeBuildOwner(json)
 
-actual fun bridgeBuildOwner(json: String): Long = 0L
+actual fun bridgeReleaseOwner(owner: Long) = AppleJsonPerfHooks.bridgeReleaseOwner(owner)
 
-actual fun bridgeReleaseOwner(owner: Long) {}
+actual fun bridgeBeforeArmRoot(owner: Long): Any? = AppleJsonPerfHooks.bridgeBeforeArmRoot(owner)
 
-actual fun bridgeBeforeArmRoot(owner: Long): Any? = null
-
-actual fun bridgeAfterArmRoot(owner: Long): Any? = null
+actual fun bridgeAfterArmRoot(owner: Long): Any? = AppleJsonPerfHooks.bridgeAfterArmRoot(owner)
 
 actual fun tokenerVariants(): List<TokenerVariant> = listOf(
     TokenerVariant(TOKENER_NSJSON) { JSONTokener(it).nextValue() }
@@ -126,6 +124,9 @@ actual fun getPlatformName(): String {
     return "K/N Apple (iOS/macOS)"
 }
 
+private val processMono = TimeSource.Monotonic.markNow()
+
 actual fun getTimeNanosPlatform(): Long {
-    return TimeSource.Monotonic.markNow().elapsedNow().inWholeNanoseconds
+    // 相对进程起点的单调纳秒，供 t1-t0 计时。每次 markNow().elapsedNow() 都接近 0，不能用。
+    return processMono.elapsedNow().inWholeNanoseconds
 }

@@ -56,6 +56,12 @@ internal class LazyCJsonMap private constructor(
      */
     private var keyIndex: HashMap<String, Long>? = null
 
+    /**
+     * 与 [keyIndex] 同一次链表扫描得到的 key 顺序（去重后保留首个）。
+     * `entries`/`keys` 迭代器只握这份 String 列表，不握 cJSON*，避免遍历中途物化 UAF。
+     */
+    private var orderedKeys: List<String>? = null
+
     /** After first mutation (or forced materialize), native tree is released. */
     private var materialized: MutableMap<String, Any?>? = null
 
@@ -161,24 +167,33 @@ internal class LazyCJsonMap private constructor(
     }
 
     /**
-     * 遍历一次 child 链表建立 key → child 指针索引。cJSON 允许重复键，这里保留首个，
-     * 与 cJSON 按 key 查找（返回首个匹配）语义一致。
+     * 遍历一次 child 链表建立 key → child 指针索引，并缓存 key 顺序。
+     * cJSON 允许重复键，这里保留首个，与 cJSON 按 key 查找（返回首个匹配）语义一致。
      */
     private fun ensureKeyIndex(): HashMap<String, Long> {
         keyIndex?.let { return it }
         val index = HashMap<String, Long>()
+        val keys = ArrayList<String>()
         if (nodePtr != 0L) {
             var child = CJsonNative.firstChild(nodePtr)
             while (child != 0L) {
                 val key = CJsonNative.childKey(child)
                 if (key != null && !index.containsKey(key)) {
                     index[key] = child
+                    keys.add(key)
                 }
                 child = CJsonNative.nextSibling(child)
             }
         }
         keyIndex = index
+        orderedKeys = keys
         return index
+    }
+
+    private fun keyOrder(): List<String> {
+        orderedKeys?.let { return it }
+        ensureKeyIndex()
+        return orderedKeys ?: emptyList()
     }
 
     override fun put(key: String, value: Any?): Any? {
@@ -222,6 +237,7 @@ internal class LazyCJsonMap private constructor(
         ownerPtr = 0L
         containerCache = null
         keyIndex = null
+        orderedKeys = null
         val token = releaseToken
         releaseToken = null
         cleaner = null
@@ -285,7 +301,7 @@ internal class LazyCJsonMap private constructor(
     }
 
     /**
-     * Read-only entry view over cJSON. Any structural mutation materializes.
+     * 惰性 entry 视图：迭代器握 key 快照，任何结构性修改都会先物化。
      */
     private inner class LazyEntries : AbstractMutableSet<MutableMap.MutableEntry<String, Any?>>() {
         override val size: Int
@@ -302,25 +318,18 @@ internal class LazyCJsonMap private constructor(
 
         override fun iterator(): MutableIterator<MutableMap.MutableEntry<String, Any?>> {
             materialized?.let { return it.entries.iterator() }
-            if (nodePtr == 0L) {
-                return mutableListOf<MutableMap.MutableEntry<String, Any?>>().iterator()
-            }
-            // 顺着 child 链表游标遍历，O(n)；每个 entry 直接携带 child 指针，取值 O(1)。
+            // 先拷 key 列表再迭代（与 Apple LazyNSDictionaryMap 对齐）：iterator / Entry
+            // 不握 cJSON*，中途 put 物化删树也不会 UAF。取值走 map[key]（keyIndex / 物化 Map）。
+            val keyIterator = keyOrder().iterator()
             return object : MutableIterator<MutableMap.MutableEntry<String, Any?>> {
-                private var next = CJsonNative.firstChild(nodePtr)
                 private var lastKey: String? = null
 
-                override fun hasNext(): Boolean = next != 0L
+                override fun hasNext(): Boolean = keyIterator.hasNext()
 
                 override fun next(): MutableMap.MutableEntry<String, Any?> {
-                    val child = next
-                    if (child == 0L) {
-                        throw NoSuchElementException()
-                    }
-                    next = CJsonNative.nextSibling(child)
-                    val key = CJsonNative.childKey(child) ?: ""
+                    val key = keyIterator.next()
                     lastKey = key
-                    return LazyEntry(key, child)
+                    return LazyEntry(key)
                 }
 
                 override fun remove() {
@@ -334,18 +343,9 @@ internal class LazyCJsonMap private constructor(
 
     private inner class LazyEntry(
         override val key: String,
-        private val childPtr: Long,
     ) : MutableMap.MutableEntry<String, Any?> {
         override val value: Any?
-            get() {
-                materialized?.let { return it[key] }
-                containerCache?.let {
-                    if (it.containsKey(key)) {
-                        return it[key]
-                    }
-                }
-                return if (childPtr != 0L) cachedOrConvert(key, childPtr) else this@LazyCJsonMap[key]
-            }
+            get() = this@LazyCJsonMap[key]
 
         override fun setValue(newValue: Any?): Any? {
             val old = this@LazyCJsonMap[key]
