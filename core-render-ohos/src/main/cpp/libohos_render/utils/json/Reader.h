@@ -13,14 +13,14 @@
  * limitations under the License.
  */
 
-#ifndef CORE_RENDER_OHOS_KRJSONREADER_H
-#define CORE_RENDER_OHOS_KRJSONREADER_H
+#ifndef CORE_RENDER_OHOS_JSON_READER_H
+#define CORE_RENDER_OHOS_JSON_READER_H
 
 #include <cstddef>
 #include <string>
 
-#include "libohos_render/api/include/Kuikly/KRJson.h"
-#include "libohos_render/utils/json/KRJSONSaxHandler.h"
+#include "libohos_render/api/include/Kuikly/KRJSON.h"
+#include "libohos_render/utils/json/SaxHandler.h"
 
 namespace kuikly {
 namespace util {
@@ -31,9 +31,9 @@ namespace json {
  *
  * `ParseSax` scans the input once and forwards every token to `handler` — no
  * tree is built, so peak memory is bounded by the handler. `Parse` layers a
- * `KRJSONDomBuilder` on top to produce a reference-counted value tree.
+ * `DomBuilder` on top to produce a reference-counted value tree.
  */
-class KRJSONReader {
+class Reader {
  public:
     /**
      * Streaming parse. Returns true on success; on failure returns false and,
@@ -41,9 +41,9 @@ class KRJSONReader {
      * The `data`/`length` buffer is read length-bounded (via MemoryStream);
      * NUL-termination is NOT required.
      */
-    static bool ParseSax(const char *data, size_t length, KRJSONSaxHandler &handler, std::string *error = nullptr);
+    static bool ParseSax(const char *data, size_t length, SaxHandler &handler, std::string *error = nullptr);
 
-    static bool ParseSax(const std::string &json, KRJSONSaxHandler &handler, std::string *error = nullptr) {
+    static bool ParseSax(const std::string &json, SaxHandler &handler, std::string *error = nullptr) {
         return ParseSax(json.data(), json.size(), handler, error);
     }
 
@@ -59,4 +59,4 @@ class KRJSONReader {
 }  // namespace util
 }  // namespace kuikly
 
-#endif  // CORE_RENDER_OHOS_KRJSONREADER_H
+#endif  // CORE_RENDER_OHOS_JSON_READER_H

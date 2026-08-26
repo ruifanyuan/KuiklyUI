@@ -23,12 +23,12 @@ actual object JSONEngine {
     }
 
     actual fun stringify(jsonObject: JSONObject): String {
-        (jsonObject.nameValuePairs as? LazyCJsonMap)?.nativePrintCompactOrNull()?.let { return it }
+        (jsonObject.nameValuePairs as? LazyJsonMap)?.nativePrintCompactOrNull()?.let { return it }
         return commonStringify(jsonObject)
     }
 
     actual fun stringify(jsonArray: JSONArray): String {
-        (jsonArray.values as? LazyCJsonList)?.nativePrintCompactOrNull()?.let { return it }
+        (jsonArray.values as? LazyJsonList)?.nativePrintCompactOrNull()?.let { return it }
         return commonStringify(jsonArray)
     }
 

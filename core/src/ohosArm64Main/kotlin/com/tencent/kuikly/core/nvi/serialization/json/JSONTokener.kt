@@ -17,7 +17,7 @@ package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
  * OHOS 实现：严格 JSON 对象 / 数组优先走 KRJSON（RapidJSON SAX），结果包成惰性
- * [LazyCJsonMap] / [LazyCJsonList]；注释与无引号键等历史写法回退到 [AbstractJSONTokener]。
+ * [LazyJsonMap] / [LazyJsonList]；注释与无引号键等历史写法回退到 [AbstractJSONTokener]。
  *
  * KRJSON 对象重复 key 是 last-wins（与 org.json 一致），因此不再因重复键回退。
  */
@@ -39,18 +39,18 @@ actual class JSONTokener actual constructor(json: String) : AbstractJSONTokener(
         if (rootChar != '{' && rootChar != '[') {
             return null
         }
-        val owned = CJsonNative.ownerFromJson(source)
+        val owned = JsonNative.ownerFromJson(source)
         if (owned == 0L) {
             return null
         }
         return try {
-            when (CJsonNative.type(owned)) {
-                KRJSON_KIND_OBJECT -> LazyCJsonMap.fromOwner(owned)
-                KRJSON_KIND_ARRAY -> LazyCJsonList.fromOwner(owned)
+            when (JsonNative.type(owned)) {
+                JSON_KIND_OBJECT -> LazyJsonMap.fromOwner(owned)
+                JSON_KIND_ARRAY -> LazyJsonList.fromOwner(owned)
                 else -> null
             }
         } finally {
-            CJsonNative.release(owned)
+            JsonNative.release(owned)
         }
     }
 }

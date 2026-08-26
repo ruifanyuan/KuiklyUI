@@ -18,30 +18,24 @@ package com.tencent.kuikly.core.nvi.serialization.json
 import kotlin.system.getTimeNanos
 
 /**
-<<<<<<< HEAD
  * OHOS JSON 性能探针：供 demo `JsonPlatformTestPage` 做 A/B（宽松扫描 vs 惰性 KRJSON）。
  *
-=======
- * OHOS JSON 性能探针：供 demo `JsonPlatformTestPage` 做 A/B（Abstract vs 惰性 KRJSON）。
- *
- * - [setForceAbstractTokener]：强制文本 parse 走 Abstract（模拟分支前语义）
->>>>>>> 370319f1 (feat(ohos): bridge NATIVE_JSON via KRJSON per-node retain)
  * - [measureWrapAfterNativeParseNanos]：native `KRJSONParse` 完成后，仅计量 Kotlin 包装耗时
  */
 object OhosJsonPerfHooks {
     /**
-     * 先在计时外完成 [CJsonNative.ownerFromJson]，再计量
-     * [JSONObject.fromCJsonOwnerAny]（惰性壳 retain），对应「Native 已解析好」后的 Kotlin 起点。
+     * 先在计时外完成 [JsonNative.ownerFromJson]，再计量
+     * [JSONObject.fromJsonOwnerAny]（惰性壳 retain），对应「Native 已解析好」后的 Kotlin 起点。
      * 失败返回 -1。
      */
     fun measureWrapAfterNativeParseNanos(json: String): Long {
-        val owner = CJsonNative.ownerFromJson(json)
+        val owner = JsonNative.ownerFromJson(json)
         if (owner == 0L) {
             return -1L
         }
         return try {
             val t0 = getTimeNanos()
-            val wrapped = JSONObject.fromCJsonOwnerAny(owner)
+            val wrapped = JSONObject.fromJsonOwnerAny(owner)
             val t1 = getTimeNanos()
             if (wrapped == null) {
                 -1L
@@ -51,41 +45,26 @@ object OhosJsonPerfHooks {
                 t1 - t0
             }
         } finally {
-            CJsonNative.release(owner)
+            JsonNative.release(owner)
         }
     }
 
     // ---- 结构化入桥 A/B（C++→Kotlin）：从已建好的 KRJSON 值起，排除共有建树成本 ----
 
     /** 由 JSON 文本建自持有值；失败返回 0。计时外调用。 */
-    fun bridgeBuildOwner(json: String): Long = CJsonNative.ownerFromJson(json)
+    fun bridgeBuildOwner(json: String): Long = JsonNative.ownerFromJson(json)
 
-    fun bridgeReleaseOwner(owner: Long) = CJsonNative.release(owner)
+    fun bridgeReleaseOwner(owner: Long) = JsonNative.release(owner)
 
     /**
-<<<<<<< HEAD
      * before 臂（分支前语义）：值 → `KRJSONDump` 成字符串 → 宽松扫描器全量 parse。
      * 覆盖旧路径「Native 打印字符串 + Kotlin 重新解析」两段成本。
      */
     fun bridgeBeforeArmRoot(owner: Long): Any? {
         if (owner == 0L) {
             return null
-=======
-     * before 臂（分支前语义）：值 → `KRJSONDump` 成字符串 → **Abstract** 全量 parse。
-     * 覆盖旧路径「Native 打印字符串 + Kotlin 重新解析」两段成本。
-     */
-    fun bridgeBeforeArmRoot(owner: Long): Any? {
-        if (owner == 0L) return null
-        val text = CJsonNative.print(owner) ?: return null
-        val prev = forceAbstractTokener
-        forceAbstractTokener = true
-        return try {
-            JSONTokener(text).nextValue()
-        } finally {
-            forceAbstractTokener = prev
->>>>>>> 370319f1 (feat(ohos): bridge NATIVE_JSON via KRJSON per-node retain)
         }
-        val text = CJsonNative.print(owner) ?: return null
+        val text = JsonNative.print(owner) ?: return null
         return LenientJSONTokener(text).nextValue()
     }
 
@@ -94,7 +73,7 @@ object OhosJsonPerfHooks {
         if (owner == 0L) {
             return null
         }
-        return JSONObject.fromCJsonOwnerAny(owner)
+        return JSONObject.fromJsonOwnerAny(owner)
     }
 
     @Suppress("unused")

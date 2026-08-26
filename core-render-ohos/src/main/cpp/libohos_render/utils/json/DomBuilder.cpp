@@ -13,17 +13,17 @@
  * limitations under the License.
  */
 
-#include "libohos_render/utils/json/KRJSONDomBuilder.h"
+#include "libohos_render/utils/json/DomBuilder.h"
 
 #include <utility>
 
-#include "libohos_render/utils/json/KRJSONValue.h"
+#include "libohos_render/utils/json/Value.h"
 
 namespace kuikly {
 namespace util {
 namespace json {
 
-KRJSONDomBuilder::~KRJSONDomBuilder() {
+DomBuilder::~DomBuilder() {
     for (auto &frame : stack_) {
         Release(frame.container);
     }
@@ -32,7 +32,7 @@ KRJSONDomBuilder::~KRJSONDomBuilder() {
     }
 }
 
-bool KRJSONDomBuilder::AddValue(KRJSONValue owned) {
+bool DomBuilder::AddValue(KRJSONValue owned) {
     if (stack_.empty()) {
         if (root_ != KRJSON_INVALID) {
             Release(root_);  // defensive: more than one top-level value
@@ -57,39 +57,39 @@ bool KRJSONDomBuilder::AddValue(KRJSONValue owned) {
     return true;
 }
 
-bool KRJSONDomBuilder::CloseContainer() {
+bool DomBuilder::CloseContainer() {
     KRJSONValue container = stack_.back().container;  // owned
     stack_.pop_back();
     return AddValue(container);
 }
 
-bool KRJSONDomBuilder::OnNull() {
+bool DomBuilder::OnNull() {
     return AddValue(NewNull());
 }
-bool KRJSONDomBuilder::OnBool(bool value) {
+bool DomBuilder::OnBool(bool value) {
     return AddValue(NewBool(value));
 }
-bool KRJSONDomBuilder::OnInt(int64_t value) {
+bool DomBuilder::OnInt(int64_t value) {
     return AddValue(NewInt(value));
 }
-bool KRJSONDomBuilder::OnUint(uint64_t value) {
+bool DomBuilder::OnUint(uint64_t value) {
     return AddValue(NewUint(value));
 }
-bool KRJSONDomBuilder::OnDouble(double value) {
+bool DomBuilder::OnDouble(double value) {
     return AddValue(NewDouble(value));
 }
-bool KRJSONDomBuilder::OnString(const char *data, size_t length, bool /*copy*/) {
+bool DomBuilder::OnString(const char *data, size_t length, bool /*copy*/) {
     return AddValue(NewString(data, length));
 }
 
-bool KRJSONDomBuilder::OnStartObject() {
+bool DomBuilder::OnStartObject() {
     if (stack_.size() >= kMaxDepth) {
         return false;  // too deep; abort parse
     }
     stack_.push_back(Frame{NewObject(), std::string(), false});
     return true;
 }
-bool KRJSONDomBuilder::OnKey(const char *data, size_t length, bool /*copy*/) {
+bool DomBuilder::OnKey(const char *data, size_t length, bool /*copy*/) {
     if (stack_.empty()) {
         return false;
     }
@@ -98,22 +98,22 @@ bool KRJSONDomBuilder::OnKey(const char *data, size_t length, bool /*copy*/) {
     top.has_key = true;
     return true;
 }
-bool KRJSONDomBuilder::OnEndObject(size_t /*member_count*/) {
+bool DomBuilder::OnEndObject(size_t /*member_count*/) {
     return CloseContainer();
 }
 
-bool KRJSONDomBuilder::OnStartArray() {
+bool DomBuilder::OnStartArray() {
     if (stack_.size() >= kMaxDepth) {
         return false;  // too deep; abort parse
     }
     stack_.push_back(Frame{NewArray(), std::string(), false});
     return true;
 }
-bool KRJSONDomBuilder::OnEndArray(size_t /*element_count*/) {
+bool DomBuilder::OnEndArray(size_t /*element_count*/) {
     return CloseContainer();
 }
 
-KRJSONValue KRJSONDomBuilder::TakeResult() {
+KRJSONValue DomBuilder::TakeResult() {
     KRJSONValue result = root_;
     root_ = KRJSON_INVALID;
     return result;

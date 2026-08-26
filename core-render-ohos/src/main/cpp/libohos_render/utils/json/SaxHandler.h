@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-#ifndef CORE_RENDER_OHOS_KRJSONSAXHANDLER_H
-#define CORE_RENDER_OHOS_KRJSONSAXHANDLER_H
+#ifndef CORE_RENDER_OHOS_JSON_SAXHANDLER_H
+#define CORE_RENDER_OHOS_JSON_SAXHANDLER_H
 
 #include <cstddef>
 #include <cstdint>
@@ -26,7 +26,7 @@ namespace json {
 /**
  * Runtime-polymorphic SAX event sink.
  *
- * `KRJSONReader::ParseSax` drives an instance of this interface, emitting one
+ * `Reader::ParseSax` drives an instance of this interface, emitting one
  * callback per JSON token as the input is scanned. Subclass it to consume JSON
  * without materializing the whole document (true streaming). Every callback
  * returns bool: return false to abort parsing immediately.
@@ -34,9 +34,9 @@ namespace json {
  * This header intentionally does not depend on RapidJSON so that consumers stay
  * decoupled from the underlying engine.
  */
-class KRJSONSaxHandler {
+class SaxHandler {
  public:
-    virtual ~KRJSONSaxHandler() = default;
+    virtual ~SaxHandler() = default;
 
     virtual bool OnNull() = 0;
     virtual bool OnBool(bool value) = 0;
@@ -60,4 +60,4 @@ class KRJSONSaxHandler {
 }  // namespace util
 }  // namespace kuikly
 
-#endif  // CORE_RENDER_OHOS_KRJSONSAXHANDLER_H
+#endif  // CORE_RENDER_OHOS_JSON_SAXHANDLER_H

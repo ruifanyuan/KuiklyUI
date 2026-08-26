@@ -26,7 +26,7 @@ import kotlin.native.ref.createCleaner
  * 写时物化并释放原生引用。子 object/array 各自 retain 自己的值，父壳释放后仍可读。
  */
 @OptIn(ExperimentalNativeApi::class)
-internal class LazyCJsonMap private constructor(
+internal class LazyJsonMap private constructor(
     private var native: Long,
     private var releaseToken: ValueRelease?,
     private var cleaner: Any?,
@@ -37,7 +37,7 @@ internal class LazyCJsonMap private constructor(
 
         fun releaseOnce() {
             if (done.compareAndSet(0, 1)) {
-                CJsonNative.release(bits)
+                JsonNative.release(bits)
             }
         }
     }
@@ -53,33 +53,33 @@ internal class LazyCJsonMap private constructor(
 
     companion object {
         fun fromOwner(bits: Long): JSONObject {
-            if (bits == 0L || CJsonNative.isInvalid(bits)) {
+            if (bits == 0L || JsonNative.isInvalid(bits)) {
                 return JSONObject()
             }
-            val held = CJsonNative.retain(bits)
-            if (CJsonNative.type(held) != KRJSON_KIND_OBJECT) {
-                CJsonNative.release(held)
+            val held = JsonNative.retain(bits)
+            if (JsonNative.type(held) != JSON_KIND_OBJECT) {
+                JsonNative.release(held)
                 return JSONObject()
             }
             return JSONObject(wrap(held))
         }
 
         fun fromOwnerAny(bits: Long): Any? {
-            if (bits == 0L || CJsonNative.isInvalid(bits)) {
+            if (bits == 0L || JsonNative.isInvalid(bits)) {
                 return null
             }
-            val held = CJsonNative.retain(bits)
-            return when (CJsonNative.type(held)) {
-                KRJSON_KIND_ARRAY -> {
+            val held = JsonNative.retain(bits)
+            return when (JsonNative.type(held)) {
+                JSON_KIND_ARRAY -> {
                     try {
-                        LazyCJsonList.fromOwner(held)
+                        LazyJsonList.fromOwner(held)
                     } finally {
-                        CJsonNative.release(held)
+                        JsonNative.release(held)
                     }
                 }
-                KRJSON_KIND_OBJECT -> JSONObject(wrap(held))
+                JSON_KIND_OBJECT -> JSONObject(wrap(held))
                 else -> {
-                    CJsonNative.release(held)
+                    JsonNative.release(held)
                     null
                 }
             }
@@ -87,21 +87,21 @@ internal class LazyCJsonMap private constructor(
 
         /** 子 object：retain 该节点自身（borrowed 字也可）。 */
         internal fun fromValue(bits: Long): JSONObject {
-            if (bits == 0L || CJsonNative.isInvalid(bits)) {
+            if (bits == 0L || JsonNative.isInvalid(bits)) {
                 return JSONObject()
             }
-            val held = CJsonNative.retain(bits)
-            if (CJsonNative.type(held) != KRJSON_KIND_OBJECT) {
-                CJsonNative.release(held)
+            val held = JsonNative.retain(bits)
+            if (JsonNative.type(held) != JSON_KIND_OBJECT) {
+                JsonNative.release(held)
                 return JSONObject()
             }
             return JSONObject(wrap(held))
         }
 
-        private fun wrap(held: Long): LazyCJsonMap {
+        private fun wrap(held: Long): LazyJsonMap {
             val token = ValueRelease(held)
             val cleaner = createCleaner(token) { it.releaseOnce() }
-            return LazyCJsonMap(held, token, cleaner)
+            return LazyJsonMap(held, token, cleaner)
         }
     }
 
@@ -109,7 +109,7 @@ internal class LazyCJsonMap private constructor(
         get() {
             materialized?.let { return it.size }
             keyIndex?.let { return it.size }
-            return CJsonNative.size(native)
+            return JsonNative.size(native)
         }
 
     override fun containsKey(key: String): Boolean {
@@ -131,11 +131,11 @@ internal class LazyCJsonMap private constructor(
         keyIndex?.let { return it }
         val index = HashMap<String, Long>()
         val keys = ArrayList<String>()
-        val n = CJsonNative.size(native)
+        val n = JsonNative.size(native)
         for (i in 0 until n) {
-            val key = CJsonNative.objectKeyAt(native, i) ?: continue
+            val key = JsonNative.objectKeyAt(native, i) ?: continue
             if (!index.containsKey(key)) {
-                index[key] = CJsonNative.objectValueAt(native, i)
+                index[key] = JsonNative.objectValueAt(native, i)
                 keys.add(key)
             }
         }
@@ -211,16 +211,16 @@ internal class LazyCJsonMap private constructor(
     }
 
     private fun convertChild(name: String, child: Long): Any? {
-        if (CJsonNative.isInvalid(child)) {
+        if (JsonNative.isInvalid(child)) {
             return null
         }
-        return when (CJsonNative.type(child)) {
-            KRJSON_KIND_NULL -> null
-            KRJSON_KIND_BOOL -> CJsonNative.asBool(child, false)
-            KRJSON_KIND_INT, KRJSON_KIND_UINT, KRJSON_KIND_DOUBLE -> numberFromKRJSON(child)
-            KRJSON_KIND_STRING -> CJsonNative.asString(child)
-            KRJSON_KIND_OBJECT -> cacheContainer(name, fromValue(child))
-            KRJSON_KIND_ARRAY -> cacheContainer(name, LazyCJsonList.fromValue(child))
+        return when (JsonNative.type(child)) {
+            JSON_KIND_NULL -> null
+            JSON_KIND_BOOL -> JsonNative.asBool(child, false)
+            JSON_KIND_INT, JSON_KIND_UINT, JSON_KIND_DOUBLE -> numberFromJson(child)
+            JSON_KIND_STRING -> JsonNative.asString(child)
+            JSON_KIND_OBJECT -> cacheContainer(name, fromValue(child))
+            JSON_KIND_ARRAY -> cacheContainer(name, LazyJsonList.fromValue(child))
             else -> null
         }
     }
@@ -235,12 +235,12 @@ internal class LazyCJsonMap private constructor(
         if (materialized != null || containerCache != null || native == 0L) {
             return null
         }
-        return CJsonNative.print(native)
+        return JsonNative.print(native)
     }
 
     private inner class LazyEntries : AbstractMutableSet<MutableMap.MutableEntry<String, Any?>>() {
         override val size: Int
-            get() = this@LazyCJsonMap.size
+            get() = this@LazyJsonMap.size
 
         override fun add(element: MutableMap.MutableEntry<String, Any?>): Boolean {
             ensureMaterialized()[element.key] = element.value
@@ -248,7 +248,7 @@ internal class LazyCJsonMap private constructor(
         }
 
         override fun clear() {
-            this@LazyCJsonMap.clear()
+            this@LazyJsonMap.clear()
         }
 
         override fun iterator(): MutableIterator<MutableMap.MutableEntry<String, Any?>> {
@@ -267,7 +267,7 @@ internal class LazyCJsonMap private constructor(
 
                 override fun remove() {
                     val key = lastKey ?: throw IllegalStateException()
-                    this@LazyCJsonMap.remove(key)
+                    this@LazyJsonMap.remove(key)
                     lastKey = null
                 }
             }
@@ -278,11 +278,11 @@ internal class LazyCJsonMap private constructor(
         override val key: String,
     ) : MutableMap.MutableEntry<String, Any?> {
         override val value: Any?
-            get() = this@LazyCJsonMap[key]
+            get() = this@LazyJsonMap[key]
 
         override fun setValue(newValue: Any?): Any? {
-            val old = this@LazyCJsonMap[key]
-            this@LazyCJsonMap[key] = newValue
+            val old = this@LazyJsonMap[key]
+            this@LazyJsonMap[key] = newValue
             return old
         }
     }

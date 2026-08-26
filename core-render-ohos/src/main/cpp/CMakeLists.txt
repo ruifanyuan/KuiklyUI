@@ -92,10 +92,10 @@ set(SOURCE_SET
         libohos_render/utils/KRURIHelper.cpp
         libohos_render/utils/KRBase64Util.cpp
         libohos_render/utils/KRJSONObject.cpp
-        libohos_render/utils/json/KRJSONValue.cpp
-        libohos_render/utils/json/KRJSONReader.cpp
-        libohos_render/utils/json/KRJSONDomBuilder.cpp
-        libohos_render/api/src/KRJson.cpp
+        libohos_render/utils/json/Value.cpp
+        libohos_render/utils/json/Reader.cpp
+        libohos_render/utils/json/DomBuilder.cpp
+        libohos_render/api/src/KRJSON.cpp
         libohos_render/utils/KRStringUtil.cpp
         libohos_render/utils/KRViewUtil.cpp
         libohos_render/utils/KRThreadChecker.cpp

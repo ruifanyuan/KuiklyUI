@@ -13,14 +13,14 @@
  * limitations under the License.
  */
 
-#ifndef CORE_RENDER_OHOS_KRJSONDOMBUILDER_H
-#define CORE_RENDER_OHOS_KRJSONDOMBUILDER_H
+#ifndef CORE_RENDER_OHOS_JSON_DOMBUILDER_H
+#define CORE_RENDER_OHOS_JSON_DOMBUILDER_H
 
 #include <string>
 #include <vector>
 
-#include "libohos_render/api/include/Kuikly/KRJson.h"
-#include "libohos_render/utils/json/KRJSONSaxHandler.h"
+#include "libohos_render/api/include/Kuikly/KRJSON.h"
+#include "libohos_render/utils/json/SaxHandler.h"
 
 namespace kuikly {
 namespace util {
@@ -33,10 +33,10 @@ namespace json {
  * appending/putting retains into the container and drops the builder's own ref.
  * On an abandoned/failed parse the destructor releases everything still held.
  */
-class KRJSONDomBuilder : public KRJSONSaxHandler {
+class DomBuilder : public SaxHandler {
  public:
-    KRJSONDomBuilder() = default;
-    ~KRJSONDomBuilder() override;
+    DomBuilder() = default;
+    ~DomBuilder() override;
 
     bool OnNull() override;
     bool OnBool(bool value) override;
@@ -78,4 +78,4 @@ class KRJSONDomBuilder : public KRJSONSaxHandler {
 }  // namespace util
 }  // namespace kuikly
 
-#endif  // CORE_RENDER_OHOS_KRJSONDOMBUILDER_H
+#endif  // CORE_RENDER_OHOS_JSON_DOMBUILDER_H

@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-#include "libohos_render/utils/json/KRJSONReader.h"
+#include "libohos_render/utils/json/Reader.h"
 
-#include "libohos_render/utils/json/KRJSONDomBuilder.h"
+#include "libohos_render/utils/json/DomBuilder.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/memorystream.h"
 #include "rapidjson/reader.h"
@@ -27,11 +27,11 @@ namespace json {
 namespace {
 /**
  * Bridges RapidJSON's compile-time (static) handler concept onto our
- * runtime-polymorphic `KRJSONSaxHandler`. 32-bit signed/unsigned variants widen
+ * runtime-polymorphic `SaxHandler`. 32-bit signed/unsigned variants widen
  * to the 64-bit callbacks; `RawNumber` (unused here) maps to a string.
  */
 struct SaxAdapter {
-    explicit SaxAdapter(KRJSONSaxHandler &handler) : handler_(handler) {}
+    explicit SaxAdapter(SaxHandler &handler) : handler_(handler) {}
 
     bool Null() { return handler_.OnNull(); }
     bool Bool(bool b) { return handler_.OnBool(b); }
@@ -49,11 +49,11 @@ struct SaxAdapter {
     bool EndArray(rapidjson::SizeType element_count) { return handler_.OnEndArray(element_count); }
 
  private:
-    KRJSONSaxHandler &handler_;
+    SaxHandler &handler_;
 };
 }  // namespace
 
-bool KRJSONReader::ParseSax(const char *data, size_t length, KRJSONSaxHandler &handler, std::string *error) {
+bool Reader::ParseSax(const char *data, size_t length, SaxHandler &handler, std::string *error) {
     if (data == nullptr) {
         if (error != nullptr) {
             *error = "null input";
@@ -76,8 +76,8 @@ bool KRJSONReader::ParseSax(const char *data, size_t length, KRJSONSaxHandler &h
     return true;
 }
 
-KRJSONValue KRJSONReader::Parse(const char *data, size_t length, std::string *error) {
-    KRJSONDomBuilder builder;
+KRJSONValue Reader::Parse(const char *data, size_t length, std::string *error) {
+    DomBuilder builder;
     if (!ParseSax(data, length, builder, error)) {
         return KRJSON_INVALID;
     }

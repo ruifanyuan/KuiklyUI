@@ -42,20 +42,20 @@ expect fun parseWithTokener(json: String): Any?
 
 /**
  * Native 侧已完成 parse 后，仅计量 Kotlin 包装耗时。
- * OHOS：cJSON owner → fromCJsonOwnerAny；不支持返回 -1。
+ * OHOS：KRJSON owner → fromJsonOwnerAny；不支持返回 -1。
  */
 expect fun measureNativeParsedWrapNanos(json: String): Long
 
 /**
- * 结构化入桥 A/B（C++→Kotlin）：以下四个 expect 用一棵**已建好的 cJSON owner** 为起点，
+ * 结构化入桥 A/B（C++→Kotlin）：以下四个 expect 用一棵**已建好的 KRJSON owner** 为起点，
  * 排除两端共有的建树成本（`toJson`），只对比 Kotlin 收口方式。
- * - before 臂：`cJSON_Print` → Kotlin String → **Abstract** 全量 parse（分支前语义）
- * - after 臂：`fromCJsonOwnerAny` → 惰性 `LazyCJsonMap/List`（分支后语义）
+ * - before 臂：`KRJSONDump` → Kotlin String → **Abstract** 全量 parse（分支前语义）
+ * - after 臂：`fromJsonOwnerAny` → 惰性 `LazyJsonMap/List`（分支后语义）
  * 不支持的平台：[bridgeSupported] 返回 false，其余为空操作。
  */
 expect fun bridgeSupported(): Boolean
 
-/** 由 JSON 文本建一棵自持有 cJSON owner；不支持返回 0。计时外调用。 */
+/** 由 JSON 文本建一棵自持有 KRJSON owner；不支持返回 0。计时外调用。 */
 expect fun bridgeBuildOwner(json: String): Long
 
 expect fun bridgeReleaseOwner(owner: Long)
