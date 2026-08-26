@@ -326,8 +326,8 @@ class KRRichTextShadow : public IKRRenderShadowExport {
     KRAnyValue SpanRect(int spanIndex);
 
     int SpanIndexAt(float x, float y);
-    int ResolveLongPressSpanIndex(const KRRenderValueMap &params);
-    bool IsLongPressTerminalState(const KRRenderValueMap &params) const;
+    int ResolveLongPressSpanIndex(const KRRenderValue &params);
+    bool IsLongPressTerminalState(const KRRenderValue &params) const;
     int active_long_press_span_index_ = -1;
 
     friend class KRRichTextView;

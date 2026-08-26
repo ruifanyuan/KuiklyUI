@@ -596,6 +596,7 @@ KRAnyValue KRView::GenerateBaseParamsWithTouch(ArkUI_UIInputEvent *input_event, 
     }
 
     KRRenderValueArray touches;
+    KRRenderValueMap first_touch;
     for (int i = 0; i < pointer_count; i++) {
         auto point = kuikly::util::GetArkUIInputEventPoint(input_event, i);
         auto window_point = kuikly::util::GetArkUIInputEventWindowPoint(input_event, i);
@@ -609,9 +610,11 @@ KRAnyValue KRView::GenerateBaseParamsWithTouch(ArkUI_UIInputEvent *input_event, 
         touch_map["pageX"] = NewKRRenderValue(container_relative_x);
         touch_map["pageY"] = NewKRRenderValue(container_relative_y);
         touch_map["pointerId"] = NewKRRenderValue(OH_ArkUI_PointerEvent_GetPointerId(input_event, i));
-        touches.push_back(NewKRRenderValue(touch_map));
+        if (i == 0) {
+            first_touch = touch_map;
+        }
+        touches.push_back(NewKRRenderValue(std::move(touch_map)));
     }
-    auto first_touch = touches[0]->toMap();
     first_touch["touches"] = NewKRRenderValue(touches);
     first_touch["action"] = NewKRRenderValue(action);
     auto event_time_millis = kuikly::util::GetArkUIInputEventTime(input_event) / NS_PER_MS;

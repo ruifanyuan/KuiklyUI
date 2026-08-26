@@ -27,78 +27,49 @@ class KRConfig {
     }
 
     void Update(const std::string &configJson) {
-        auto configValue = KRRenderValue::Make(configJson);
-        auto map = configValue->toMap();
-        auto vp2px = map.find("vp2px");
-        if (vp2px != map.end()) {
-            vp2px_ = vp2px->second->toFloat();
+        const auto cfg = KRRenderValue::Parse(configJson);
+        if (auto vp2px = cfg.opt("vp2px")) {
+            vp2px_ = vp2px.toFloat();
             GetDpi(vp2px_);
         }
-
-        auto screen_width = map.find("screen_width");
-        if (screen_width != map.end()) {
-            screen_width_ = screen_width->second->toFloat();
+        if (auto screen_width = cfg.opt("screen_width")) {
+            screen_width_ = screen_width.toFloat();
         }
-
-        auto screen_height = map.find("screen_height");
-        if (screen_height != map.end()) {
-            screen_height_ = screen_height->second->toFloat();
+        if (auto screen_height = cfg.opt("screen_height")) {
+            screen_height_ = screen_height.toFloat();
         }
-
-        auto resfile_dir = map.find("resfile_dir");
-        if (resfile_dir != map.end()) {
-            resfile_dir_ = resfile_dir->second->toString();
+        if (auto resfile_dir = cfg.opt("resfile_dir")) {
+            resfile_dir_ = resfile_dir.toString();
         }
-
-        auto files_dir = map.find("files_dir");
-        if (files_dir != map.end()) {
-            files_dir_ = files_dir->second->toString();
+        if (auto files_dir = cfg.opt("files_dir")) {
+            files_dir_ = files_dir.toString();
         }
-        
-        auto assets_dir = map.find("assets_dir");
-        if (assets_dir != map.end()) {
-            assets_dir_ = assets_dir->second->toString();
+        if (auto assets_dir = cfg.opt("assets_dir")) {
+            assets_dir_ = assets_dir.toString();
         }
-        
-        auto useOhSharedPreferences = map.find("useOhSharedPreferences");
-        if (useOhSharedPreferences != map.end()) {
-            std::string value = useOhSharedPreferences->second->toString();
-            useOhSharedPreferences_ = (value.compare("1") == 0);
+        if (auto useOhSharedPreferences = cfg.opt("useOhSharedPreferences")) {
+            useOhSharedPreferences_ = (useOhSharedPreferences.toString().compare("1") == 0);
         }
-
-        auto screenDensity = map.find("screenDensity");
-        if (screenDensity != map.end()) {
-            screenDensity_ = screenDensity->second->toFloat();
+        if (auto screenDensity = cfg.opt("screenDensity")) {
+            screenDensity_ = screenDensity.toFloat();
         }
-
-        auto fontWeightScale = map.find("fontWeightScale");
-        if (fontWeightScale != map.end()) {
-            fontWeightScale_ = fontWeightScale->second->toFloat();
+        if (auto fontWeightScale = cfg.opt("fontWeightScale")) {
+            fontWeightScale_ = fontWeightScale.toFloat();
         }
-
-        auto fontSizeScale = map.find("fontSizeScale");
-        if (fontSizeScale != map.end()) {
-            fontSizeScale_ = fontSizeScale->second->toFloat();
+        if (auto fontSizeScale = cfg.opt("fontSizeScale")) {
+            fontSizeScale_ = fontSizeScale.toFloat();
         }
-        
-        auto ime_mode = map.find("imeMode");
-        if (ime_mode != map.end()) {
-            ime_mode_ = ime_mode->second->toBool();
+        if (auto ime_mode = cfg.opt("imeMode")) {
+            ime_mode_ = ime_mode.toBool();
         }
-
-        auto windowId = map.find("windowId");
-        if (windowId != map.end()) {
-            window_id_ = windowId->second->toString();
+        if (auto windowId = cfg.opt("windowId")) {
+            window_id_ = windowId.toString();
         }
-        
-        auto fontSizeScaleFollowSystem = map.find("fontSizeScaleFollowSystem");
-        if (fontSizeScaleFollowSystem != map.end()) {
-            fontSizeScaleFollowSystem_ = fontSizeScaleFollowSystem->second->toBool();
+        if (auto fontSizeScaleFollowSystem = cfg.opt("fontSizeScaleFollowSystem")) {
+            fontSizeScaleFollowSystem_ = fontSizeScaleFollowSystem.toBool();
         }
-        
-        auto performanceMonitorTypesMask = map.find("performanceMonitorTypesMask");
-        if (performanceMonitorTypesMask != map.end()) {
-            performanceMonitorTypesMask_ = performanceMonitorTypesMask->second->toInt();
+        if (auto performanceMonitorTypesMask = cfg.opt("performanceMonitorTypesMask")) {
+            performanceMonitorTypesMask_ = performanceMonitorTypesMask.toInt();
         }
     }
 

@@ -139,6 +139,23 @@ static KRAnyValue GetKTValue(const char *key, const KRRenderValue::Map &map0, co
     return KRRenderValue::Make(nullptr);
 }
 
+static KRAnyValue GetKTValue(const char *key, const KRRenderValue &span) {
+    auto v = span.opt(key);
+    return v ? v : KRRenderValue::Make(nullptr);
+}
+
+static KRAnyValue GetKTValue(const char *key, const KRRenderValue &span, const KRRenderValue::Map &props) {
+    auto v = span.opt(key);
+    if (v) {
+        return v;
+    }
+    auto it = props.find(key);
+    if (it != props.end()) {
+        return it->second;
+    }
+    return KRRenderValue::Make(nullptr);
+}
+
 template <class Facet> struct deletable_facet : Facet {
     template <class... Args> deletable_facet(Args &&...args) : Facet(std::forward<Args>(args)...) {}
     ~deletable_facet() {}
@@ -254,29 +271,29 @@ OH_Drawing_TypographyStyle *KRParagraph::CreateTypographyStyle() {
 //        }
     return typography_style;
 }
-void KRParagraph::AddSpanToStyledString(const KRRenderValue::Map &spanMap, ArkUI_StyledString *styled_string) {
+void KRParagraph::AddSpanToStyledString(const KRRenderValue &span, ArkUI_StyledString *styled_string) {
     double dpi = KRConfig::GetDpi();
-    auto fontSize = (GetKTValue("fontSize", spanMap, props_)->toFloat() ?: 15.0) * dpi * font_size_scale_;
-    auto text = GetKTValue("value", spanMap, spanMap)->toString();
+    auto fontSize = (GetKTValue("fontSize", span, props_)->toFloat() ?: 15.0) * dpi * font_size_scale_;
+    auto text = GetKTValue("value", span)->toString();
     if (text.length() == 0) {
-        text = GetKTValue("text", spanMap, spanMap)->toString();
+        text = GetKTValue("text", span)->toString();
     }
-    auto fontWeight = kuikly::util::ConvertFontWeight(GetKTValue("fontWeight", spanMap, props_)->toInt(), font_weight_scale_);
-    auto colorStr = GetKTValue("color", spanMap, props_)->toString();
-    auto fontFamily = GetKTValue("fontFamily", spanMap, props_)->toString();
+    auto fontWeight = kuikly::util::ConvertFontWeight(GetKTValue("fontWeight", span, props_)->toInt(), font_weight_scale_);
+    auto colorStr = GetKTValue("color", span, props_)->toString();
+    auto fontFamily = GetKTValue("fontFamily", span, props_)->toString();
     auto color = colorStr.length() ? kuikly::util::ConvertToHexColor(colorStr) : 0xff000000;                   // 默认黑色
-    auto lineHeight = GetKTValue("lineHeight", spanMap, props_)->toFloat() / (fontSize / dpi);   // 字体比例
-    auto lineSpacing = GetKTValue("lineSpacing", spanMap, props_)->toFloat() / (fontSize / dpi); // 行间距比例
-    auto textAlign = kuikly::util::ConvertToTextAlign(GetKTValue("textAlign", spanMap, props_)->toString());
-    auto textDecoration = kuikly::util::ConvertToTextDecoration(GetKTValue("textDecoration", spanMap, props_)->toString());
-    auto fontStyle = kuikly::util::ConvertToFontStyle(GetKTValue("fontStyle", spanMap, props_)->toString());
-    auto letterSpacing = GetKTValue("letterSpacing", spanMap, props_)->toDouble();
-    auto textShadowStr = GetKTValue("textShadow", spanMap, props_)->toString();
-    auto strokeWidth = GetKTValue("strokeWidth", spanMap, props_)->toFloat();
-    auto strokeColorStr = GetKTValue("strokeColor", spanMap, props_)->toString();
+    auto lineHeight = GetKTValue("lineHeight", span, props_)->toFloat() / (fontSize / dpi);   // 字体比例
+    auto lineSpacing = GetKTValue("lineSpacing", span, props_)->toFloat() / (fontSize / dpi); // 行间距比例
+    auto textAlign = kuikly::util::ConvertToTextAlign(GetKTValue("textAlign", span, props_)->toString());
+    auto textDecoration = kuikly::util::ConvertToTextDecoration(GetKTValue("textDecoration", span, props_)->toString());
+    auto fontStyle = kuikly::util::ConvertToFontStyle(GetKTValue("fontStyle", span, props_)->toString());
+    auto letterSpacing = GetKTValue("letterSpacing", span, props_)->toDouble();
+    auto textShadowStr = GetKTValue("textShadow", span, props_)->toString();
+    auto strokeWidth = GetKTValue("strokeWidth", span, props_)->toFloat();
+    auto strokeColorStr = GetKTValue("strokeColor", span, props_)->toString();
     auto strokeColor = strokeColorStr.length() ? kuikly::util::ConvertToHexColor(strokeColorStr) : 0xff000000;
 
-    auto placeholderWidth = GetKTValue("placeholderWidth", spanMap, spanMap)->toDouble();
+    auto placeholderWidth = GetKTValue("placeholderWidth", span)->toDouble();
     // 创建文本样式对象txtStyle
     OH_Drawing_TextStyle *txtStyle = OH_Drawing_CreateTextStyle();
     OH_Drawing_Pen *textForegroundPen = nullptr;
@@ -343,7 +360,7 @@ void KRParagraph::AddSpanToStyledString(const KRRenderValue::Map &spanMap, ArkUI
 
     // Add text or span
     if (placeholderWidth != 0) { // 添加占位Span
-        auto placeholderHeight = GetKTValue("placeholderHeight", spanMap, spanMap)->toDouble();
+        auto placeholderHeight = GetKTValue("placeholderHeight", span)->toDouble();
         OH_Drawing_PlaceholderSpan inlineView = {
           placeholderWidth * dpi,      placeholderHeight * dpi,
           ALIGNMENT_CENTER_OF_ROW_BOX, // VerticalAlign is 居中
@@ -387,7 +404,7 @@ ArkUI_StyledString *KRParagraph::BuildStyledString(float width, float height) {
 
     // add text spans
     std::for_each(spans_.begin(), spans_.end(),
-                  [this, styled_string](auto span) { AddSpanToStyledString(span->toMap(), styled_string); });
+                  [this, styled_string](auto span) { AddSpanToStyledString(span.container(), styled_string); });
 
     // clean up
     OH_Drawing_DestroyTypographyStyle(typography_style);

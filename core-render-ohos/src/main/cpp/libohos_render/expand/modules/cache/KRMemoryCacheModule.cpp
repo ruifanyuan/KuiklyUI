@@ -89,9 +89,9 @@ KRAnyValue KRMemoryCacheModule::CallMethod(bool sync, const std::string &method,
 }
 
 KRAnyValue KRMemoryCacheModule::SetObject(const KRAnyValue &params) {
-    auto map = params->toMap();
-    auto key = map[kParamNameKey]->toString();
-    auto value = map[kParamNameValue];
+    const auto object = params.container();
+    auto key = object.opt(kParamNameKey).toString();
+    auto value = object.opt(kParamNameValue);
     cache_map_[key] = value;
 
     bool found = false;
@@ -139,8 +139,7 @@ OH_PixelmapNative *KRMemoryCacheModule::LoadPixelmapFromLocal(std::string &src) 
 }
 
 KRAnyValue KRMemoryCacheModule::CacheImage(const KRAnyValue &params, const KRRenderCallback &callback) {
-    auto map = params->toMap();
-    auto src = map[kParamNameSrc]->toString();
+    auto src = params.container().opt(kParamNameSrc).toString();
     auto cache_key = GenerateCacheKey(src);
 
     OH_PixelmapNative *pixelmap = GetImage(cache_key);

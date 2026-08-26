@@ -212,8 +212,7 @@ void KRSnapshotManager::TakeSnapshot(const std::string &instance_id, const std::
             bool isNapiValue = result->isNapiValue();
             auto strongView = weak_view.lock();
             if (isNapiValue && strongView) {
-                auto paramsMap = params->toMap();
-                std::string type = paramsMap["type"]->toString();
+                std::string type = params.container().opt("type").toString();
                 if (type.empty()) {
                     KRRenderValue::Map resultMap;
                     resultMap["code"] = KRRenderValue::Make(-1);

@@ -325,11 +325,11 @@ bool KRImageView::SetImageParams(const KRAnyValue &value) {
         image_params_ = nullptr;
         return true;
     }
-    auto map = value->toMap();
-    if (map.empty()) {
+    auto params = value.container();
+    if (!params->isMap() || params->size() == 0) {
         image_params_ = nullptr;
     } else {
-        image_params_ = NewKRRenderValue(map);
+        image_params_ = params;
     }
     return true;
 }

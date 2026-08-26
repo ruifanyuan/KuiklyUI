@@ -54,9 +54,12 @@ using KRRenderValueArray = std::vector<KRRenderValue>;
  *
  * Every ordinary bridge value is represented by one tagged KRJSONValue word.
  * This façade is an RAII value type: copy retains, move transfers and destruction
- * releases the word. Raw NAPI handles are intentionally kept as an ArkTS-only
- * shared side channel because they are not data values and must never cross the
- * Kotlin ABI.
+ * releases the word. Raw NAPI handles are an ArkTS-only side channel (snapshot
+ * PixelMap/drawableDescriptor) and must never cross the Kotlin ABI.
+ *
+ * TODO: drop `raw_napi_` from the hot object. `shared_ptr` dominates the size of
+ * this type versus the 8-byte KRJSONValue; move raw NAPI onto a dedicated callback
+ * payload so ordinary values stay a tagged word (+ empty sentinel).
  */
 class KRRenderValue {
  public:
@@ -152,6 +155,33 @@ class KRRenderValue {
     bool isArray() const { return type() == KRJSON_ARRAY; }
     bool isByteArray() const { return type() == KRJSON_BYTES; }
     bool isNapiValue() const { return raw_napi_ != nullptr; }
+
+    // toMap()/toArray() parse a JSON *string* payload transparently. Point
+    // queries keep that conversion explicit and single-shot: bridge payloads
+    // that may arrive as text call container() once, then opt/at on the result.
+    KRRenderValue container() const {
+        return isString() ? MakeParsed(stringValue()) : *this;
+    }
+
+    // Object/array point query without materializing unordered_map/vector.
+    // Missing key / OOB index / wrong type → empty. String JSON is not
+    // auto-parsed; call container()/Parse() once, then opt/at.
+    KRRenderValue opt(const char *key) const {
+        if (key == nullptr || !isMap()) {
+            return KRRenderValue();
+        }
+        return ChildOrEmpty(kuikly::util::json::ObjectGet(value_, key, std::strlen(key)));
+    }
+    KRRenderValue opt(const std::string &key) const { return opt(key.c_str()); }
+    KRRenderValue at(size_t index) const {
+        if (!isArray()) {
+            return KRRenderValue();
+        }
+        return ChildOrEmpty(kuikly::util::json::ArrayGet(value_, index));
+    }
+    size_t size() const { return kuikly::util::json::GetSize(value_); }
+
+    static KRRenderValue Parse(const std::string &json) { return MakeParsed(json); }
 
     NapiValue toNapiValue() const {
         return raw_napi_ ? *raw_napi_ : NapiValue(nullptr, nullptr);
@@ -419,6 +449,10 @@ class KRRenderValue {
         return FromJsVm(env, value);
     }
 
+    static KRRenderValue ChildOrEmpty(KRJSONValue child) {
+        return child == KRJSON_INVALID ? KRRenderValue() : MakeBorrowed(child);
+    }
+
     static KRRenderValue MakeParsed(const std::string &json) {
         std::string error;
         KRJSONValue parsed = kuikly::util::json::Reader::Parse(json.data(), json.size(), &error);
@@ -604,6 +638,7 @@ class KRRenderValue {
     }
 
     KRJSONValue value_ = KRJSON_INVALID;
+    // TODO: not on the hot path — see class comment. Snapshot callbacks only.
     std::shared_ptr<NapiValue> raw_napi_;
 };
 

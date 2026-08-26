@@ -99,11 +99,15 @@ int KRAnyDataVisitMap(KRAnyData data, KRAnyDataMapVisitor visitor, void *userDat
         return KRANYDATA_TYPE_MISMATCH;
     }
     
-    auto map = internal->anyValue->toMap();
-    for (const auto& pair : map) {
-        KRAnyDataInternal tempValue;
-        tempValue.anyValue = pair.second;
-        visitor(pair.first.c_str(), &tempValue, userData);
+    const KRJSONValue root = internal->anyValue.jsonValue();
+    const size_t count = kuikly::util::json::GetSize(root);
+    for (size_t i = 0; i < count; ++i) {
+        const char *key = kuikly::util::json::ObjectKeyAt(root, i);
+        const KRJSONValue child = kuikly::util::json::ObjectValueAt(root, i);
+        if (key == nullptr || child == KRJSON_INVALID) {
+            continue;
+        }
+        visitor(key, internal->Borrow(KRRenderValue::MakeBorrowed(child)), userData);
     }
     return KRANYDATA_SUCCESS;
 }
@@ -121,13 +125,12 @@ int KRAnyDataGetMapValue(KRAnyData data, const char* key, KRAnyData* value) {
         return KRANYDATA_TYPE_MISMATCH;
     }
     
-    auto map = internal->anyValue->toMap();
-    auto it = map.find(key);
-    if (it == map.end()) {
+    auto child = internal->anyValue.opt(key);
+    if (!child) {
         *value = nullptr;
         return KRANYDATA_KEY_NOT_FOUND;
     }
-    *value = internal->Borrow(it->second);
+    *value = internal->Borrow(child);
     return KRANYDATA_SUCCESS;
 }
 
@@ -223,7 +226,7 @@ int KRAnyDataGetArraySize(KRAnyData data, int* size) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *size = internal->anyValue->toArray().size();
+    *size = internal->anyValue->isArray() ? static_cast<int>(internal->anyValue.size()) : 0;
     return KRANYDATA_SUCCESS;
 }
 
@@ -235,11 +238,10 @@ int KRAnyDataGetArrayElement(KRAnyData data, KRAnyData* value, int index) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    auto array = internal->anyValue->toArray();
-    if (index < 0 || index >= array.size()) {
+    if (!internal->anyValue->isArray() || index < 0 || static_cast<size_t>(index) >= internal->anyValue.size()) {
         return KRANYDATA_OUT_OF_INDEX;
     }
-    *value = internal->Borrow(array[index]);
+    *value = internal->Borrow(internal->anyValue.at(static_cast<size_t>(index)));
     return KRANYDATA_SUCCESS;
 }
 
@@ -317,14 +319,17 @@ int KRAnyDataSetArrayElement(KRAnyData data, KRAnyData value, int index) {
     }
 
     if (internal->anyValue->isArray()) {
-        auto array = internal->anyValue->toArray();
-        if (index >= array.size()) {
+        if (index < 0 || static_cast<size_t>(index) >= internal->anyValue.size()) {
             return KRANYDATA_OUT_OF_INDEX;
         }
-        KRRenderValue::Array valueArray;
-        valueArray = array;
-        valueArray[index] = valueInternal->anyValue;
-        internal->anyValue = KRRenderValue::Make(valueArray);
+        if (kuikly::util::json::IsUnique(internal->anyValue.jsonValue())) {
+            kuikly::util::json::ArraySet(internal->anyValue.jsonValue(), static_cast<size_t>(index),
+                                         valueInternal->anyValue.jsonValue());
+        } else {
+            auto array = internal->anyValue->toArray();
+            array[static_cast<size_t>(index)] = valueInternal->anyValue;
+            internal->anyValue = KRRenderValue::Make(std::move(array));
+        }
     } else {
         return KRANYDATA_TYPE_MISMATCH;
     }
@@ -345,11 +350,13 @@ int KRAnyDataAddArrayElement(KRAnyData data, KRAnyData value) {
     }
 
     if (internal->anyValue->isArray()) {
-        auto array = internal->anyValue->toArray();
-        KRRenderValue::Array valueArray;
-        valueArray = array;
-        valueArray.push_back(valueInternal->anyValue);
-        internal->anyValue = KRRenderValue::Make(valueArray);
+        if (kuikly::util::json::IsUnique(internal->anyValue.jsonValue())) {
+            kuikly::util::json::ArrayAppend(internal->anyValue.jsonValue(), valueInternal->anyValue.jsonValue());
+        } else {
+            auto array = internal->anyValue->toArray();
+            array.push_back(valueInternal->anyValue);
+            internal->anyValue = KRRenderValue::Make(std::move(array));
+        }
     } else {
         return KRANYDATA_TYPE_MISMATCH;
     }

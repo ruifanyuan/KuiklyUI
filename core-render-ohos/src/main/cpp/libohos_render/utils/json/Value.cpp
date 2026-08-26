@@ -182,6 +182,17 @@ void ArrayAppend(KRJSONValue array, KRJSONValue child) {
     }
     static_cast<ArrayBox *>(AsBox(array))->items.push_back(Retain(child));
 }
+void ArraySet(KRJSONValue array, size_t index, KRJSONValue child) {
+    if (TagOf(array) != kTagArray) {
+        return;
+    }
+    auto &items = static_cast<ArrayBox *>(AsBox(array))->items;
+    if (index >= items.size()) {
+        return;
+    }
+    Release(items[index]);
+    items[index] = Retain(child);
+}
 void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child) {
     if (TagOf(object) != kTagObject) {
         return;
