@@ -73,6 +73,29 @@ fun verifyOhosLazyJsonBridge(): String {
     expectEquals(failures, "child alive after parent materialize", child?.optString("ck"), "cv")
     expectEquals(failures, "int alive after materialize", obj.opt("i"), 1)
 
+    // 遍历中途 put：iterator 只握 key 快照，物化删树后继续 next / opt 不得 UAF
+    val scalarOwner = CJsonNative.ownerFromJson("""{"a":1,"b":2,"c":3}""")
+    if (scalarOwner == 0L) {
+        failures.add("scalar owner create failed")
+    } else {
+        val scalarWrapped = JSONObject.fromCJsonOwner(scalarOwner)
+        CJsonNative.release(scalarOwner)
+        val seen = ArrayList<String>()
+        for ((key, value) in scalarWrapped.nameValuePairs) {
+            seen.add(key)
+            if (key == "a") {
+                expectEquals(failures, "entry value before mid-iter put", value, 1)
+                scalarWrapped.put("z", 9)
+            } else {
+                // 物化后 LazyEntry.value 走 map[key]，不得再碰已释放的 cJSON*
+                expectEquals(failures, "entry value after mid-iter put ($key)", value, scalarWrapped.opt(key))
+            }
+        }
+        expectEquals(failures, "keys snapshot during put", seen.joinToString(","), "a,b,c")
+        expectEquals(failures, "put during keys() visible", scalarWrapped.opt("z"), 9)
+        expectEquals(failures, "value after mid-iter put", scalarWrapped.opt("b"), 2)
+    }
+
     // 序列化 → 再解析：与其他平台同一套文本行为
     val text = JSONObject(obj.toString())
     expectEquals(failures, "roundtrip int", text.opt("i"), 1)
