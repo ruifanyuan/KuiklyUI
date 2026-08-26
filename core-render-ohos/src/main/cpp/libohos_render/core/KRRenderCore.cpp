@@ -222,11 +222,8 @@ bool KRRenderCore::IsPerformMainTasking() {
     return uiScheduler_->IsPerformMainTasking();
 }
 
-std::shared_ptr<KRRenderValue>
-KRRenderCore::OnCallNative(const KuiklyRenderNativeMethod &method, std::shared_ptr<KRRenderValue> &arg0,
-                           std::shared_ptr<KRRenderValue> &arg1, std::shared_ptr<KRRenderValue> &arg2,
-                           std::shared_ptr<KRRenderValue> &arg3, std::shared_ptr<KRRenderValue> &arg4,
-                           std::shared_ptr<KRRenderValue> &arg5) {
+KRAnyValue KRRenderCore::OnCallNative(const KuiklyRenderNativeMethod &method, KRAnyValue &arg0, KRAnyValue &arg1,
+                                      KRAnyValue &arg2, KRAnyValue &arg3, KRAnyValue &arg4, KRAnyValue &arg5) {
     if (ShouldSyncCallMethod(method, arg5)) {  // 是否同步调用Native方法，如Module syncCall方法
         return PerformNativeCallback(method, arg1, arg2, arg3, arg4, arg5, true);
     } else {
@@ -244,7 +241,7 @@ KRRenderCore::OnCallNative(const KuiklyRenderNativeMethod &method, std::shared_p
 }
 
 // 判断事件是否需要同步调用
-bool KRRenderCore::ShouldSyncCallMethod(const KuiklyRenderNativeMethod &method, std::shared_ptr<KRRenderValue> &arg5) {
+bool KRRenderCore::ShouldSyncCallMethod(const KuiklyRenderNativeMethod &method, KRAnyValue &arg5) {
     if (method == KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCallModuleMethod) {
         return IsSyncCallback(arg5);
     }

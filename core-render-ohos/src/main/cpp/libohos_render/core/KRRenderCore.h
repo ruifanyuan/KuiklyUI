@@ -59,11 +59,8 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
     }
 
     /** ICallNativeCallback interface override */
-    std::shared_ptr<KRRenderValue>
-    OnCallNative(const KuiklyRenderNativeMethod &method, std::shared_ptr<KRRenderValue> &arg0,
-                 std::shared_ptr<KRRenderValue> &arg1, std::shared_ptr<KRRenderValue> &arg2,
-                 std::shared_ptr<KRRenderValue> &arg3, std::shared_ptr<KRRenderValue> &arg4,
-                 std::shared_ptr<KRRenderValue> &arg5) override;
+    KRAnyValue OnCallNative(const KuiklyRenderNativeMethod &method, KRAnyValue &arg0, KRAnyValue &arg1,
+                            KRAnyValue &arg2, KRAnyValue &arg3, KRAnyValue &arg4, KRAnyValue &arg5) override;
     /** KRRenderUISchedulerDelegate interface override */
     void WillPerformUITasksWithScheduler() override;
     /** core初始化之后必须调用该DidInit进行初始化 */
@@ -143,7 +140,7 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
     /** C-API渲染层协议的实现者 */
     std::shared_ptr<IKRRenderLayer> renderLayerHandler_;
     /** 默认NUll值 */
-    std::shared_ptr<KRRenderValue> defaultNullValue_;
+    KRAnyValue defaultNullValue_;
     /** 正在从主线程同步任务到context线程 */
     bool syncingPerformTaskMainThreadToContextThread = false;
 
@@ -157,7 +154,7 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
     /** 执行kotlin call native方法*/
     KRAnyValue PerformNativeCallback(const KuiklyRenderNativeMethod &method, const KRAnyValue &arg1, const KRAnyValue &arg2,
                                      const KRAnyValue &arg3, const KRAnyValue &arg4, const KRAnyValue &arg5, bool sync);
-    bool ShouldSyncCallMethod(const KuiklyRenderNativeMethod &method, std::shared_ptr<KRRenderValue> &arg5);
+    bool ShouldSyncCallMethod(const KuiklyRenderNativeMethod &method, KRAnyValue &arg5);
 
     void OnDestroy();
 };

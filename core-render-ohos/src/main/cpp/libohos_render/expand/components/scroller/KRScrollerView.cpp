@@ -651,7 +651,7 @@ bool KRScrollerView::IsDraggingStateToIdeaState(ArkUI_ScrollState new_scroll_sta
            new_scroll_state == ArkUI_ScrollState::ARKUI_SCROLL_STATE_IDLE;
 }
 
-std::shared_ptr<KRRenderValue> KRScrollerView::GetCommonScrollParams() {
+KRAnyValue KRScrollerView::GetCommonScrollParams() {
     KRRenderValueMap map;
     auto point = kuikly::util::GetArkUIScrollContentOffset(GetNode());
     map[kEventKeyOffsetX] = NewKRRenderValue(point.x);

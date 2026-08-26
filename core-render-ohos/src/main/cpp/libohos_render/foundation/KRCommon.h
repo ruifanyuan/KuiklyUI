@@ -24,7 +24,7 @@
 #define KREmptyValue() KRRenderValue::Make()
 #define NewKRRenderValue(value) KRRenderValue::Make(value)
 
-using KRAnyValue = std::shared_ptr<KRRenderValue>;
+using KRAnyValue = KRRenderValue;
 using KRRenderCallback = std::function<void(KRAnyValue)>;
 using KRRenderValueMap = KRRenderValue::Map;
 using KRRenderValueArray = KRRenderValue::Array;

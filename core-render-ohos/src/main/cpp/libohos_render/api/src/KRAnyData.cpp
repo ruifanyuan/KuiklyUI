@@ -294,7 +294,7 @@ KRAnyData KRAnyDataCreateBytes(const char* value, int size) {
 
 KRAnyData KRAnyDataCreateArray(int size) {
     auto data = new KRAnyDataInternal();
-    std::vector<std::shared_ptr<KRRenderValue>> valueArray;
+    KRRenderValue::Array valueArray;
     valueArray.reserve(size);
     for (int i = 0; i < size; ++i) {
         valueArray.emplace_back(KRRenderValue::Make());
@@ -321,7 +321,7 @@ int KRAnyDataSetArrayElement(KRAnyData data, KRAnyData value, int index) {
         if (index >= array.size()) {
             return KRANYDATA_OUT_OF_INDEX;
         }
-        std::vector<std::shared_ptr<KRRenderValue>> valueArray;
+        KRRenderValue::Array valueArray;
         valueArray = array;
         valueArray[index] = valueInternal->anyValue;
         internal->anyValue = KRRenderValue::Make(valueArray);
@@ -346,7 +346,7 @@ int KRAnyDataAddArrayElement(KRAnyData data, KRAnyData value) {
 
     if (internal->anyValue->isArray()) {
         auto array = internal->anyValue->toArray();
-        std::vector<std::shared_ptr<KRRenderValue>> valueArray;
+        KRRenderValue::Array valueArray;
         valueArray = array;
         valueArray.push_back(valueInternal->anyValue);
         internal->anyValue = KRRenderValue::Make(valueArray);
