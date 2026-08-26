@@ -33,8 +33,8 @@ class KRRenderContextParams {
         this->page_data_ = page_data;
         this->config_ = std::make_shared<KRConfig>(configJsonStr);
 
-        auto page_data_map = this->page_data_->toMap();
-        int page_data_mode = page_data_map["executeMode"]->toInt();
+        const auto page_data_object = this->page_data_.container();
+        int page_data_mode = page_data_object.opt("executeMode").toInt();
         std::unordered_map<int, KRRenderExecuteModeCreator> mode_creator_register =
             KRRenderExecuteMode::GetExecuteModeCreatorRegister();
         if (mode_creator_register.find(page_data_mode) != mode_creator_register.end()) {
@@ -46,7 +46,7 @@ class KRRenderContextParams {
                 execute_mode_ = defaultMode;
             }
         }
-        context_code_ = page_data_map["contextCode"]->toString();
+        context_code_ = page_data_object.opt("contextCode").toString();
     }
     const std::string &PageName() const {
         return page_name_;
@@ -64,7 +64,7 @@ class KRRenderContextParams {
         return page_data_;
     }
     KRRenderValue PageParam() const {
-        return page_data_->toMap().find("param")->second;
+        return page_data_.container().opt("param");
     }
     const std::shared_ptr<KRConfig> &Config() const {
         return config_;

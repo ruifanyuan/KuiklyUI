@@ -111,6 +111,10 @@ inline bool IsHeapTag(uint8_t t) {
 inline HeapBox *AsBox(KRJSONValue v) {
     return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;
 }
+inline bool IsUnique(KRJSONValue v) {
+    HeapBox *box = AsBox(v);
+    return box != nullptr && box->rc.load(std::memory_order_acquire) == 1;
+}
 inline KRJSONValue EncodePtr(const void *p, uint8_t tag) {
     const uintptr_t u = reinterpret_cast<uintptr_t>(p);
     // Scheme A stores the pointer in bits[8..63]; it must fit in 56 bits.
@@ -144,6 +148,7 @@ KRJSONValue NewBytes(const uint8_t *data, size_t n);
 KRJSONValue NewArray();
 KRJSONValue NewObject();
 void ArrayAppend(KRJSONValue array, KRJSONValue child);
+void ArraySet(KRJSONValue array, size_t index, KRJSONValue child);
 void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
 
 KRJSONType GetType(KRJSONValue v);

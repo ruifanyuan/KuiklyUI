@@ -221,6 +221,29 @@ static KRAnyValue GetKRValue(const char *key, const KRRenderValue::Map &map0, co
     return KRRenderValue::Make(nullptr);
 }
 
+static KRAnyValue GetKRValue(const char *key, const KRRenderValue &span) {
+    auto v = span.opt(key);
+    return v ? v : KRRenderValue::Make(nullptr);
+}
+
+static KRAnyValue GetKRValue(const char *key, const KRRenderValue &span, const KRRenderValue::Map &props) {
+    auto v = span.opt(key);
+    if (v) {
+        return v;
+    }
+    auto it = props.find(key);
+    if (it != props.end()) {
+        return it->second;
+    }
+    return KRRenderValue::Make(nullptr);
+}
+
+static void CopyParamIfPresent(KRRenderValueMap &dst, const KRRenderValue &src, const char *key) {
+    if (auto v = src.opt(key)) {
+        dst[key] = v;
+    }
+}
+
 KRFontCollectionWrapper::KRFontCollectionWrapper() {
     // 优先使用全局实例（API >= 14），否则创建共享实例
     if (OH_Drawing_GetFontCollectionGlobalInstance) {
@@ -354,19 +377,17 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
         if (!processor_name.empty()) {
             KRRenderValue::Array expanded;
             expanded.reserve(spans.size());
-            for (const auto &span : spans) {
-                auto m = span->toMap();
-                // 已声明 image span（业务自己写 ImageSpan { src(...) }）：跳过 PostProcessor
-                auto declared_ph_w = GetKRValue("placeholderWidth", m, m)->toDouble();
-                // 内置 image span（前一轮 SetProp 已展开过 / 嵌套场景）：避免重复展开
-                auto already_image_src = GetKRValue(kuikly::richtext::kInternalImageSrcKey, m, m)->toString();
+            for (const auto &raw_span : spans) {
+                const auto span = raw_span.container();
+                auto declared_ph_w = GetKRValue("placeholderWidth", span)->toDouble();
+                auto already_image_src = GetKRValue(kuikly::richtext::kInternalImageSrcKey, span)->toString();
                 if (declared_ph_w != 0 || !already_image_src.empty()) {
                     expanded.push_back(span);
                     continue;
                 }
-                auto raw_text = GetKRValue("value", m, m)->toString();
+                auto raw_text = GetKRValue("value", span)->toString();
                 if (raw_text.empty()) {
-                    raw_text = GetKRValue("text", m, m)->toString();
+                    raw_text = GetKRValue("text", span)->toString();
                 }
                 if (raw_text.empty()) {
                     expanded.push_back(span);
@@ -381,7 +402,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                 // 改写 value/text/placeholderWidth/placeholderHeight/__kr_image_src__ 等字段，
                 // 其它样式（fontSize / color / fontWeight / textAlign / lineHeight ...）原样继承。
                 for (const auto &seg : segs) {
-                    auto new_map = m;  // copy
+                    auto new_map = span.toMap();
                     if (seg.type == kuikly::text::KRTextPostProcessSpan::Type::kText) {
                         new_map["value"] = NewKRRenderValue(seg.text_or_src);
                         new_map["text"] = NewKRRenderValue(seg.text_or_src);
@@ -396,7 +417,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                         float h = seg.height > 0 ? seg.height : (w > 0 ? w : 0.0f);
                         if (w <= 0) {
                             // 取该 span 的 fontSize（vp）作为兜底——保证 emoji 与文字同高。
-                            float fs_vp = GetKRValue("fontSize", m, props_)->toFloat();
+                            float fs_vp = GetKRValue("fontSize", span, props_)->toFloat();
                             if (fs_vp <= 0) {
                                 fs_vp = 16.0f;  // 与 ImageView span 的兜底口径一致
                             }
@@ -432,35 +453,35 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
     OH_Drawing_TextAlign text_align = TEXT_ALIGN_LEFT;
     int charOffset = 0;
     std::string text_content;
-    for (auto span : spans) {
-        auto spanMap = span->toMap();
-        auto fontSize = (GetKRValue("fontSize", spanMap, props_)->toFloat() ?: 15.0) * dpi * fontSizeScale;
-        auto text = GetKRValue("value", spanMap, spanMap)->toString();
+    for (auto raw_span : spans) {
+        const auto span = raw_span.container();
+        auto fontSize = (GetKRValue("fontSize", span, props_)->toFloat() ?: 15.0) * dpi * fontSizeScale;
+        auto text = GetKRValue("value", span)->toString();
         if (text.length() == 0) {
-            text = GetKRValue("text", spanMap, spanMap)->toString();
+            text = GetKRValue("text", span)->toString();
         }
-        auto fontWeight = kuikly::util::ConvertFontWeight(GetKRValue("fontWeight", spanMap, props_)->toInt(), fontWeightScale);
+        auto fontWeight = kuikly::util::ConvertFontWeight(GetKRValue("fontWeight", span, props_)->toInt(), fontWeightScale);
         // 解析基于Span的多个渐变色属性
-        auto colorStr = GetKRValue("color", spanMap, props_)->toString();
-        auto backgroundImage = GetKRValue("backgroundImage", spanMap, props_)->toString();
+        auto colorStr = GetKRValue("color", span, props_)->toString();
+        auto backgroundImage = GetKRValue("backgroundImage", span, props_)->toString();
         OH_Drawing_ShaderEffect *colorShaderEffect = nullptr;
         auto linearGradient = std::make_shared<kuikly::util::KRLinearGradientParser>();
         bool hasBackgroundImage = linearGradient->ParseFromCssLinearGradient(backgroundImage);      // 当前是否存在渐变色待解析
 
-        auto fontFamily = GetKRValue("fontFamily", spanMap, props_)->toString();
+        auto fontFamily = GetKRValue("fontFamily", span, props_)->toString();
         auto color = colorStr.length() ? kuikly::util::ConvertToHexColor(colorStr) : 0xff000000;                    // 默认黑色
-        auto lineHeight = GetKRValue("lineHeight", spanMap, props_)->toFloat() / (fontSize / dpi);    // 字体比例
-        auto lineSpacing = GetKRValue("lineSpacing", spanMap, props_)->toFloat() / (fontSize / dpi);  // 行间距比例
-        auto textAlign = kuikly::util::ConvertToTextAlign(GetKRValue("textAlign", spanMap, props_)->toString());
-        auto textDecoration = kuikly::util::ConvertToTextDecoration(GetKRValue("textDecoration", spanMap, props_)->toString());
-        auto fontStyle = kuikly::util::ConvertToFontStyle(GetKRValue("fontStyle", spanMap, props_)->toString());
-        auto letterSpacing = GetKRValue("letterSpacing", spanMap, props_)->toDouble();
-        auto textShadowStr = GetKRValue("textShadow", spanMap, props_)->toString();
-        auto strokeWidth = GetKRValue("strokeWidth", spanMap, props_)->toFloat();
-        auto strokeColorStr = GetKRValue("strokeColor", spanMap, props_)->toString();
+        auto lineHeight = GetKRValue("lineHeight", span, props_)->toFloat() / (fontSize / dpi);    // 字体比例
+        auto lineSpacing = GetKRValue("lineSpacing", span, props_)->toFloat() / (fontSize / dpi);  // 行间距比例
+        auto textAlign = kuikly::util::ConvertToTextAlign(GetKRValue("textAlign", span, props_)->toString());
+        auto textDecoration = kuikly::util::ConvertToTextDecoration(GetKRValue("textDecoration", span, props_)->toString());
+        auto fontStyle = kuikly::util::ConvertToFontStyle(GetKRValue("fontStyle", span, props_)->toString());
+        auto letterSpacing = GetKRValue("letterSpacing", span, props_)->toDouble();
+        auto textShadowStr = GetKRValue("textShadow", span, props_)->toString();
+        auto strokeWidth = GetKRValue("strokeWidth", span, props_)->toFloat();
+        auto strokeColorStr = GetKRValue("strokeColor", span, props_)->toString();
         auto strokeColor = strokeColorStr.length() ? kuikly::util::ConvertToHexColor(strokeColorStr) : 0xff000000;
         
-        auto placeholderWidth = GetKRValue("placeholderWidth", spanMap, spanMap)->toDouble();
+        auto placeholderWidth = GetKRValue("placeholderWidth", span)->toDouble();
         // 创建文本样式对象txtStyle
         OH_Drawing_TextStyle *txtStyle = OH_Drawing_CreateTextStyle();
         OH_Drawing_Pen *textForegroundPen = nullptr;
@@ -607,7 +628,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
         DidBuildTextStyle(txtStyle, dpi);   
         OH_Drawing_TypographyHandlerPushTextStyle(handler, txtStyle);
         if (placeholderWidth != 0) {  // 添加占位Span
-            auto placeholderHeight = GetKRValue("placeholderHeight", spanMap, spanMap)->toDouble();
+            auto placeholderHeight = GetKRValue("placeholderHeight", span)->toDouble();
             OH_Drawing_PlaceholderSpan inlineView = {
                 placeholderWidth * dpi,      placeholderHeight * dpi,
                 ALIGNMENT_CENTER_OF_ROW_BOX,  // VerticalAlign is 居中
@@ -619,7 +640,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
             // 时，登记到 image_draw_records_ 以便 view 层在 OnForegroundDraw 中绘制图片。
             // 业务自己声明的 ImageSpan（无 kInternalImageSrcKey 字段）继续走"父节点 ImageView"
             // 老链路，不被本机制接管。
-            auto image_src = GetKRValue(kuikly::richtext::kInternalImageSrcKey, spanMap, spanMap)->toString();
+            auto image_src = GetKRValue(kuikly::richtext::kInternalImageSrcKey, span)->toString();
             if (!image_src.empty()) {
                 KRImageDrawRecord rec;
                 rec.placeholder_index = placeholder_count;
@@ -822,38 +843,17 @@ KRAnyValue KRRichTextShadow::BuildEventParams(KRAnyValue res) {
     if (!res->isMap()) {
         return res;
     }
-    const auto oldParam = res->toMap();
-    const auto x = oldParam.find("x");
-    const auto y = oldParam.find("y");
-
     KRRenderValueMap params;
-    if (x != oldParam.end()) {
-        params["x"] = x->second;
-    }
-    if (y != oldParam.end()) {
-        params["y"] = y->second;
-    }
-
-    const auto pageX = oldParam.find("pageX");
-    const auto pageY = oldParam.find("pageY");
-    if (pageX != oldParam.end()) {
-        params["pageX"] = pageX->second;
-    }
-    if (pageY != oldParam.end()) {
-        params["pageY"] = pageY->second;
-    }
-
-    const auto state = oldParam.find("state");
-    const auto isCancel = oldParam.find("isCancel");
-    if (state != oldParam.end()) {
-        params["state"] = state->second;
-    }
-    if (isCancel != oldParam.end()) {
-        params["isCancel"] = isCancel->second;
-    }
-
-    if (x != oldParam.end() && y != oldParam.end()) {
-        params["index"] = NewKRRenderValue(SpanIndexAt(x->second->toFloat(), y->second->toFloat()));
+    CopyParamIfPresent(params, res, "x");
+    CopyParamIfPresent(params, res, "y");
+    CopyParamIfPresent(params, res, "pageX");
+    CopyParamIfPresent(params, res, "pageY");
+    CopyParamIfPresent(params, res, "state");
+    CopyParamIfPresent(params, res, "isCancel");
+    if (auto x = res.opt("x")) {
+        if (auto y = res.opt("y")) {
+            params["index"] = NewKRRenderValue(SpanIndexAt(x.toFloat(), y.toFloat()));
+        }
     }
     return NewKRRenderValue(params);
 }
@@ -863,22 +863,27 @@ KRAnyValue KRRichTextShadow::BuildLongPressEventParams(KRAnyValue res) {
     if (!params_value->isMap()) {
         return params_value;
     }
-    KRRenderValueMap params = params_value->toMap();
-    params["index"] = NewKRRenderValue(ResolveLongPressSpanIndex(params));
-    if (IsLongPressTerminalState(params)) {
+    KRRenderValueMap params;
+    CopyParamIfPresent(params, params_value, "x");
+    CopyParamIfPresent(params, params_value, "y");
+    CopyParamIfPresent(params, params_value, "pageX");
+    CopyParamIfPresent(params, params_value, "pageY");
+    CopyParamIfPresent(params, params_value, "state");
+    CopyParamIfPresent(params, params_value, "isCancel");
+    params["index"] = NewKRRenderValue(ResolveLongPressSpanIndex(params_value));
+    if (IsLongPressTerminalState(params_value)) {
         ClearActiveLongPressSpanIndex();
     }
     return NewKRRenderValue(params);
 }
 
-int KRRichTextShadow::ResolveLongPressSpanIndex(const KRRenderValueMap &params) {
-    const auto state_it = params.find("state");
-    if (state_it != params.end() && state_it->second->toString() == "start") {
-        const auto x_it = params.find("x");
-        const auto y_it = params.find("y");
+int KRRichTextShadow::ResolveLongPressSpanIndex(const KRRenderValue &params) {
+    if (params.opt("state").toString() == "start") {
+        auto x = params.opt("x");
+        auto y = params.opt("y");
         int span_index = -1;
-        if (x_it != params.end() && y_it != params.end()) {
-            span_index = SpanIndexAt(x_it->second->toFloat(), y_it->second->toFloat());
+        if (x && y) {
+            span_index = SpanIndexAt(x.toFloat(), y.toFloat());
         }
         active_long_press_span_index_ = span_index;
         return span_index;
@@ -886,13 +891,11 @@ int KRRichTextShadow::ResolveLongPressSpanIndex(const KRRenderValueMap &params) 
     return active_long_press_span_index_;
 }
 
-bool KRRichTextShadow::IsLongPressTerminalState(const KRRenderValueMap &params) const {
-    const auto is_cancel_it = params.find("isCancel");
-    if (is_cancel_it != params.end() && is_cancel_it->second->toBool()) {
+bool KRRichTextShadow::IsLongPressTerminalState(const KRRenderValue &params) const {
+    if (params.opt("isCancel").toBool()) {
         return true;
     }
-    const auto state_it = params.find("state");
-    return state_it != params.end() && state_it->second->toString() == "end";
+    return params.opt("state").toString() == "end";
 }
 
 void KRRichTextShadow::ClearActiveLongPressSpanIndex() {
