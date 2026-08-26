@@ -16,8 +16,8 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
- * OHOS 实现：底层容器可以是 Kotlin Map（代码构造 / 字符串解析）或原生 cJSON 树
- * （`NATIVE_JSON` 桥接入参，见 [LazyCJsonMap]）。
+ * OHOS 实现：底层容器可以是 Kotlin Map（代码构造 / 字符串解析）或原生 KRJSON 树
+ * （`NATIVE_JSON` 桥接入参，见 [LazyJsonMap]）。
  */
 actual class JSONObject internal actual constructor(
     nameValuePairs: MutableMap<String, Any?>
@@ -38,11 +38,11 @@ actual class JSONObject internal actual constructor(
          * 包装原生 KRJSON 值（`NATIVE_JSON` 的位型），读取时按需转换。
          * 调用方仍拥有传入字的所有权；这里会再 retain 一份。
          */
-        internal fun fromCJsonOwner(ownerPtr: Long): JSONObject = LazyCJsonMap.fromOwner(ownerPtr)
+        internal fun fromJsonOwner(ownerPtr: Long): JSONObject = LazyJsonMap.fromOwner(ownerPtr)
 
         /**
-         * 同 [fromCJsonOwner]，但根节点是数组时返回 [JSONArray]。
+         * 同 [fromJsonOwner]，但根节点是数组时返回 [JSONArray]。
          */
-        internal fun fromCJsonOwnerAny(ownerPtr: Long): Any? = LazyCJsonMap.fromOwnerAny(ownerPtr)
+        internal fun fromJsonOwnerAny(ownerPtr: Long): Any? = LazyJsonMap.fromOwnerAny(ownerPtr)
     }
 }

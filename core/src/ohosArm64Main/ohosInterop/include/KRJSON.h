@@ -16,4 +16,4 @@
 // Redirect to the canonical version in core-render-ohos.
 // Do not duplicate content here; the JSON C API lives there.
 // (cinterop include root is core-render-ohos/src/main/cpp/libohos_render.)
-#include "api/include/Kuikly/KRJson.h"
+#include "api/include/Kuikly/KRJSON.h"

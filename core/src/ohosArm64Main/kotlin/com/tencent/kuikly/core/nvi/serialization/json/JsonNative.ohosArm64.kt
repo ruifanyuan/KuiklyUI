@@ -41,17 +41,17 @@ import platform.posix.size_t
  * 与 `KRJSONType` 一致（cinterop 枚举 ordinal / 底层 int）。
  * NULL=0 … OBJECT=7；缺失 / 失败用 [KRJSON_INVALID]（0xFF），不要当成 JSON null。
  */
-internal const val KRJSON_KIND_NULL = 0
-internal const val KRJSON_KIND_BOOL = 1
-internal const val KRJSON_KIND_INT = 2
-internal const val KRJSON_KIND_UINT = 3
-internal const val KRJSON_KIND_DOUBLE = 4
-internal const val KRJSON_KIND_STRING = 5
-internal const val KRJSON_KIND_ARRAY = 6
-internal const val KRJSON_KIND_OBJECT = 7
+internal const val JSON_KIND_NULL = 0
+internal const val JSON_KIND_BOOL = 1
+internal const val JSON_KIND_INT = 2
+internal const val JSON_KIND_UINT = 3
+internal const val JSON_KIND_DOUBLE = 4
+internal const val JSON_KIND_STRING = 5
+internal const val JSON_KIND_ARRAY = 6
+internal const val JSON_KIND_OBJECT = 7
 
 /** JSON null 的 tagged word 是 0；缺失成员是 [KRJSON_INVALID]。 */
-internal const val KRJSON_NULL_BITS = 0L
+internal const val JSON_NULL_BITS = 0L
 
 /**
  * OHOS 侧对 render .so 中 `KRJSON*` C API 的 FFI 封装。
@@ -61,19 +61,19 @@ internal const val KRJSON_NULL_BITS = 0L
  * （与 iOS 对 `NSDictionary` / `NSArray` 的 retain 对齐）。
  */
 @OptIn(ExperimentalForeignApi::class)
-internal object CJsonNative {
+internal object JsonNative {
 
     fun isInvalid(bits: Long): Boolean = bits.toULong() == KRJSON_INVALID
 
     fun retain(bits: Long): Long {
-        if (bits == KRJSON_NULL_BITS || isInvalid(bits)) {
+        if (bits == JSON_NULL_BITS || isInvalid(bits)) {
             return bits
         }
         return KRJSONRetain(bits.toULong()).toLong()
     }
 
     fun release(bits: Long) {
-        if (bits != KRJSON_NULL_BITS && !isInvalid(bits)) {
+        if (bits != JSON_NULL_BITS && !isInvalid(bits)) {
             KRJSONRelease(bits.toULong())
         }
     }
@@ -95,42 +95,42 @@ internal object CJsonNative {
     }
 
     fun size(bits: Long): Int {
-        if (bits == KRJSON_NULL_BITS || isInvalid(bits)) {
+        if (bits == JSON_NULL_BITS || isInvalid(bits)) {
             return 0
         }
         return KRJSONGetSize(bits.toULong()).toInt()
     }
 
     fun hasKey(objectBits: Long, key: String): Boolean {
-        if (objectBits == KRJSON_NULL_BITS || isInvalid(objectBits)) {
+        if (objectBits == JSON_NULL_BITS || isInvalid(objectBits)) {
             return false
         }
         return !isInvalid(KRJSONObjectGet(objectBits.toULong(), key).toLong())
     }
 
     fun objectGet(objectBits: Long, key: String): Long {
-        if (objectBits == KRJSON_NULL_BITS || isInvalid(objectBits)) {
+        if (objectBits == JSON_NULL_BITS || isInvalid(objectBits)) {
             return KRJSON_INVALID.toLong()
         }
         return KRJSONObjectGet(objectBits.toULong(), key).toLong()
     }
 
     fun objectKeyAt(objectBits: Long, index: Int): String? {
-        if (objectBits == KRJSON_NULL_BITS || isInvalid(objectBits) || index < 0) {
+        if (objectBits == JSON_NULL_BITS || isInvalid(objectBits) || index < 0) {
             return null
         }
         return KRJSONObjectKeyAt(objectBits.toULong(), index.convert<size_t>())?.toKString()
     }
 
     fun objectValueAt(objectBits: Long, index: Int): Long {
-        if (objectBits == KRJSON_NULL_BITS || isInvalid(objectBits) || index < 0) {
+        if (objectBits == JSON_NULL_BITS || isInvalid(objectBits) || index < 0) {
             return KRJSON_INVALID.toLong()
         }
         return KRJSONObjectValueAt(objectBits.toULong(), index.convert<size_t>()).toLong()
     }
 
     fun arrayGet(arrayBits: Long, index: Int): Long {
-        if (arrayBits == KRJSON_NULL_BITS || isInvalid(arrayBits) || index < 0) {
+        if (arrayBits == JSON_NULL_BITS || isInvalid(arrayBits) || index < 0) {
             return KRJSON_INVALID.toLong()
         }
         return KRJSONArrayGet(arrayBits.toULong(), index.convert<size_t>()).toLong()
@@ -159,14 +159,14 @@ internal object CJsonNative {
     }
 
     fun asString(bits: Long): String? {
-        if (isInvalid(bits) || type(bits) != KRJSON_KIND_STRING) {
+        if (isInvalid(bits) || type(bits) != JSON_KIND_STRING) {
             return null
         }
         return KRJSONGetString(bits.toULong(), null)?.toKString()
     }
 
     fun print(bits: Long): String? {
-        if (bits == KRJSON_NULL_BITS || isInvalid(bits)) {
+        if (bits == JSON_NULL_BITS || isInvalid(bits)) {
             return null
         }
         val printed = KRJSONDump(bits.toULong()) ?: return null
@@ -179,27 +179,27 @@ internal object CJsonNative {
 }
 
 /**
- * KRJSON 数字：INT/UINT 走整数位宽；DOUBLE 仍按 [numberFromCJson] 整值落成 Int/Long。
+ * KRJSON 数字：INT/UINT 走整数位宽；DOUBLE 仍按 [numberFromJsonDouble] 整值落成 Int/Long。
  */
-internal fun numberFromKRJSON(bits: Long): Any? {
-    return when (CJsonNative.type(bits)) {
-        KRJSON_KIND_INT -> {
-            val n = CJsonNative.asInt(bits)
+internal fun numberFromJson(bits: Long): Any? {
+    return when (JsonNative.type(bits)) {
+        JSON_KIND_INT -> {
+            val n = JsonNative.asInt(bits)
             if (n >= Int.MIN_VALUE.toLong() && n <= Int.MAX_VALUE.toLong()) n.toInt() else n
         }
-        KRJSON_KIND_UINT -> {
-            val u = CJsonNative.asUint(bits)
-            if (u <= Long.MAX_VALUE.toULong()) u.toLong() else CJsonNative.asDouble(bits, 0.0)
+        JSON_KIND_UINT -> {
+            val u = JsonNative.asUint(bits)
+            if (u <= Long.MAX_VALUE.toULong()) u.toLong() else JsonNative.asDouble(bits, 0.0)
         }
-        KRJSON_KIND_DOUBLE -> numberFromCJson(CJsonNative.asDouble(bits, 0.0))
+        JSON_KIND_DOUBLE -> numberFromJsonDouble(JsonNative.asDouble(bits, 0.0))
         else -> null
     }
 }
 
 /**
- * 整值落成 Int/Long，带小数落成 Double（DOUBLE 标签与历史 cJSON-only-double 共用）。
+ * 整值落成 Int/Long，带小数落成 Double（DOUBLE 标签与历史仅 double 数字语义共用）。
  */
-internal fun numberFromCJson(number: Double): Any {
+internal fun numberFromJsonDouble(number: Double): Any {
     val asLong = number.toLong()
     if (number != asLong.toDouble()) {
         return number

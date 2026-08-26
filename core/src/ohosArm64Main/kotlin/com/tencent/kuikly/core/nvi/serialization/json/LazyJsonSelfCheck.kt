@@ -21,20 +21,20 @@ package com.tencent.kuikly.core.nvi.serialization.json
  * 以及物化后行为与其他平台一致。
  *
  * 返回 `OK ...` 或 `FAIL ...`，供 demo 的桥接回归页展示。放在 core 内是因为
- * [LazyCJsonMap] / [CJsonNative] 都是 internal。
+ * [LazyJsonMap] / [JsonNative] 都是 internal。
  */
 fun verifyOhosLazyJsonBridge(): String {
     val failures = mutableListOf<String>()
     val json = """{"i":1,"l":2147483648,"d":1.5,"s":"str","b":true,"nil":null,""" +
         """"child":{"ck":"cv","cn":7},"arr":[1,"two",{"ak":3}]}"""
 
-    val owner = CJsonNative.ownerFromJson(json)
+    val owner = JsonNative.ownerFromJson(json)
     if (owner == 0L) {
         return "FAIL KRJSON parse failed (render .so symbols missing?)"
     }
-    val wrapped = JSONObject.fromCJsonOwnerAny(owner)
+    val wrapped = JSONObject.fromJsonOwnerAny(owner)
     // 生产者句柄立刻释放：之后所有读取都只依赖 Kotlin 自己 retain 的那一份
-    CJsonNative.release(owner)
+    JsonNative.release(owner)
 
     val obj = wrapped as? JSONObject
     if (obj == null) {
@@ -74,12 +74,12 @@ fun verifyOhosLazyJsonBridge(): String {
     expectEquals(failures, "int alive after materialize", obj.opt("i"), 1)
 
     // 遍历中途 put：iterator 只握 key 快照，物化删树后继续 next / opt 不得 UAF
-    val scalarOwner = CJsonNative.ownerFromJson("""{"a":1,"b":2,"c":3}""")
+    val scalarOwner = JsonNative.ownerFromJson("""{"a":1,"b":2,"c":3}""")
     if (scalarOwner == 0L) {
         failures.add("scalar owner create failed")
     } else {
-        val scalarWrapped = JSONObject.fromCJsonOwner(scalarOwner)
-        CJsonNative.release(scalarOwner)
+        val scalarWrapped = JSONObject.fromJsonOwner(scalarOwner)
+        JsonNative.release(scalarOwner)
         val seen = ArrayList<String>()
         for ((key, value) in scalarWrapped.nameValuePairs) {
             seen.add(key)
@@ -102,12 +102,12 @@ fun verifyOhosLazyJsonBridge(): String {
     expectEquals(failures, "roundtrip child", text.optJSONObject("child")?.optString("ck"), "cv")
 
     // 数组根同样走惰性 List（不再 print + 宽松重解析）
-    val arrayOwner = CJsonNative.ownerFromJson("""[1,"two",{"ak":3},[9]]""")
+    val arrayOwner = JsonNative.ownerFromJson("""[1,"two",{"ak":3},[9]]""")
     if (arrayOwner == 0L) {
         failures.add("array owner create failed")
     } else {
-        val wrappedArray = JSONObject.fromCJsonOwnerAny(arrayOwner)
-        CJsonNative.release(arrayOwner)
+        val wrappedArray = JSONObject.fromJsonOwnerAny(arrayOwner)
+        JsonNative.release(arrayOwner)
         val rootArray = wrappedArray as? JSONArray
         if (rootArray == null) {
             failures.add("array root not wrapped as JSONArray: ${wrappedArray?.let { it::class.simpleName }}")

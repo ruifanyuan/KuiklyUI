@@ -8,7 +8,7 @@
 
 `KRJSONValue` 是 OHOS render 层的 JSON 值类型。它是一个**标签化的 8 字节值**（`typedef uint64_t KRJSONValue`），
 同一脉络于 NSNumber tagged pointer / JSC `JSValue` / ArkCompiler `JSTaggedValue`：一个字要么直接编码一个立即值，
-要么编码一个指向引用计数堆对象的指针。对外只暴露 **C API**（`api/include/Kuikly/KRJson.h`，接入 Kotlin/Native cinterop）。
+要么编码一个指向引用计数堆对象的指针。对外只暴露 **C API**（`api/include/Kuikly/KRJSON.h`，接入 Kotlin/Native cinterop）。
 
 本文件记录**当前采用的 Scheme A** 与**备将来的 Scheme B（NaN-boxing）**，便于日后按需切换。
 
@@ -36,15 +36,15 @@ bits[8..63]  = 立即值 payload  或  48 位指针（堆类型：ptr = v >> 8�
 | kTagNull(0)   | null | 立即值（v==0） |
 | kTagBool(1)   | bool | 立即值，bit8 = 0/1 |
 | kTagInt(2)    | 整数 | 立即值，56 位有符号整数（±2^55；含 ms 时间戳） |
-| kTagDouble(3) | double | 堆 `KRNumberBox`（double 需 64 位，无法内联） |
-| kTagInt64(4)  | 整数 | 堆 `KRNumberBox`（超 56 位的 int64） |
-| kTagUint64(5) | 无符号 | 堆 `KRNumberBox`（> int64 max） |
-| kTagString(6) | string | 堆 `KRStringBox`：`[rc][len][bytes][NUL]` 单次尾随分配、不可变 |
-| kTagArray(7)  | array | 堆 `KRArrayBox { rc; vector<KRJSONValue> }` |
-| kTagObject(8) | object | 堆 `KRObjectBox { rc; vector<pair<string,KRJSONValue>> }`（保序，线性查找；对小对象比 hash map 更快、更省分配） |
+| kTagDouble(3) | double | 堆 `NumberBox`（double 需 64 位，无法内联） |
+| kTagInt64(4)  | 整数 | 堆 `NumberBox`（超 56 位的 int64） |
+| kTagUint64(5) | 无符号 | 堆 `NumberBox`（> int64 max） |
+| kTagString(6) | string | 堆 `StringBox`：`[rc][len][bytes][NUL]` 单次尾随分配、不可变 |
+| kTagArray(7)  | array | 堆 `ArrayBox { rc; vector<KRJSONValue> }` |
+| kTagObject(8) | object | 堆 `ObjectBox { rc; vector<pair<string,KRJSONValue>> }`（保序，线性查找；对小对象比 hash map 更快、更省分配） |
 
 **判别值/指针**：`type = v & 0xFF`；`type < kFirstHeapTag(=3)` → 立即值（就地解码，整数用算术右移 8 位 sign-extend）；
-否则 → 指针 `(KRJSONBox*)(v >> 8)`（逻辑右移）。`kTagInvalid=0xFF` 为错误哨兵，`AsBox` 返回 null → retain/release 安全 no-op。
+否则 → 指针 `(HeapBox*)(v >> 8)`（逻辑右移）。`kTagInvalid=0xFF` 为错误哨兵，`AsBox` 返回 null → retain/release 安全 no-op。
 
 - **优点**：可移植、无地址空间假设；天然 56 位内联整数；string 走堆 → 借用 `const char*` 语义干净。
 - **代价**：**double 入堆**（每个 1 次分配）；短字符串不内联（未来可加，但会破坏借用指针语义）。
@@ -94,9 +94,9 @@ NaN-boxing 用**两个机制**消除歧义，缺一不可：
 ---
 
 ## 从 Scheme A 迁移到 Scheme B 的注意点
-- `KRJSONValue` 公开类型不变（仍是 `uint64_t`）；仅内部编码/判别 + `KRJSONValue.cpp` 的 encode/decode/accessor 需改写。
-- C API 签名不变（`KRJson.h`），故 cinterop / Kotlin 侧无需改动。
-- double 从堆迁为内联后，`KRNumberBox` 只剩“超范围整数”用途；`Dump`/accessor 分支相应调整。
+- `KRJSONValue` 公开类型不变（仍是 `uint64_t`）；仅内部编码/判别 + `Value.cpp` 的 encode/decode/accessor 需改写。
+- C API 签名不变（`KRJSON.h`），故 cinterop / Kotlin 侧无需改动。
+- double 从堆迁为内联后，`NumberBox` 只剩“超范围整数”用途；`Dump`/accessor 分支相应调整。
 
 ---
 
@@ -121,7 +121,7 @@ NaN-boxing 用**两个机制**消除歧义，缺一不可：
 现状每个堆节点（NumberBox / StringBox / ArrayBox / ObjectBox 及 vector 缓冲）都是独立 `malloc`。arena 预分配大块内存、指针 bump 分发、**整块一次性释放**（yyjson/simdjson/RapidJSON pool 的做法），可把每次解析的几千次 malloc 降到近乎零。
 
 **关键冲突**：arena 只能整体回收，与"每节点独立引用计数（某节点 rc 归零即单独释放）"矛盾。故落地需在下列路线间取舍：
-- **(a) 定长 box 用 slab/pool**：给固定大小的 `KRNumberBox` 做空闲链表分配器，缓解 double 的 malloc 压力；**不改所有权**、改动最小，但 array/object 的 vector 缓冲仍走 malloc，收益有限。
+- **(a) 定长 box 用 slab/pool**：给固定大小的 `NumberBox` 做空闲链表分配器，缓解 double 的 malloc 压力；**不改所有权**、改动最小，但 array/object 的 vector 缓冲仍走 malloc，收益有限。
 - **(b) 容器内联变长 + arena**：array/object 子元素内联进变长节点，整树从一个 arena 分配；彻底消除逐节点/逐缓冲 malloc；改动中等。
 - **(c) yyjson 式不可变冻结文档（最快）**：解析后把整棵树压进一块连续 arena，返回**文档级** refcount 句柄、节点借用；释放 = O(1) 释放 arena。代价：C API 所有权语义从"每节点可独立持有"变为"retain 保活整个文档"——**方向性变更，需单独确认**。
 

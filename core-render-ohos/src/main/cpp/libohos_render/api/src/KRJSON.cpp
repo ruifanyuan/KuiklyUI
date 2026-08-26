@@ -17,14 +17,14 @@
 // consumers (including Kotlin/Native via cinterop) use only these functions;
 // the reader/builder/tests call the kuikly::util::json:: functions directly.
 
-#include "libohos_render/api/include/Kuikly/KRJson.h"
+#include "libohos_render/api/include/Kuikly/KRJSON.h"
 
 #include <cstdlib>
 #include <cstring>
 #include <string>
 
-#include "libohos_render/utils/json/KRJSONReader.h"
-#include "libohos_render/utils/json/KRJSONValue.h"
+#include "libohos_render/utils/json/Reader.h"
+#include "libohos_render/utils/json/Value.h"
 
 namespace kjson = kuikly::util::json;
 
@@ -42,7 +42,7 @@ KRJSONValue KRJSONParse(const char *data, size_t len, char **err) {
         *err = nullptr;
     }
     std::string message;
-    KRJSONValue value = kjson::KRJSONReader::Parse(data, len, &message);
+    KRJSONValue value = kjson::Reader::Parse(data, len, &message);
     if (value == KRJSON_INVALID && err != nullptr && !message.empty()) {
         char *buf = static_cast<char *>(std::malloc(message.size() + 1));
         if (buf != nullptr) {
