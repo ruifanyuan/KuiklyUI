@@ -15,8 +15,11 @@
 
 package com.tencent.kuikly.core.nvi.serialization.json
 
+import com.tencent.kuikly.core.utils.consumeToAny
+import com.tencent.kuikly.core.utils.toKRRenderCValue
+
 /**
- * `NATIVE_JSON` 惰性桥接自检：构造一棵自持有的 KRJSON 树，模拟原生产者在调用返回后
+ * KRJSON 惰性桥接自检：构造一棵自持有的 KRJSON 树，模拟原生产者在调用返回后
  * 立刻释放自己的引用，验证 Kotlin 侧仍能安全读取（节点 retain）、子对象比父对象活得久、
  * 以及物化后行为与其他平台一致。
  *
@@ -100,6 +103,57 @@ fun verifyOhosLazyJsonBridge(): String {
     val text = JSONObject(obj.toString())
     expectEquals(failures, "roundtrip int", text.opt("i"), 1)
     expectEquals(failures, "roundtrip child", text.optJSONObject("child")?.optString("ck"), "cv")
+
+    // Kotlin → KRJSON bridge-only types, including binary nested in containers.
+    val typedRoot = mapOf(
+        "int" to 7,
+        "long" to 9_007_199_254_740_993L,
+        "float" to 1.25f,
+        "bytes" to byteArrayOf(0, 1, -1),
+        "nested" to listOf(byteArrayOf(2, 3)),
+    ).toKRRenderCValue().consumeToAny() as? JSONObject
+    if (typedRoot == null) {
+        failures.add("bridge-only typed root missing")
+    } else {
+        expectEquals(failures, "bridge int", typedRoot.opt("int"), 7)
+        expectEquals(failures, "bridge long", typedRoot.opt("long"), 9_007_199_254_740_993L)
+        expectEquals(failures, "bridge float", typedRoot.opt("float"), 1.25f)
+        expectEquals(
+            failures,
+            "bridge bytes",
+            (typedRoot.opt("bytes") as? ByteArray)?.joinToString(),
+            "0, 1, -1",
+        )
+        expectEquals(
+            failures,
+            "bridge nested bytes",
+            (typedRoot.optJSONArray("nested")?.opt(0) as? ByteArray)?.joinToString(),
+            "2, 3",
+        )
+
+        // Re-entering CallNative with a lazy JSONObject must preserve bridge
+        // tags instead of dump/reparse (which cannot represent bytes).
+        val rebridged = typedRoot.toKRRenderCValue().consumeToAny() as? JSONObject
+        expectEquals(failures, "rebridge long", rebridged?.opt("long"), 9_007_199_254_740_993L)
+        expectEquals(failures, "rebridge float", rebridged?.opt("float"), 1.25f)
+        expectEquals(
+            failures,
+            "rebridge bytes",
+            (rebridged?.opt("bytes") as? ByteArray)?.joinToString(),
+            "0, 1, -1",
+        )
+    }
+
+    val constructedArray = JSONArray().put(byteArrayOf(4, 5)).put(6L).put(0.5f)
+    val rebridgedArray = constructedArray.toKRRenderCValue().consumeToAny() as? JSONArray
+    expectEquals(
+        failures,
+        "constructed array bytes",
+        (rebridgedArray?.opt(0) as? ByteArray)?.joinToString(),
+        "4, 5",
+    )
+    expectEquals(failures, "constructed array long", rebridgedArray?.opt(1), 6L)
+    expectEquals(failures, "constructed array float", rebridgedArray?.opt(2), 0.5f)
 
     // 数组根同样走惰性 List（不再 print + 宽松重解析）
     val arrayOwner = JsonNative.ownerFromJson("""[1,"two",{"ak":3},[9]]""")

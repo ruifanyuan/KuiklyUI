@@ -428,7 +428,7 @@ std::pair<uint32_t, uint32_t> KRTextFieldView::GetInputNodeTextSelectionRange() 
  * （TextInput / TextArea 均支持），不再回退为折叠光标。
  */
 void KRTextFieldView::SetTextInputStateInternal(const std::string &json) {
-    // KRRenderValue::toMap 内部调 cJSON_Parse 解析 JSON 字符串到 Map；解析失败回空 Map。
+    // KRRenderValue::toMap 通过 KRJSON 解析 JSON 字符串；解析失败回空 Map。
     KRRenderValue::Map parsed = NewKRRenderValue(json)->toMap();
 
     auto get_string = [&](const char *key) -> std::string {

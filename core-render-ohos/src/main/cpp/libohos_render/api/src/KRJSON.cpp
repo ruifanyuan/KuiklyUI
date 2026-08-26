@@ -83,6 +83,9 @@ double KRJSONGetDouble(KRJSONValue value, double default_value) {
 const char *KRJSONGetString(KRJSONValue value, size_t *out_len) {
     return kjson::GetString(value, out_len);
 }
+const uint8_t *KRJSONGetBytes(KRJSONValue value, size_t *out_len) {
+    return kjson::GetBytes(value, out_len);
+}
 
 size_t KRJSONGetSize(KRJSONValue value) {
     return kjson::GetSize(value);
@@ -109,8 +112,14 @@ KRJSONValue KRJSONNewNull(void) {
 KRJSONValue KRJSONNewBool(bool v) {
     return kjson::NewBool(v);
 }
+KRJSONValue KRJSONNewInt32(int32_t v) {
+    return kjson::NewInt32(v);
+}
 KRJSONValue KRJSONNewInt(int64_t v) {
     return kjson::NewInt(v);
+}
+KRJSONValue KRJSONNewLong(int64_t v) {
+    return kjson::NewLong(v);
 }
 KRJSONValue KRJSONNewUint(uint64_t v) {
     return kjson::NewUint(v);
@@ -118,8 +127,14 @@ KRJSONValue KRJSONNewUint(uint64_t v) {
 KRJSONValue KRJSONNewDouble(double v) {
     return kjson::NewDouble(v);
 }
+KRJSONValue KRJSONNewFloat(float v) {
+    return kjson::NewFloat(v);
+}
 KRJSONValue KRJSONNewString(const char *data, size_t len) {
     return kjson::NewString(data, len);
+}
+KRJSONValue KRJSONNewBytes(const uint8_t *data, size_t len) {
+    return kjson::NewBytes(data, len);
 }
 KRJSONValue KRJSONNewArray(void) {
     return kjson::NewArray();

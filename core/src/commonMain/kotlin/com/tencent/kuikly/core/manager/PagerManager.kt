@@ -62,7 +62,7 @@ object PagerManager {
 
     /**
      * [pagerData] 可以是 JSON 字符串，也可以是平台侧结构化数据已包好的 [JSONObject]
-     * （OHOS `NATIVE_JSON`、iOS `NSDictionary`，都在各平台 callKotlin 入口完成转换）。
+     * （OHOS KRJSON、iOS `NSDictionary`，都在各平台 callKotlin 入口完成转换）。
      */
     fun createPager(
         pagerId: String,

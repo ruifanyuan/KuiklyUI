@@ -71,7 +71,7 @@ enum class ConsumeMode { ROOT, READ5, WALK, PUT, TOSTRING }
 
 /**
  * 平台桥接自检：验证该平台 callKotlin 入参的结构化转换（iOS Foundation 容器、
- * OHOS `NATIVE_JSON` cJSON 树）。返回以 `OK` / `FAIL` 开头的说明；没有原生惰性容器的
+ * OHOS KRJSON 树）。返回以 `OK` / `FAIL` 开头的说明；没有原生惰性容器的
  * 平台返回 `OK (n/a)`。
  */
 expect fun platformBridgeCheck(): String
@@ -531,7 +531,7 @@ internal class JsonPlatformTestPage : BasePager() {
      * 桥接 / 生命周期回归：验证 `createInstance`、`UPDATE_INSTANCE` 事件与平台结构化
      * 入参转换这三条路径在本平台都拿到可用的 JSON 数据。
      *
-     * 覆盖点：pageData（可能来自 JSON 字符串 / `NSDictionary` / cJSON `NATIVE_JSON`）
+     * 覆盖点：pageData（可能来自 JSON 字符串 / `NSDictionary` / KRJSON）
      * 的读取、迭代、读后写物化、再序列化；生命周期事件数据的可读性；以及平台侧惰性容器
      * 自检（含二进制透传与数组根）。
      */

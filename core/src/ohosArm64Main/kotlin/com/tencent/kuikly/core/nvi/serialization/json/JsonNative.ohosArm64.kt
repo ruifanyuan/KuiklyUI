@@ -16,12 +16,15 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.usePinned
 import ohos.KRJSONArrayGet
 import ohos.KRJSONDump
 import ohos.KRJSONFreeString
 import ohos.KRJSONGetBool
+import ohos.KRJSONGetBytes
 import ohos.KRJSONGetDouble
 import ohos.KRJSONGetInt
 import ohos.KRJSONGetSize
@@ -49,6 +52,9 @@ internal const val JSON_KIND_DOUBLE = 4
 internal const val JSON_KIND_STRING = 5
 internal const val JSON_KIND_ARRAY = 6
 internal const val JSON_KIND_OBJECT = 7
+internal const val JSON_KIND_BYTES = 8
+internal const val JSON_KIND_LONG = 9
+internal const val JSON_KIND_FLOAT = 10
 
 /** JSON null 的 tagged word 是 0；缺失成员是 [KRJSON_INVALID]。 */
 internal const val JSON_NULL_BITS = 0L
@@ -163,6 +169,22 @@ internal object JsonNative {
             return null
         }
         return KRJSONGetString(bits.toULong(), null)?.toKString()
+    }
+
+    fun asByteArray(bits: Long): ByteArray {
+        if (isInvalid(bits) || type(bits) != JSON_KIND_BYTES) {
+            return ByteArray(0)
+        }
+        val size = KRJSONGetSize(bits.toULong()).toInt()
+        if (size <= 0) {
+            return ByteArray(0)
+        }
+        val source = KRJSONGetBytes(bits.toULong(), null) ?: return ByteArray(0)
+        return ByteArray(size).also { bytes ->
+            bytes.usePinned { pinned ->
+                platform.posix.memcpy(pinned.addressOf(0), source, size.convert<size_t>())
+            }
+        }
     }
 
     fun print(bits: Long): String? {

@@ -27,16 +27,16 @@
 #include "libohos_render/manager/KRRenderManager.h"
 
 EXTERN_C_START
-void com_tencent_kuikly_CallNative(int methodId, const KRRenderCValue *arg0, const KRRenderCValue *arg1,
-        const KRRenderCValue *arg2, const KRRenderCValue *arg3, const KRRenderCValue *arg4,
-        const KRRenderCValue *arg5, KRRenderCValue *result) {
+KRRenderCValue com_tencent_kuikly_CallNative(
+        int methodId, KRRenderCValue arg0, KRRenderCValue arg1, KRRenderCValue arg2,
+        KRRenderCValue arg3, KRRenderCValue arg4, KRRenderCValue arg5) {
     // napi C ABI 边界：不再套 C++ catch，让异常原样冒到 K/N runtime。
     // 曾经在此处 catch → log → rethrow，虽然保留了 std::current_exception()，
     // 但 K/N 会因为观察到 "C++ 已 catch 过" 而不再触发 unhandled-exception hook，
     // 从而丢失 Kotlin 侧真正有价值的 Throwable class / message / Kotlin 栈。
     // 现在完全放弃 C++ 侧的诊断日志（tag/type/what），换取 K/N hook 的正常触发。
-    *result = IKRRenderNativeContextHandler::DispatchCallNative(std::string(arg0->value.stringValue), methodId,
-            *arg0, *arg1, *arg2, *arg3, *arg4, *arg5);
+    return IKRRenderNativeContextHandler::DispatchCallNative(KRRenderValue::MakeBorrowed(arg0)->toString(), methodId,
+            arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 CallKotlin callKotlin_;
@@ -104,7 +104,7 @@ void KRRenderCore::DidInit() {
     auto sync = context_->ExecuteMode()->IsContextSyncInit();
     KRContextScheduler::DirectRunOnMainThread(sync, [strongSelf = shared_from_this(), sync] {
         auto page_name = KRRenderValue::Make(strongSelf->context_->PageName());
-        // PageData 以结构化 Map 下发（toCValue → NATIVE_JSON），省掉 toString() 与 Kotlin 侧重新解析
+        // PageData 直接以 KRJSON 结构化值下发，省掉 toString() 与 Kotlin 侧重新解析
         auto page_data = strongSelf->context_->PageData();
         auto null_arg = strongSelf->defaultNullValue_;
         strongSelf->notifyInitState(KRInitState::kStateInitContextStart);
@@ -131,7 +131,7 @@ void KRRenderCore::SendEvent(std::string event_name, const std::string &json_dat
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const std::string &json_data, bool need_sync) {
-    // 历史字符串接口保持字符串下发：这里若解析成 Map 再转 cJSON，key 顺序会变成
+    // 历史字符串接口保持字符串下发：这里若解析成 Map 再建 KRJSON，key 顺序会变成
     // unordered_map 的顺序，Kotlin 侧拿到的 JSONObject 顺序与原始文本不再一致。
     // Kotlin 的 PagerManager 同时接受 JSON 字符串与结构化 JSONObject。
     SendEvent(std::move(event_name), KRRenderValue::Make(json_data), need_sync);
@@ -148,7 +148,7 @@ void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
 void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync) {
     auto task = [self = shared_from_this(), need_sync, event_name, data] {
         auto event = KRRenderValue::Make(event_name);
-        // Map / Array 负载走 toCValue 的 NATIVE_JSON；字符串负载原样下发
+        // Map / Array 与字符串都直接复用各自的 KRJSON tagged word
         auto payload = data ? data : KRRenderValue::Make(KRRenderValue::Map{});
         auto nullValue = self->defaultNullValue_;
         self->CallKotlinMethod(KuiklyRenderContextMethod::KuiklyRenderContextMethodUpdateInstance, event, payload,

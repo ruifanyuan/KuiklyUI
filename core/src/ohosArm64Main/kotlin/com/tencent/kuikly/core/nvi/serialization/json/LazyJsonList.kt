@@ -144,7 +144,10 @@ internal class LazyJsonList private constructor(
             JSON_KIND_NULL -> null
             JSON_KIND_BOOL -> JsonNative.asBool(child, false)
             JSON_KIND_INT, JSON_KIND_UINT, JSON_KIND_DOUBLE -> numberFromJson(child)
+            JSON_KIND_LONG -> JsonNative.asInt(child)
+            JSON_KIND_FLOAT -> JsonNative.asDouble(child, 0.0).toFloat()
             JSON_KIND_STRING -> JsonNative.asString(child)
+            JSON_KIND_BYTES -> JsonNative.asByteArray(child)
             JSON_KIND_OBJECT -> cacheContainer(index, LazyJsonMap.fromValue(child))
             JSON_KIND_ARRAY -> cacheContainer(index, fromValue(child))
             else -> null

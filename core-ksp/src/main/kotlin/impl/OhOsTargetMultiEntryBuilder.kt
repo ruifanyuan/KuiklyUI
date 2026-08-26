@@ -37,6 +37,7 @@ class OhOsTargetMultiEntryBuilder(private val catchException: Boolean, private v
                 addImport("kotlinx.cinterop", "alloc")
                 addImport("kotlinx.cinterop", "ptr")
                 addImport("com.tencent.kuikly.core.utils", "asString")
+                addImport("com.tencent.kuikly.core.utils", "toAny")
                 addImport("com.tencent.kuikly.core.manager", "KotlinMethod")
                 addImport("kotlinx.cinterop", "staticCFunction")
                 addImport("ohos", "com_tencent_kuikly_SetCallKotlin")
@@ -156,7 +157,7 @@ class OhOsTargetMultiEntryBuilder(private val catchException: Boolean, private v
         val experimentalForeignApi = ClassName("kotlinx.cinterop", "ExperimentalForeignApi")
         val experimentalNativeApi = ClassName("kotlin.experimental", "ExperimentalNativeApi")
         val toKRRenderCValue = ClassName("com.tencent.kuikly.core.utils", "toKRRenderCValue")
-        val toAny = ClassName("com.tencent.kuikly.core.utils", "toAny")
+        val consumeToAny = ClassName("com.tencent.kuikly.core.utils", "consumeToAny")
 
         return FunSpec.builder("callNative")
             .addModifiers(KModifier.PRIVATE)
@@ -174,26 +175,23 @@ class OhOsTargetMultiEntryBuilder(private val catchException: Boolean, private v
             .returns(Any::class.asTypeName().copy(nullable = true))
             .addCode(
                 """
-            |return memScoped {
-            |    // 优化：直接在 arena 上 alloc + 填充，避免 cValue<T> 产生的中间 ByteArray
-            |    val cv0 = alloc<ohos.KRRenderCValue>(); arg0.%T(this, cv0)
-            |    val cv1 = alloc<ohos.KRRenderCValue>(); arg1.%T(this, cv1)
-            |    val cv2 = alloc<ohos.KRRenderCValue>(); arg2.%T(this, cv2)
-            |    val cv3 = alloc<ohos.KRRenderCValue>(); arg3.%T(this, cv3)
-            |    val cv4 = alloc<ohos.KRRenderCValue>(); arg4.%T(this, cv4)
-            |    val cv5 = alloc<ohos.KRRenderCValue>(); arg5.%T(this, cv5)
-            |    val result = alloc<ohos.KRRenderCValue>()
+            |val cv0 = arg0.%T()
+            |val cv1 = arg1.%T()
+            |val cv2 = arg2.%T()
+            |val cv3 = arg3.%T()
+            |val cv4 = arg4.%T()
+            |val cv5 = arg5.%T()
+            |return try {
             |    ohos.com_tencent_kuikly_CallNative(
-            |        methodId,
-            |        cv0.ptr,
-            |        cv1.ptr,
-            |        cv2.ptr,
-            |        cv3.ptr,
-            |        cv4.ptr,
-            |        cv5.ptr,
-            |        result.ptr
-            |    )
-            |    result.%T()
+            |        methodId, cv0, cv1, cv2, cv3, cv4, cv5
+            |    ).%T()
+            |} finally {
+            |    ohos.KRJSONRelease(cv0)
+            |    ohos.KRJSONRelease(cv1)
+            |    ohos.KRJSONRelease(cv2)
+            |    ohos.KRJSONRelease(cv3)
+            |    ohos.KRJSONRelease(cv4)
+            |    ohos.KRJSONRelease(cv5)
             |}
         """.trimMargin(),
                 toKRRenderCValue,
@@ -202,7 +200,7 @@ class OhOsTargetMultiEntryBuilder(private val catchException: Boolean, private v
                 toKRRenderCValue,
                 toKRRenderCValue,
                 toKRRenderCValue,
-                toAny
+                consumeToAny
             )
             .build()
     }

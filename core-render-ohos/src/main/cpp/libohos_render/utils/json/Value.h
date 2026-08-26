@@ -55,6 +55,10 @@ enum : uint8_t {
     kTagString = 6,   // heap StringBox
     kTagArray = 7,    // heap ArrayBox
     kTagObject = 8,   // heap ObjectBox
+    kTagBytes = 9,    // heap BytesBox (bridge-only, not valid JSON text)
+    kTagInt32 = 10,   // immediate bridge Int (preserves Kotlin/C++ type)
+    kTagFloat = 11,   // heap NumberBox (preserves Kotlin/C++ type)
+    kTagLong = 12,    // heap NumberBox (preserves Kotlin/C++ type)
     kFirstHeapTag = kTagDouble,
     kTagInvalid = 0xFF,
 };
@@ -77,6 +81,10 @@ struct StringBox : HeapBox {
     static void Free(StringBox *b);
 };
 
+struct BytesBox : HeapBox {
+    std::vector<uint8_t> data;
+};
+
 // Array box: children stored by value as KRJSONValue words (each retained).
 struct ArrayBox : HeapBox {
     std::vector<KRJSONValue> items;
@@ -96,7 +104,9 @@ inline uint8_t TagOf(KRJSONValue v) {
     return static_cast<uint8_t>(v & 0xFFu);
 }
 inline bool IsHeapTag(uint8_t t) {
-    return t >= kFirstHeapTag && t != kTagInvalid;
+    return t == kTagDouble || t == kTagInt64 || t == kTagUint64 || t == kTagString ||
+           t == kTagArray || t == kTagObject || t == kTagBytes ||
+           t == kTagFloat || t == kTagLong;
 }
 inline HeapBox *AsBox(KRJSONValue v) {
     return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;
@@ -123,10 +133,14 @@ void Release(KRJSONValue v);
 
 KRJSONValue NewNull();
 KRJSONValue NewBool(bool b);
+KRJSONValue NewInt32(int32_t x);
 KRJSONValue NewInt(int64_t x);
+KRJSONValue NewLong(int64_t x);
 KRJSONValue NewUint(uint64_t x);
+KRJSONValue NewFloat(float f);
 KRJSONValue NewDouble(double d);
 KRJSONValue NewString(const char *s, size_t n);
+KRJSONValue NewBytes(const uint8_t *data, size_t n);
 KRJSONValue NewArray();
 KRJSONValue NewObject();
 void ArrayAppend(KRJSONValue array, KRJSONValue child);
@@ -138,6 +152,7 @@ int64_t GetInt(KRJSONValue v, int64_t default_value);
 uint64_t GetUint(KRJSONValue v, uint64_t default_value);
 double GetDouble(KRJSONValue v, double default_value);
 const char *GetString(KRJSONValue v, size_t *out_len);
+const uint8_t *GetBytes(KRJSONValue v, size_t *out_len);
 size_t GetSize(KRJSONValue v);
 KRJSONValue ArrayGet(KRJSONValue array, size_t index);
 KRJSONValue ObjectGet(KRJSONValue object, const char *key, size_t key_len);

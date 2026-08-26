@@ -152,7 +152,7 @@ static napi_value ArkTSOnSendEvent(napi_env env, napi_callback_info info) {
 
     std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
     auto event = kuikly::util::getNApiArgsStdString(env, args[1]);
-    // 结构化 napi 值（Record / Array）直接建 Map/Array → NATIVE_JSON，字符串同样兼容
+    // 结构化 napi 值（Record / Array）直接构建 KRJSON，字符串同样兼容
     auto data = KRRenderValue::Make(env, args[2]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
     if (renderView != nullptr) {

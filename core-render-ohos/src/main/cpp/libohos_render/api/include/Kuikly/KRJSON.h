@@ -30,7 +30,7 @@ extern "C" {
  * A JSON value is a tagged 8-byte word ("Scheme A"): the low byte holds a type
  * tag and the high 56 bits hold either an inline payload (null / bool / 56-bit
  * int) or a 48-bit pointer to a reference-counted heap box (double, large
- * integer, string, array, object). Copying the word does NOT change ownership;
+ * integer, string, bytes, array, object). Copying the word does NOT change ownership;
  * use KRJSONRetain / KRJSONRelease to manage lifetime.
  *
  * Immediate values (null/bool/small-int) need no allocation and KRJSONRetain /
@@ -46,13 +46,17 @@ typedef uint64_t KRJSONValue;
 /** Public semantic value type (independent of internal storage tag). */
 typedef enum {
     KRJSON_NULL = 0,
-    KRJSON_BOOL,
-    KRJSON_INT,     // signed integer (any that fits int64; also unsigned <= INT64_MAX)
-    KRJSON_UINT,    // unsigned integer strictly greater than INT64_MAX
-    KRJSON_DOUBLE,
-    KRJSON_STRING,
-    KRJSON_ARRAY,
-    KRJSON_OBJECT,
+    KRJSON_BOOL = 1,
+    KRJSON_INT = 2,     // JSON signed integer (materialized as Int/Long by range)
+    KRJSON_UINT = 3,    // unsigned integer strictly greater than INT64_MAX
+    KRJSON_DOUBLE = 4,
+    KRJSON_STRING = 5,
+    KRJSON_ARRAY = 6,
+    KRJSON_OBJECT = 7,
+    /** Bridge-only types below are not produced by JSON parsing. */
+    KRJSON_BYTES = 8,
+    KRJSON_LONG = 9,
+    KRJSON_FLOAT = 10,
 } KRJSONType;
 
 /** Object iteration callback; return false to stop early. `value` is borrowed. */
@@ -84,9 +88,11 @@ KUIKLY_EXPORT uint64_t KRJSONGetUint(KRJSONValue value, uint64_t default_value);
 KUIKLY_EXPORT double KRJSONGetDouble(KRJSONValue value, double default_value);
 /** Borrowed, NUL-terminated bytes valid while `value` is retained; empty on mismatch. */
 KUIKLY_EXPORT const char *KRJSONGetString(KRJSONValue value, size_t *out_len);
+/** Borrowed binary data valid while `value` is retained; NULL on mismatch. */
+KUIKLY_EXPORT const uint8_t *KRJSONGetBytes(KRJSONValue value, size_t *out_len);
 
 // ---- containers ----
-/** Array length or object member count, else 0. */
+/** Array length, object member count, or byte payload length; else 0. */
 KUIKLY_EXPORT size_t KRJSONGetSize(KRJSONValue value);
 /** Array element by index; BORROWED (retain to keep). KRJSON_INVALID if out of range. */
 KUIKLY_EXPORT KRJSONValue KRJSONArrayGet(KRJSONValue array, size_t index);
@@ -103,10 +109,14 @@ KUIKLY_EXPORT void KRJSONObjectForEach(KRJSONValue object, KRJSONObjectVisitor v
 // ---- constructors (return OWNED values) ----
 KUIKLY_EXPORT KRJSONValue KRJSONNewNull(void);
 KUIKLY_EXPORT KRJSONValue KRJSONNewBool(bool v);
+KUIKLY_EXPORT KRJSONValue KRJSONNewInt32(int32_t v);
 KUIKLY_EXPORT KRJSONValue KRJSONNewInt(int64_t v);
+KUIKLY_EXPORT KRJSONValue KRJSONNewLong(int64_t v);
 KUIKLY_EXPORT KRJSONValue KRJSONNewUint(uint64_t v);
+KUIKLY_EXPORT KRJSONValue KRJSONNewFloat(float v);
 KUIKLY_EXPORT KRJSONValue KRJSONNewDouble(double v);
 KUIKLY_EXPORT KRJSONValue KRJSONNewString(const char *data, size_t len);
+KUIKLY_EXPORT KRJSONValue KRJSONNewBytes(const uint8_t *data, size_t len);
 KUIKLY_EXPORT KRJSONValue KRJSONNewArray(void);
 KUIKLY_EXPORT KRJSONValue KRJSONNewObject(void);
 /** Append `child` to array; the array retains it (caller still owns its own ref). */

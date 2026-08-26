@@ -95,6 +95,8 @@ void Release(KRJSONValue v) {
             case kTagDouble:
             case kTagInt64:
             case kTagUint64:
+            case kTagFloat:
+            case kTagLong:
                 delete static_cast<NumberBox *>(b);
                 break;
             case kTagString:
@@ -105,6 +107,9 @@ void Release(KRJSONValue v) {
                 break;
             case kTagObject:
                 delete static_cast<ObjectBox *>(b);
+                break;
+            case kTagBytes:
+                delete static_cast<BytesBox *>(b);
                 break;
             default:
                 break;
@@ -119,6 +124,9 @@ KRJSONValue NewNull() {
 KRJSONValue NewBool(bool b) {
     return (static_cast<uint64_t>(b ? 1 : 0) << 8) | kTagBool;
 }
+KRJSONValue NewInt32(int32_t x) {
+    return (static_cast<uint64_t>(static_cast<int64_t>(x)) << 8) | kTagInt32;
+}
 KRJSONValue NewInt(int64_t x) {
     if (x >= kInt56Min && x <= kInt56Max) {
         return EncodeInt56(x);
@@ -126,6 +134,11 @@ KRJSONValue NewInt(int64_t x) {
     auto *box = new NumberBox();
     box->bits = static_cast<uint64_t>(x);
     return EncodePtr(box, kTagInt64);
+}
+KRJSONValue NewLong(int64_t x) {
+    auto *box = new NumberBox();
+    box->bits = static_cast<uint64_t>(x);
+    return EncodePtr(box, kTagLong);
 }
 KRJSONValue NewUint(uint64_t x) {
     if (x <= static_cast<uint64_t>(kInt56Max)) {
@@ -140,8 +153,21 @@ KRJSONValue NewDouble(double d) {
     box->bits = DoubleToBits(d);
     return EncodePtr(box, kTagDouble);
 }
+KRJSONValue NewFloat(float f) {
+    auto *box = new NumberBox();
+    double d = static_cast<double>(f);
+    box->bits = DoubleToBits(d);
+    return EncodePtr(box, kTagFloat);
+}
 KRJSONValue NewString(const char *s, size_t n) {
     return EncodePtr(StringBox::Create(s, n), kTagString);
+}
+KRJSONValue NewBytes(const uint8_t *data, size_t n) {
+    auto *box = new BytesBox();
+    if (data != nullptr && n > 0) {
+        box->data.assign(data, data + n);
+    }
+    return EncodePtr(box, kTagBytes);
 }
 KRJSONValue NewArray() {
     return EncodePtr(new ArrayBox(), kTagArray);
@@ -179,12 +205,20 @@ KRJSONType GetType(KRJSONValue v) {
         case kTagInt:
         case kTagInt64:
             return KRJSON_INT;
+        case kTagInt32:
+            return KRJSON_INT;
+        case kTagLong:
+            return KRJSON_LONG;
         case kTagUint64:
             return KRJSON_UINT;
         case kTagDouble:
             return KRJSON_DOUBLE;
+        case kTagFloat:
+            return KRJSON_FLOAT;
         case kTagString:
             return KRJSON_STRING;
+        case kTagBytes:
+            return KRJSON_BYTES;
         case kTagArray:
             return KRJSON_ARRAY;
         case kTagObject:
@@ -201,10 +235,14 @@ int64_t GetInt(KRJSONValue v, int64_t default_value) {
     switch (TagOf(v)) {
         case kTagInt:
             return DecodeInt56(v);
+        case kTagInt32:
+            return static_cast<int32_t>(DecodeInt56(v));
         case kTagInt64:
         case kTagUint64:
+        case kTagLong:
             return static_cast<int64_t>(static_cast<NumberBox *>(AsBox(v))->bits);
         case kTagDouble:
+        case kTagFloat:
             return static_cast<int64_t>(BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits));
         default:
             return default_value;
@@ -214,10 +252,14 @@ uint64_t GetUint(KRJSONValue v, uint64_t default_value) {
     switch (TagOf(v)) {
         case kTagInt:
             return static_cast<uint64_t>(DecodeInt56(v));
+        case kTagInt32:
+            return static_cast<uint64_t>(static_cast<int32_t>(DecodeInt56(v)));
         case kTagInt64:
         case kTagUint64:
+        case kTagLong:
             return static_cast<NumberBox *>(AsBox(v))->bits;
         case kTagDouble:
+        case kTagFloat:
             return static_cast<uint64_t>(BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits));
         default:
             return default_value;
@@ -226,10 +268,14 @@ uint64_t GetUint(KRJSONValue v, uint64_t default_value) {
 double GetDouble(KRJSONValue v, double default_value) {
     switch (TagOf(v)) {
         case kTagDouble:
+        case kTagFloat:
             return BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits);
         case kTagInt:
             return static_cast<double>(DecodeInt56(v));
+        case kTagInt32:
+            return static_cast<double>(static_cast<int32_t>(DecodeInt56(v)));
         case kTagInt64:
+        case kTagLong:
             return static_cast<double>(static_cast<int64_t>(static_cast<NumberBox *>(AsBox(v))->bits));
         case kTagUint64:
             return static_cast<double>(static_cast<NumberBox *>(AsBox(v))->bits);
@@ -250,12 +296,27 @@ const char *GetString(KRJSONValue v, size_t *out_len) {
     }
     return "";
 }
+const uint8_t *GetBytes(KRJSONValue v, size_t *out_len) {
+    if (TagOf(v) == kTagBytes) {
+        const auto &data = static_cast<BytesBox *>(AsBox(v))->data;
+        if (out_len != nullptr) {
+            *out_len = data.size();
+        }
+        return data.empty() ? nullptr : data.data();
+    }
+    if (out_len != nullptr) {
+        *out_len = 0;
+    }
+    return nullptr;
+}
 size_t GetSize(KRJSONValue v) {
     switch (TagOf(v)) {
         case kTagArray:
             return static_cast<ArrayBox *>(AsBox(v))->items.size();
         case kTagObject:
             return static_cast<ObjectBox *>(AsBox(v))->members.size();
+        case kTagBytes:
+            return static_cast<BytesBox *>(AsBox(v))->data.size();
         default:
             return 0;
     }
@@ -322,10 +383,16 @@ void WriteTo(KRJSONValue v, rapidjson::Writer<rapidjson::StringBuffer> &w) {
         case KRJSON_INT:
             w.Int64(GetInt(v, 0));
             break;
+        case KRJSON_LONG:
+            w.Int64(GetInt(v, 0));
+            break;
         case KRJSON_UINT:
             w.Uint64(GetUint(v, 0));
             break;
         case KRJSON_DOUBLE:
+            w.Double(GetDouble(v, 0));
+            break;
+        case KRJSON_FLOAT:
             w.Double(GetDouble(v, 0));
             break;
         case KRJSON_STRING: {
@@ -334,6 +401,11 @@ void WriteTo(KRJSONValue v, rapidjson::Writer<rapidjson::StringBuffer> &w) {
             w.String(s, static_cast<rapidjson::SizeType>(len));
             break;
         }
+        case KRJSON_BYTES:
+            // Binary values only exist on the bridge path and have no JSON
+            // text representation. Match the historical fallback to null.
+            w.Null();
+            break;
         case KRJSON_ARRAY: {
             w.StartArray();
             auto &items = static_cast<ArrayBox *>(AsBox(v))->items;
