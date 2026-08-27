@@ -104,15 +104,16 @@ void KRRenderCore::DidInit() {
     auto sync = context_->ExecuteMode()->IsContextSyncInit();
     KRContextScheduler::DirectRunOnMainThread(sync, [strongSelf = shared_from_this(), sync] {
         auto page_name = KRRenderValue::Make(strongSelf->context_->PageName());
-        // PageData 直接以 KRJSON 结构化值下发，省掉 toString() 与 Kotlin 侧重新解析
-        auto page_data = strongSelf->context_->PageData();
+        // arg2 保持原始 pageData（动态化仍是 JSON 字符串）；arg3 带上已解析的 object。
+        auto page_data = strongSelf->context_->RemovePageData();
+        auto parsed_page_data = strongSelf->context_->RemoveParsedPageData();
         auto null_arg = strongSelf->defaultNullValue_;
         strongSelf->notifyInitState(KRInitState::kStateInitContextStart);
         strongSelf->contextHandler_->InitContext();
         strongSelf->notifyInitState(KRInitState::kStateInitContextFinish);
         strongSelf->notifyInitState(KRInitState::kStateCreateInstanceStart);
         strongSelf->CallKotlinMethod(KuiklyRenderContextMethod::KuiklyRenderContextMethodCreateInstance, page_name, page_data,
-                                     null_arg, null_arg, null_arg);
+                                     parsed_page_data, null_arg, null_arg);
         // 获取操作完成后的时间点
         auto end = std::chrono::steady_clock::now();
         strongSelf->uiScheduler_->PerformSyncMainQueueTasksBlockIfNeed(sync);

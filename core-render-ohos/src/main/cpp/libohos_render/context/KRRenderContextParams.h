@@ -31,10 +31,10 @@ class KRRenderContextParams {
         this->page_name_ = page_name;
         this->instance_id_ = instance_id;
         this->page_data_ = page_data;
+        this->parsed_page_data_ = this->page_data_.container();
         this->config_ = std::make_shared<KRConfig>(configJsonStr);
 
-        const auto page_data_object = this->page_data_.container();
-        int page_data_mode = page_data_object.opt("executeMode").toInt();
+        int page_data_mode = this->parsed_page_data_.opt("executeMode").toInt();
         std::unordered_map<int, KRRenderExecuteModeCreator> mode_creator_register =
             KRRenderExecuteMode::GetExecuteModeCreatorRegister();
         if (mode_creator_register.find(page_data_mode) != mode_creator_register.end()) {
@@ -46,7 +46,7 @@ class KRRenderContextParams {
                 execute_mode_ = defaultMode;
             }
         }
-        context_code_ = page_data_object.opt("contextCode").toString();
+        context_code_ = this->parsed_page_data_.opt("contextCode").toString();
     }
     const std::string &PageName() const {
         return page_name_;
@@ -60,11 +60,13 @@ class KRRenderContextParams {
     const std::string &InstanceId() const {
         return instance_id_;
     }
-    const KRRenderValue &PageData() const {
-        return page_data_;
+    /** 取出原始 pageData（多为 JSON 字符串），成员被置空。 */
+    KRRenderValue RemovePageData() {
+        return std::move(page_data_);
     }
-    KRRenderValue PageParam() const {
-        return page_data_.container().opt("param");
+    /** 取出解析后的 JSON object，成员被置空。 */
+    KRRenderValue RemoveParsedPageData() {
+        return std::move(parsed_page_data_);
     }
     const std::shared_ptr<KRConfig> &Config() const {
         return config_;
@@ -87,8 +89,10 @@ class KRRenderContextParams {
      * 执行上下文code，驱动渲染对应的代码。KRRenderExecuteMode.Native模式时: 传递 ""
      */
     std::string context_code_;
-    /** 页面携带透传的数据，对标kotlin侧的pagerData.params */
+    /** 页面携带透传的数据，对标kotlin侧的pagerData.params；动态化仍可能是 JSON 文本 */
     KRRenderValue page_data_;
+    /** `page_data_.container()` 的缓存：object 原样，string 则 parse 一次 */
+    KRRenderValue parsed_page_data_;
     /** 配置数据 */
     std::shared_ptr<KRConfig> config_;
 };
