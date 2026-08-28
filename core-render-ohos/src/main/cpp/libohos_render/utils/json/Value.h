@@ -52,13 +52,14 @@ enum : uint8_t {
     kTagDouble = 3,   // heap NumberBox (double bits)
     kTagInt64 = 4,    // heap NumberBox (int64 out of 56-bit range)
     kTagUint64 = 5,   // heap NumberBox (uint64 > int64 max)
-    kTagString = 6,   // heap StringBox
+    kTagString = 6,   // heap StringBox (UTF-8)
     kTagArray = 7,    // heap ArrayBox
     kTagObject = 8,   // heap ObjectBox
     kTagBytes = 9,    // heap BytesBox (bridge-only, not valid JSON text)
     kTagInt32 = 10,   // immediate bridge Int (preserves Kotlin/C++ type)
     kTagFloat = 11,   // heap NumberBox (preserves Kotlin/C++ type)
     kTagLong = 12,    // heap NumberBox (preserves Kotlin/C++ type)
+    kTagU16String = 13,  // heap U16StringBox (UTF-16; GetType = KRJSON_U16STRING = 13)
     kFirstHeapTag = kTagDouble,
     kTagInvalid = 0xFF,
 };
@@ -73,13 +74,25 @@ struct NumberBox : HeapBox {
     uint64_t bits = 0;
 };
 
-// Immutable, single-allocation string: [HeapBox rc][uint32 len][bytes][NUL].
+// Immutable UTF-8 string: [HeapBox rc][uint32 len][bytes][NUL].
 struct StringBox : HeapBox {
     uint32_t len = 0;
     const char *data() const { return reinterpret_cast<const char *>(this + 1); }
     static StringBox *Create(const char *s, size_t n);
     static void Free(StringBox *b);
 };
+
+// Immutable UTF-16 string: [HeapBox rc][uint32 unit_count][units][0].
+// GetString does not convert this box; callers use GetStringUtf16.
+struct U16StringBox : HeapBox {
+    uint32_t len = 0;  // code units, not bytes
+    const uint16_t *data() const { return reinterpret_cast<const uint16_t *>(this + 1); }
+    uint16_t *data() { return reinterpret_cast<uint16_t *>(this + 1); }
+    static U16StringBox *Create(const uint16_t *s, size_t n);
+    static void Free(U16StringBox *b);
+};
+static_assert(sizeof(U16StringBox) % alignof(uint16_t) == 0,
+              "UTF-16 payload follows U16StringBox and must be 2-byte aligned");
 
 struct BytesBox : HeapBox {
     std::vector<uint8_t> data;
@@ -94,19 +107,45 @@ struct ArrayBox : HeapBox {
 // Object box: insertion-ordered flat entries; values are retained KRJSONValue
 // words. Lookup is linear — for the small objects on the render path this beats
 // a hash map (fewer allocations, better cache locality) and preserves order.
+// One member list per object (`union`): UTF-8 parse → `utf8`, UTF-16 parse →
+// `utf16`. The two encodings are not mixed.
 struct ObjectBox : HeapBox {
-    std::vector<std::pair<std::string, KRJSONValue>> members;
-    ~ObjectBox();  // releases every value
+    using Utf8Members = std::vector<std::pair<std::string, KRJSONValue>>;
+    using Utf16Members = std::vector<std::pair<std::u16string, KRJSONValue>>;
+    struct Utf16Keys {};
+    bool keys_utf16 = false;
+    union {
+        Utf8Members utf8;
+        Utf16Members utf16;
+    };
+    ObjectBox() : utf8() {}
+    explicit ObjectBox(Utf16Keys) : keys_utf16(true), utf16() {}
+    ObjectBox(const ObjectBox &) = delete;
+    ObjectBox &operator=(const ObjectBox &) = delete;
+    ~ObjectBox();  // releases every value, destroys the active union member
 };
 
 // ---- tag / encode / decode helpers ----
 inline uint8_t TagOf(KRJSONValue v) {
     return static_cast<uint8_t>(v & 0xFFu);
 }
+static_assert(KRJSON_NULL == kTagNull);
+static_assert(KRJSON_BOOL == kTagBool);
+static_assert(KRJSON_INT == kTagInt);
+static_assert(KRJSON_DOUBLE == kTagDouble);
+static_assert(KRJSON_UINT == kTagUint64);
+static_assert(KRJSON_STRING == kTagString);
+static_assert(KRJSON_ARRAY == kTagArray);
+static_assert(KRJSON_OBJECT == kTagObject);
+static_assert(KRJSON_BYTES == kTagBytes);
+static_assert(KRJSON_FLOAT == kTagFloat);
+static_assert(KRJSON_LONG == kTagLong);
+static_assert(KRJSON_U16STRING == kTagU16String);
+
 inline bool IsHeapTag(uint8_t t) {
     return t == kTagDouble || t == kTagInt64 || t == kTagUint64 || t == kTagString ||
            t == kTagArray || t == kTagObject || t == kTagBytes ||
-           t == kTagFloat || t == kTagLong;
+           t == kTagFloat || t == kTagLong || t == kTagU16String;
 }
 inline HeapBox *AsBox(KRJSONValue v) {
     return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;
@@ -144,12 +183,15 @@ KRJSONValue NewUint(uint64_t x);
 KRJSONValue NewFloat(float f);
 KRJSONValue NewDouble(double d);
 KRJSONValue NewString(const char *s, size_t n);
+KRJSONValue NewStringUtf16(const uint16_t *s, size_t n);
 KRJSONValue NewBytes(const uint8_t *data, size_t n);
 KRJSONValue NewArray();
 KRJSONValue NewObject();
+KRJSONValue NewObjectUtf16();
 void ArrayAppend(KRJSONValue array, KRJSONValue child);
 void ArraySet(KRJSONValue array, size_t index, KRJSONValue child);
 void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
+void ObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
 
 KRJSONType GetType(KRJSONValue v);
 bool GetBool(KRJSONValue v, bool default_value);
@@ -157,14 +199,22 @@ int64_t GetInt(KRJSONValue v, int64_t default_value);
 uint64_t GetUint(KRJSONValue v, uint64_t default_value);
 double GetDouble(KRJSONValue v, double default_value);
 const char *GetString(KRJSONValue v, size_t *out_len);
+std::string Utf16ToUtf8(const uint16_t *s, size_t n);
+std::u16string Utf8ToUtf16(const char *s, size_t n);
+/** Borrowed UTF-16 units; NULL if not a UTF-16 string box. `out_units` is code-unit count. */
+const uint16_t *GetStringUtf16(KRJSONValue v, size_t *out_units);
 const uint8_t *GetBytes(KRJSONValue v, size_t *out_len);
 size_t GetSize(KRJSONValue v);
 KRJSONValue ArrayGet(KRJSONValue array, size_t index);
 KRJSONValue ObjectGet(KRJSONValue object, const char *key, size_t key_len);
+KRJSONValue ObjectGetUtf16(KRJSONValue object, const uint16_t *key, size_t units);
+bool ObjectKeysAreUtf16(KRJSONValue object);
 /** O(1) indexed access over the insertion-ordered member vector. Missing → INVALID. */
 KRJSONValue ObjectValueAt(KRJSONValue object, size_t index);
-/** Borrowed key bytes, valid while `object` is retained. Missing → nullptr. */
+/** Borrowed UTF-8 key bytes. nullptr if missing. Debug-asserts on UTF-16-key objects. */
 const char *ObjectKeyAt(KRJSONValue object, size_t index);
+/** Borrowed UTF-16 key units. nullptr if missing. Debug-asserts on UTF-8-key objects. */
+const uint16_t *ObjectKeyAtUtf16(KRJSONValue object, size_t index, size_t *out_units);
 void ObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata);
 
 std::string Dump(KRJSONValue v);

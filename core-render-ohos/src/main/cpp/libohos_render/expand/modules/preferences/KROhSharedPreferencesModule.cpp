@@ -48,11 +48,11 @@ void KROhSharedPreferencesModule::InitIfNeeded() {
 KRAnyValue KROhSharedPreferencesModule::CallMethod(bool sync, const std::string &method, KRAnyValue params,
                                                  const KRRenderCallback &callback) {
     if (method == this->GET_ITEM) {
-        return KRRenderValue::Make(this->GetItem(params));
+        return KRRenderValue::MakeUtf16(this->GetItem(params));
     } else if (method == this->SET_ITEM) {
-        return KRRenderValue::Make(this->SetItem(params));
+        return KRRenderValue::MakeUtf16(this->SetItem(params));
     }
-    return KRRenderValue::Make("");
+    return KRRenderValue::Make(u"");
 }
 
 std::string KROhSharedPreferencesModule::GetItem(const KRAnyValue &params) {

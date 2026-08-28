@@ -52,6 +52,8 @@ export { ModulesRegisterEntry } from './src/main/ets/modules/ModulesRegisterEntr
 
 export { KRConvertUtil } from './src/main/ets/utils/KRConvertUtil';
 
+export { runNapiRecordConvertBench, KUIKLY_OHOS_NAPI_RECORD_BENCH } from './src/main/ets/utils/NapiRecordConvertBench';
+
 // 兼容旧版本
 export { KRConvertUtil as KTConvertUtil } from './src/main/ets/utils/KRConvertUtil';
 

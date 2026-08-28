@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { KRNativeRenderController, KRRecord, Kuikly } from '@kuikly-open/render';
+import { KRNativeRenderController, KRRecord, Kuikly, runNapiRecordConvertBench, KUIKLY_OHOS_NAPI_RECORD_BENCH } from '@kuikly-open/render';
 import globalNativeManager from '../kuikly/MyNativeManager';
 import { KuiklyViewDelegate } from '../kuikly/KuiklyViewDelegate';
 import pasteboard from '@ohos.pasteboard';
@@ -53,6 +53,9 @@ struct Index {
     const params = router.getParams() as Record<string, Object>;
     this.pageName = (params?.pageName as string) || LaunchParams.pageName || null;
     this.pageData = (params?.pageData as KRRecord | null) ?? ({} as KRRecord);
+    if (KUIKLY_OHOS_NAPI_RECORD_BENCH === 1 && this.pageName === 'NapiRecordBench') {
+      runNapiRecordConvertBench();
+    }
     if (this.contextCodeHandler.isNeedGetContextCode(params)) {
       this.contextCodeHandler.handleGetContextCode(getContext(), params, (contextCode) => {
         this.contextCode = contextCode;

@@ -16,6 +16,9 @@
 #include "libohos_render/utils/json/Reader.h"
 
 #include "libohos_render/utils/json/DomBuilder.h"
+#include "libohos_render/utils/json/EncodingStats.h"
+#include "libohos_render/utils/json/Value.h"
+#include "rapidjson/encodings.h"
 #include "rapidjson/error/en.h"
 #include "rapidjson/memorystream.h"
 #include "rapidjson/reader.h"
@@ -51,6 +54,61 @@ struct SaxAdapter {
  private:
     SaxHandler &handler_;
 };
+
+/**
+ * Length-bounded UTF-16 JSON source. RapidJSON's MemoryStream is byte-oriented;
+ * GenericStringStream requires a terminator. This matches MemoryStream's EOF=0
+ * contract on `char16_t` units.
+ */
+struct Utf16MemoryStream {
+    using Ch = char16_t;
+
+    Utf16MemoryStream(const uint16_t *src, size_t units)
+        : src_(reinterpret_cast<const Ch *>(src)),
+          begin_(reinterpret_cast<const Ch *>(src)),
+          end_(reinterpret_cast<const Ch *>(src) + units) {}
+
+    Ch Peek() const { return src_ == end_ ? static_cast<Ch>(0) : *src_; }
+    Ch Take() { return src_ == end_ ? static_cast<Ch>(0) : *src_++; }
+    size_t Tell() const { return static_cast<size_t>(src_ - begin_); }
+    Ch *PutBegin() { return nullptr; }
+    void Put(Ch) {}
+    void Flush() {}
+    size_t PutEnd(Ch *) { return 0; }
+
+ private:
+    const Ch *src_;
+    const Ch *begin_;
+    const Ch *end_;
+};
+
+struct Utf16DomAdapter {
+    explicit Utf16DomAdapter(DomBuilder &builder) : builder_(builder) {}
+
+    bool Null() { return builder_.OnNull(); }
+    bool Bool(bool b) { return builder_.OnBool(b); }
+    bool Int(int i) { return builder_.OnInt(i); }
+    bool Uint(unsigned u) { return builder_.OnUint(u); }
+    bool Int64(int64_t i) { return builder_.OnInt(i); }
+    bool Uint64(uint64_t u) { return builder_.OnUint(u); }
+    bool Double(double d) { return builder_.OnDouble(d); }
+    bool RawNumber(const char16_t *str, rapidjson::SizeType len, bool) {
+        return builder_.OnStringUtf16(reinterpret_cast<const uint16_t *>(str), len);
+    }
+    bool String(const char16_t *str, rapidjson::SizeType len, bool) {
+        return builder_.OnStringUtf16(reinterpret_cast<const uint16_t *>(str), len);
+    }
+    bool StartObject() { return builder_.OnStartObject(); }
+    bool Key(const char16_t *str, rapidjson::SizeType len, bool) {
+        return builder_.OnKeyUtf16(reinterpret_cast<const uint16_t *>(str), len);
+    }
+    bool EndObject(rapidjson::SizeType member_count) { return builder_.OnEndObject(member_count); }
+    bool StartArray() { return builder_.OnStartArray(); }
+    bool EndArray(rapidjson::SizeType element_count) { return builder_.OnEndArray(element_count); }
+
+ private:
+    DomBuilder &builder_;
+};
 }  // namespace
 
 bool Reader::ParseSax(const char *data, size_t length, SaxHandler &handler, std::string *error) {
@@ -77,11 +135,44 @@ bool Reader::ParseSax(const char *data, size_t length, SaxHandler &handler, std:
 }
 
 KRJSONValue Reader::Parse(const char *data, size_t length, std::string *error) {
+    EncodingStatsNoteParseUtf8();
     DomBuilder builder;
     if (!ParseSax(data, length, builder, error)) {
+        EncodingStatsFlush("parse_utf8_fail");
         return KRJSON_INVALID;
     }
-    return builder.TakeResult();
+    KRJSONValue result = builder.TakeResult();
+    EncodingStatsFlush("parse_utf8");
+    return result;
+}
+
+KRJSONValue Reader::ParseUtf16(const uint16_t *data, size_t units, std::string *error) {
+    EncodingStatsNoteParseUtf16();
+    if (data == nullptr) {
+        if (error != nullptr) {
+            *error = "null input";
+        }
+        EncodingStatsFlush("parse_utf16_fail");
+        return KRJSON_INVALID;
+    }
+    using Encoding = rapidjson::UTF16<char16_t>;
+    rapidjson::GenericReader<Encoding, Encoding> reader;
+    Utf16MemoryStream stream(data, units);
+    DomBuilder builder;
+    builder.SetUtf16Mode(true);
+    Utf16DomAdapter adapter(builder);
+    rapidjson::ParseResult result = reader.Parse(stream, adapter);
+    if (result.IsError()) {
+        if (error != nullptr) {
+            *error = std::string(rapidjson::GetParseError_En(result.Code())) + " (offset " +
+                     std::to_string(result.Offset()) + ")";
+        }
+        EncodingStatsFlush("parse_utf16_fail");
+        return KRJSON_INVALID;
+    }
+    KRJSONValue parsed = builder.TakeResult();
+    EncodingStatsFlush("parse_utf16");
+    return parsed;
 }
 
 }  // namespace json

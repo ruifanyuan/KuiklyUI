@@ -16,13 +16,14 @@
 #include <arkui/native_node_napi.h>
 #include <cstdint>
 #include "libohos_render/expand/modules/back_press/KRBackPressModule.h"
-#include "libohos_render/foundation/KRCallbackData.h"
 #include "libohos_render/foundation/KRCommon.h"
+#include "libohos_render/foundation/KRCallbackData.h"
 #include "libohos_render/foundation/thread/KRMainThread.h"
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/manager/KRRenderManager.h"
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/NAPIUtil.h"
+#include "libohos_render/utils/json/EncodingStats.h"
 #include "napi/native_api.h"
 
 #ifndef NDEBUG
@@ -31,6 +32,7 @@
 #include <string>
 #include <vector>
 #include "libohos_render/api/include/Kuikly/KRAnyData.h"
+#include "libohos_render/api/include/Kuikly/KRJSON.h"
 #include "libohos_render/api/src/KRAnyDataInternal.h"
 #endif
 
@@ -54,10 +56,10 @@ static napi_value UpdateConfig(napi_env env, napi_callback_info info) {
         return 0;
     }
     std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    std::string config_json = kuikly::util::getNApiArgsStdString(env, args[1]);
+    auto config_json = KRRenderValue::Make(env, args[1]);
     if (auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id)) {
         if (auto ctx = renderView->GetContext()) {
-            renderView->GetContext()->Config()->Update(config_json);
+            ctx->Config()->Update(config_json);
         } else {
             KR_LOG_ERROR << "Config update failed, context null";
         }
@@ -76,20 +78,32 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    std::string page_name = kuikly::util::getNApiArgsStdString(env, args[1]);
-    std::string page_data_json_str = kuikly::util::getNApiArgsStdString(env, args[2]);
+    auto instance_id = KRRenderValue::Make(env, args[0]);
+    auto page_name = KRRenderValue::Make(env, args[1]);
+    auto page_Data = KRRenderValue::Make(env, args[2]);
     double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[3]);
     double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[4]);
-    std::string config_json = kuikly::util::getNApiArgsStdString(env, args[5]);
-    auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
+    auto config_json = KRRenderValue::Make(env, args[5]);
+    std::string instance_id_utf8 = instance_id.toString();
+    auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id_utf8);
     if (renderView != nullptr) {
-        auto page_Data = KRRenderValue::Make(page_data_json_str == "" ? "{}" : page_data_json_str);
+        size_t page_data_units = 0;
+        if (page_Data.isString()) {
+            if (KRJSONGetType(page_Data.jsonValue()) == KRJSON_U16STRING) {
+                KRJSONGetStringUtf16(page_Data.jsonValue(), &page_data_units);
+            } else {
+                KRJSONGetString(page_Data.jsonValue(), &page_data_units);
+            }
+        }
+        if (!page_Data.isMap() && !page_Data.isArray() && (!page_Data.isString() || page_data_units == 0)) {
+            page_Data = KRRenderValue::Make(KRRenderValue::Map{});
+        }
         auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json);
+        kuikly::util::json::EncodingStatsFlush(("init " + page_name.toString()).c_str());
         ArkUI_ContextHandle context_handle;
         OH_ArkUI_GetContextFromNapiValue(env, args[6], &context_handle);
         NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[7]);
-        int64_t launch_time = KRRenderManager::GetInstance().GetLaunchStartTime(instance_id);
+        int64_t launch_time = KRRenderManager::GetInstance().GetLaunchStartTime(instance_id_utf8);
         renderView->Init(context, context_handle, native_resources_manager, renderViewWidth, renderViewHeight,
                          launch_time);
     } else {
@@ -160,7 +174,7 @@ static napi_value ArkTSOnSendEvent(napi_env env, napi_callback_info info) {
     }
 
     std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    auto event = kuikly::util::getNApiArgsStdString(env, args[1]);
+    auto event = KRRenderValue::Make(env, args[1]);
     // 结构化 napi 值（Record / Array）直接构建 KRJSON，字符串同样兼容
     auto data = KRRenderValue::Make(env, args[2]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
@@ -182,7 +196,7 @@ static napi_value ArkTSOnSendEventSync(napi_env env, napi_callback_info info) {
     }
 
     std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    auto event = kuikly::util::getNApiArgsStdString(env, args[1]);
+    auto event = KRRenderValue::Make(env, args[1]);
     auto data = KRRenderValue::Make(env, args[2]);
     bool sync = kuikly::util::getNApiArgsBool(env, args[3]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
@@ -308,6 +322,56 @@ void TestScalars(KRAnyDataCApiTestResult *r) {
     KRAnyDataDestroy(bin);
 }
 
+void TestJsonUtf16(KRAnyDataCApiTestResult *r) {
+    const uint16_t hello[] = {u'h', u'e', u'l', u'l', u'o'};
+    KRJSONValue utf16 = KRJSONNewStringUtf16(hello, 5);
+    size_t units = 0;
+    const uint16_t *got16 = KRJSONGetStringUtf16(utf16, &units);
+    Expect(r, KRJSONGetType(utf16) == KRJSON_U16STRING, "utf16_public_type");
+    Expect(r, got16 != nullptr && units == 5 && std::memcmp(got16, hello, sizeof(hello)) == 0, "utf16_get");
+    size_t utf8_len = 99;
+    const char *utf8 = KRJSONGetString(utf16, &utf8_len);
+    Expect(r, utf8 != nullptr && utf8[0] == '\0' && utf8_len == 0, "utf16_get_string_empty");
+    char *dumped = KRJSONDump(utf16);
+    Expect(r, dumped != nullptr && std::strcmp(dumped, "\"hello\"") == 0, "utf16_dump");
+    KRJSONFreeString(dumped);
+
+    KRAnyData any16 = WrapAny(KRRenderValue::MakeBorrowed(utf16));
+    KRJSONRelease(utf16);
+    Expect(r, KRAnyDataIsString(any16) && std::strcmp(KRAnyDataGetString(any16), "hello") == 0, "anydata_u16_get");
+    const char *any16_str = nullptr;
+    Expect(r, KRAnyDataGetStr(any16, &any16_str) == KRANYDATA_SUCCESS && any16_str &&
+                  std::strcmp(any16_str, "hello") == 0,
+           "anydata_u16_get_str");
+    KRAnyDataDestroy(any16);
+
+    const uint16_t nihao[] = {0x4F60, 0x597D};
+    KRJSONValue zh = KRJSONNewStringUtf16(nihao, 2);
+    size_t zh_units = 0;
+    const uint16_t *got_zh = KRJSONGetStringUtf16(zh, &zh_units);
+    Expect(r, got_zh != nullptr && zh_units == 2 && std::memcmp(got_zh, nihao, sizeof(nihao)) == 0, "utf16_cjk");
+    KRJSONRelease(zh);
+
+    KRJSONValue ascii = KRJSONNewString("ascii", 5);
+    Expect(r, KRJSONGetType(ascii) == KRJSON_STRING, "utf8_public_type");
+    Expect(r, KRJSONGetStringUtf16(ascii, nullptr) == nullptr, "utf8_get_utf16_null");
+    KRJSONRelease(ascii);
+
+    const uint16_t json_src[] = {u'{', u'"', u'z', u'h', u'"', u':', u'"', 0x4F60, 0x597D, u'"', u'}'};
+    char *parse_err = nullptr;
+    KRJSONValue parsed = KRJSONParseUtf16(json_src, sizeof(json_src) / sizeof(json_src[0]), &parse_err);
+    Expect(r, parsed != KRJSON_INVALID && parse_err == nullptr, "utf16_parse_ok");
+    const uint16_t zh_key[] = {u'z', u'h'};
+    KRJSONValue zh_val = KRJSONObjectGetUtf16(parsed, zh_key, 2);
+    size_t parsed_units = 0;
+    const uint16_t *parsed_zh = KRJSONGetStringUtf16(zh_val, &parsed_units);
+    Expect(r, KRJSONGetType(zh_val) == KRJSON_U16STRING && parsed_zh != nullptr && parsed_units == 2 &&
+                  parsed_zh[0] == 0x4F60 && parsed_zh[1] == 0x597D,
+           "utf16_parse_string_leaf");
+    KRJSONFreeString(parse_err);
+    KRJSONRelease(parsed);
+}
+
 void TestArray(KRAnyDataCApiTestResult *r) {
     KRAnyData arr = KRAnyDataCreateArray(2);
     int size = -1;
@@ -377,8 +441,8 @@ void TestArray(KRAnyDataCApiTestResult *r) {
 
 void TestMap(KRAnyDataCApiTestResult *r) {
     KRRenderValue::Map members;
-    members["name"] = KRRenderValue::Make("kuikly");
-    members["count"] = KRRenderValue::Make(static_cast<int32_t>(7));
+    members[u"name"] = KRRenderValue::Make(u"kuikly");
+    members[u"count"] = KRRenderValue::Make(static_cast<int32_t>(7));
     KRAnyData map = WrapAny(KRRenderValue::Make(std::move(members)));
     Expect(r, KRAnyDataIsMap(map), "map_is_map");
 
@@ -428,6 +492,7 @@ void TestMap(KRAnyDataCApiTestResult *r) {
 void RunKRAnyDataCApiTests() {
     KRAnyDataCApiTestResult result;
     TestScalars(&result);
+    TestJsonUtf16(&result);
     TestArray(&result);
     TestMap(&result);
     std::string report = "KRAnyData C API tests: passed=" + std::to_string(result.passed) +
@@ -442,6 +507,145 @@ void RunKRAnyDataCApiTests() {
 
 }  // namespace
 #endif  // NDEBUG
+
+// 仅当编译命令显式 -DKUIKLY_OHOS_NAPI_RECORD_BENCH=1 时编进 so。
+#if defined(KUIKLY_OHOS_NAPI_RECORD_BENCH) && (KUIKLY_OHOS_NAPI_RECORD_BENCH == 1)
+#include <algorithm>
+#include <chrono>
+#include <sstream>
+#include <vector>
+
+static int64_t NowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+static int64_t PercentileNs(std::vector<int64_t> samples, double p) {
+    if (samples.empty()) {
+        return 0;
+    }
+    std::sort(samples.begin(), samples.end());
+    const size_t idx = static_cast<size_t>(p * static_cast<double>(samples.size() - 1));
+    return samples[idx];
+}
+
+static napi_value CallJsonStringify(napi_env env, napi_value value) {
+    napi_value global = nullptr;
+    napi_value json = nullptr;
+    napi_value stringify = nullptr;
+    napi_value result = nullptr;
+    napi_get_global(env, &global);
+    napi_get_named_property(env, global, "JSON", &json);
+    napi_get_named_property(env, json, "stringify", &stringify);
+    napi_value argv[1] = {value};
+    if (napi_call_function(env, json, stringify, 1, argv, &result) != napi_ok) {
+        return nullptr;
+    }
+    return result;
+}
+
+// 对比 sendEvent 两条入桥：KRRecord → FromNapi 建 KRRenderValue，vs JSON.stringify → std::string。
+static napi_value BenchNapiRecordConvert(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value args[2] = {nullptr};
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || args[0] == nullptr) {
+        napi_throw_error(env, "-1000", "benchNapiRecordConvert args error");
+        return nullptr;
+    }
+    int32_t iterations = 80;
+    if (argc >= 2 && args[1] != nullptr) {
+        napi_get_value_int32(env, args[1], &iterations);
+    }
+    if (iterations < 8) {
+        iterations = 8;
+    }
+
+    const int warmup = 8;
+    volatile size_t sink = 0;
+    for (int i = 0; i < warmup; ++i) {
+        auto parsed = KRRenderValue::Make(env, args[0]);
+        sink ^= parsed.size();
+        napi_value js_str = CallJsonStringify(env, args[0]);
+        std::string cpp_str;
+        if (js_str != nullptr) {
+            kuikly::util::GetNApiArgsStdString(env, js_str, cpp_str);
+            sink ^= cpp_str.size();
+            sink ^= KRRenderValue::Make(cpp_str).size();
+            sink ^= KRRenderValue::Parse(cpp_str).size();
+        }
+    }
+
+    napi_value sized = CallJsonStringify(env, args[0]);
+    std::string sized_str;
+    if (sized != nullptr) {
+        kuikly::util::GetNApiArgsStdString(env, sized, sized_str);
+    }
+    const size_t json_bytes = sized_str.size();
+
+    std::vector<int64_t> from_napi;
+    std::vector<int64_t> stringify;
+    std::vector<int64_t> to_string;
+    std::vector<int64_t> combined;
+    std::vector<int64_t> make_string;
+    std::vector<int64_t> parse_object;
+    std::vector<int64_t> stringify_make;
+    std::vector<int64_t> stringify_parse;
+    from_napi.reserve(static_cast<size_t>(iterations));
+    stringify.reserve(static_cast<size_t>(iterations));
+    to_string.reserve(static_cast<size_t>(iterations));
+    combined.reserve(static_cast<size_t>(iterations));
+    make_string.reserve(static_cast<size_t>(iterations));
+    parse_object.reserve(static_cast<size_t>(iterations));
+    stringify_make.reserve(static_cast<size_t>(iterations));
+    stringify_parse.reserve(static_cast<size_t>(iterations));
+
+    for (int i = 0; i < iterations; ++i) {
+        const int64_t t0 = NowNs();
+        auto parsed = KRRenderValue::Make(env, args[0]);
+        const int64_t t1 = NowNs();
+        sink ^= parsed.size();
+        from_napi.push_back(t1 - t0);
+    }
+    for (int i = 0; i < iterations; ++i) {
+        const int64_t t0 = NowNs();
+        napi_value js_str = CallJsonStringify(env, args[0]);
+        const int64_t t1 = NowNs();
+        std::string cpp_str;
+        const int64_t t2 = NowNs();
+        if (js_str != nullptr) {
+            kuikly::util::GetNApiArgsStdString(env, js_str, cpp_str);
+        }
+        const int64_t t3 = NowNs();
+        auto as_string = KRRenderValue::Make(cpp_str);
+        const int64_t t4 = NowNs();
+        auto as_object = KRRenderValue::Parse(cpp_str);
+        const int64_t t5 = NowNs();
+        sink ^= cpp_str.size() ^ as_string.size() ^ as_object.size();
+        stringify.push_back(t1 - t0);
+        to_string.push_back(t3 - t2);
+        combined.push_back(t3 - t0);
+        make_string.push_back(t4 - t3);
+        parse_object.push_back(t5 - t4);
+        stringify_make.push_back(t4 - t0);
+        stringify_parse.push_back(t5 - t0);
+    }
+
+    std::ostringstream out;
+    out << "json_bytes=" << json_bytes << " iters=" << iterations << " sink=" << sink
+        << " from_napi_p50_ns=" << PercentileNs(from_napi, 0.5)
+        << " stringify_to_string_p50_ns=" << PercentileNs(combined, 0.5)
+        << " make_string_p50_ns=" << PercentileNs(make_string, 0.5)
+        << " parse_object_p50_ns=" << PercentileNs(parse_object, 0.5)
+        << " stringify_make_p50_ns=" << PercentileNs(stringify_make, 0.5)
+        << " stringify_parse_p50_ns=" << PercentileNs(stringify_parse, 0.5);
+    KR_LOG_INFO_WITH_TAG("NAPI_RECORD_BENCH") << out.str();
+
+    napi_value result = nullptr;
+    napi_create_string_utf8(env, out.str().c_str(), out.str().size(), &result);
+    return result;
+}
+#endif  // KUIKLY_OHOS_NAPI_RECORD_BENCH == 1
 
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
@@ -460,6 +664,9 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"OnLaunchStart", nullptr, OnLaunchStart, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"createNativeRoot", nullptr, CreateNativeRoot, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isBackPressConsumed", nullptr, isBackPressConsumed, nullptr, nullptr, nullptr, napi_default, nullptr},
+#if defined(KUIKLY_OHOS_NAPI_RECORD_BENCH) && (KUIKLY_OHOS_NAPI_RECORD_BENCH == 1)
+        {"benchNapiRecordConvert", nullptr, BenchNapiRecordConvert, nullptr, nullptr, nullptr, napi_default, nullptr},
+#endif
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     KRMainThread::Export(env, exports);                   // 缓存主线程 uv_loop / async 句柄

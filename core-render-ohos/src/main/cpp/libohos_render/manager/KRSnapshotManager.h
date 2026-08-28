@@ -36,7 +36,7 @@ class KRSnapshotManager {
     ~KRSnapshotManager();
 
     bool SetCachedSnapshotToNode(ArkUI_NodeHandle node, const std::string &key);
-    void TakeSnapshot(const std::string &instance_id, const std::string &method_name, const std::string &nodeId,
+    void TakeSnapshot(const KRAnyValue &instance_id, const std::string &method_name, const std::string &nodeId,
                       const KRAnyValue &params, const KRRenderCallback &cb,
                       std::weak_ptr<IKRRenderViewExport> weak_view);
 

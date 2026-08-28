@@ -25,6 +25,8 @@ extern "C" {
 struct KRAnyDataInternal {
     KRAnyValue anyValue;
     std::vector<std::unique_ptr<KRAnyDataInternal>> borrowedValues;
+    std::string utf8_cache;
+    bool utf8_cache_valid = false;
 
     KRAnyData Borrow(const KRAnyValue &value) {
         auto borrowed = std::make_unique<KRAnyDataInternal>();

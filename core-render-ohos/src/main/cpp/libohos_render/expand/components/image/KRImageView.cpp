@@ -67,9 +67,9 @@ constexpr float DEFAULT_CAPINST_IMAGE_SCALE = 1.0f;
 constexpr char kEventNameLoadSuccess[] = "loadSuccess";
 constexpr char kEventNameLoadResolution[] = "loadResolution";
 constexpr char kEventNameLoadFailure[] = "loadFailure";
-constexpr char kEventNameLoadErrorCode[] = "errorCode";
-constexpr char kParamKeyImageWidth[] = "imageWidth";
-constexpr char kParamKeyImageHeight[] = "imageHeight";
+constexpr char16_t kEventNameLoadErrorCode[] = u"errorCode";
+constexpr char16_t kParamKeyImageWidth[] = u"imageWidth";
+constexpr char16_t kParamKeyImageHeight[] = u"imageHeight";
 constexpr char kPropNameMaskLinearGradient[] = "maskLinearGradient";
 
 bool isBase64(const std::string &src) {
@@ -597,7 +597,7 @@ bool KRImageView::RegisterLoadSuccessCallback(const KRRenderCallback &event_call
     EnsureLoadCompleteEventRegistered();
     if (load_success_callback_ && has_loaded_image_) {
         KRRenderValueMap map;
-        map[kPropNameSrc] = NewKRRenderValue(image_src_);
+        map[u"src"] = NewKRRenderValue(image_src_);
         load_success_callback_(NewKRRenderValue(map));
     }
     return true;
@@ -628,7 +628,7 @@ void KRImageView::FireOnImageErrorEvent(ArkUI_NodeEvent *event) {
     if (load_failure_callback_) {
         int32_t code = kuikly::util::GetImageLoadSuccessStatusCode(event);
         KRRenderValueMap map;
-        map[kPropNameSrc] = NewKRRenderValue(image_src_);
+        map[u"src"] = NewKRRenderValue(image_src_);
         map[kEventNameLoadErrorCode] = NewKRRenderValue(code);
         load_failure_callback_(NewKRRenderValue(map));
     }
@@ -672,7 +672,7 @@ void KRImageView::FireOnImageCompleteEvent(ArkUI_NodeEvent *event) {
 
     if (load_success_callback_) {
         KRRenderValueMap map;
-        map[kPropNameSrc] = NewKRRenderValue(image_src_);
+        map[u"src"] = NewKRRenderValue(image_src_);
         load_success_callback_(NewKRRenderValue(map));
     }
 

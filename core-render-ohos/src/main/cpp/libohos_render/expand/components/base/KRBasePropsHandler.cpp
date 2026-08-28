@@ -45,9 +45,9 @@ const char *kAnimationCompletion = "animationCompletion";
 const char *kClipPath = "clipPath";
 
 // 动画完成回调事件参数
-constexpr char kParamKeyFinish[] = "finish";
-constexpr char kParamKeyAnimationKey[] = "animationKey";
-constexpr char kParamKeyAttr[] = "attr";
+constexpr char16_t kParamKeyFinish[] = u"finish";
+constexpr char16_t kParamKeyAnimationKey[] = u"animationKey";
+constexpr char16_t kParamKeyAttr[] = u"attr";
 
 // kuikly::util::UpdateNodeBorder
 void KRBasePropsHandler::OnDestroy() {

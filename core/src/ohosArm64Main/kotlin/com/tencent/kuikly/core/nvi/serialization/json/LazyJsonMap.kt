@@ -220,7 +220,7 @@ internal class LazyJsonMap private constructor(
             JSON_KIND_INT, JSON_KIND_UINT, JSON_KIND_DOUBLE -> numberFromJson(child)
             JSON_KIND_LONG -> JsonNative.asInt(child)
             JSON_KIND_FLOAT -> JsonNative.asDouble(child, 0.0).toFloat()
-            JSON_KIND_STRING -> JsonNative.asString(child)
+            JSON_KIND_STRING, JSON_KIND_U16STRING -> JsonNative.asString(child)
             JSON_KIND_BYTES -> JsonNative.asByteArray(child)
             JSON_KIND_OBJECT -> cacheContainer(name, fromValue(child))
             JSON_KIND_ARRAY -> cacheContainer(name, LazyJsonList.fromValue(child))

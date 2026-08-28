@@ -28,6 +28,21 @@
 
 namespace kjson = kuikly::util::json;
 
+static void SetParseError(char **err, const std::string &message) {
+    if (err == nullptr) {
+        return;
+    }
+    *err = nullptr;
+    if (message.empty()) {
+        return;
+    }
+    char *buf = static_cast<char *>(std::malloc(message.size() + 1));
+    if (buf != nullptr) {
+        std::memcpy(buf, message.c_str(), message.size() + 1);
+    }
+    *err = buf;
+}
+
 extern "C" {
 
 KRJSONValue KRJSONRetain(KRJSONValue value) {
@@ -38,17 +53,23 @@ void KRJSONRelease(KRJSONValue value) {
 }
 
 KRJSONValue KRJSONParse(const char *data, size_t len, char **err) {
-    if (err != nullptr) {
-        *err = nullptr;
-    }
     std::string message;
     KRJSONValue value = kjson::Reader::Parse(data, len, &message);
-    if (value == KRJSON_INVALID && err != nullptr && !message.empty()) {
-        char *buf = static_cast<char *>(std::malloc(message.size() + 1));
-        if (buf != nullptr) {
-            std::memcpy(buf, message.c_str(), message.size() + 1);
-        }
-        *err = buf;
+    if (value == KRJSON_INVALID) {
+        SetParseError(err, message);
+    } else if (err != nullptr) {
+        *err = nullptr;
+    }
+    return value;
+}
+
+KRJSONValue KRJSONParseUtf16(const uint16_t *data, size_t unit_count, char **err) {
+    std::string message;
+    KRJSONValue value = kjson::Reader::ParseUtf16(data, unit_count, &message);
+    if (value == KRJSON_INVALID) {
+        SetParseError(err, message);
+    } else if (err != nullptr) {
+        *err = nullptr;
     }
     return value;
 }
@@ -83,6 +104,9 @@ double KRJSONGetDouble(KRJSONValue value, double default_value) {
 const char *KRJSONGetString(KRJSONValue value, size_t *out_len) {
     return kjson::GetString(value, out_len);
 }
+const uint16_t *KRJSONGetStringUtf16(KRJSONValue value, size_t *out_units) {
+    return kjson::GetStringUtf16(value, out_units);
+}
 const uint8_t *KRJSONGetBytes(KRJSONValue value, size_t *out_len) {
     return kjson::GetBytes(value, out_len);
 }
@@ -96,11 +120,20 @@ KRJSONValue KRJSONArrayGet(KRJSONValue array, size_t index) {
 KRJSONValue KRJSONObjectGet(KRJSONValue object, const char *key) {
     return kjson::ObjectGet(object, key, key != nullptr ? std::strlen(key) : 0);
 }
+KRJSONValue KRJSONObjectGetUtf16(KRJSONValue object, const uint16_t *key, size_t units) {
+    return kjson::ObjectGetUtf16(object, key, units);
+}
+bool KRJSONObjectKeysAreUtf16(KRJSONValue object) {
+    return kjson::ObjectKeysAreUtf16(object);
+}
 KRJSONValue KRJSONObjectValueAt(KRJSONValue object, size_t index) {
     return kjson::ObjectValueAt(object, index);
 }
 const char *KRJSONObjectKeyAt(KRJSONValue object, size_t index) {
     return kjson::ObjectKeyAt(object, index);
+}
+const uint16_t *KRJSONObjectKeyAtUtf16(KRJSONValue object, size_t index, size_t *out_units) {
+    return kjson::ObjectKeyAtUtf16(object, index, out_units);
 }
 void KRJSONObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata) {
     kjson::ObjectForEach(object, visitor, userdata);
@@ -133,6 +166,9 @@ KRJSONValue KRJSONNewFloat(float v) {
 KRJSONValue KRJSONNewString(const char *data, size_t len) {
     return kjson::NewString(data, len);
 }
+KRJSONValue KRJSONNewStringUtf16(const uint16_t *data, size_t unit_count) {
+    return kjson::NewStringUtf16(data, unit_count);
+}
 KRJSONValue KRJSONNewBytes(const uint8_t *data, size_t len) {
     return kjson::NewBytes(data, len);
 }
@@ -147,6 +183,9 @@ void KRJSONArrayAppend(KRJSONValue array, KRJSONValue child) {
 }
 void KRJSONObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child) {
     kjson::ObjectPut(object, key, key_len, child);
+}
+void KRJSONObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child) {
+    kjson::ObjectPutUtf16(object, key, units, child);
 }
 
 }  // extern "C"

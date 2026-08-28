@@ -24,18 +24,18 @@ KRRenderAdapterManager &KRRenderAdapterManager::GetInstance() {
     return adapter_manager;
 }
 
-void KRRenderAdapterManager::OnFatalException(const std::string &instance_id, const std::string &stack) {
+void KRRenderAdapterManager::OnFatalException(const KRAnyValue &instance_id, const std::string &stack) {
     CallArkTsExceptionModule(instance_id, "onException", stack);
 }
 
-void KRRenderAdapterManager::CallArkTsExceptionModule(const std::string &instance_id, const std::string &method_name,
+void KRRenderAdapterManager::CallArkTsExceptionModule(const KRAnyValue &instance_id, const std::string &method_name,
                                                       const std::string &stack) {
     KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id, method_name, stack] {
-        auto module_name = NewKRRenderValue("KRExceptionModule");
+        auto module_name = KRRenderValue::Make(u"KRExceptionModule");
         KRRenderValueMap params;
-        params["stack"] = NewKRRenderValue(std::move(stack));
+        params[u"stack"] = KRRenderValue::MakeUtf16(std::move(stack));
         KRArkTSManager::GetInstance().CallArkTSMethod(instance_id, KRNativeCallArkTSMethod::CallModuleMethod,
-                                                      module_name, NewKRRenderValue(method_name),
+                                                      module_name, KRRenderValue::MakeUtf16(method_name),
                                                       NewKRRenderValue(params), nullptr, nullptr, nullptr);
     });
 }

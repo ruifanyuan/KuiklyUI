@@ -95,6 +95,7 @@ set(SOURCE_SET
         libohos_render/utils/json/Value.cpp
         libohos_render/utils/json/Reader.cpp
         libohos_render/utils/json/DomBuilder.cpp
+        libohos_render/utils/json/EncodingStats.cpp
         libohos_render/api/src/KRJSON.cpp
         libohos_render/utils/KRStringUtil.cpp
         libohos_render/utils/KRViewUtil.cpp
@@ -126,6 +127,12 @@ target_compile_options(kuikly PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:-Wconstexpr-not-const>
         $<$<COMPILE_LANGUAGE:CXX>:-Werror=constexpr>
 )
+
+# 性能测试：必须显式 -DKUIKLY_OHOS_NAPI_RECORD_BENCH=1 才编译 FromNapi bench。
+# 未定义或为 0 时不编入。ArkTS 侧 NapiRecordConvertBench.ets 里的同名常量也需改为 1。
+if(DEFINED KUIKLY_OHOS_NAPI_RECORD_BENCH AND "${KUIKLY_OHOS_NAPI_RECORD_BENCH}" STREQUAL "1")
+    target_compile_definitions(kuikly PRIVATE KUIKLY_OHOS_NAPI_RECORD_BENCH=1)
+endif()
 
 # Default follows build type: OFF for Debug, ON for Release/RelWithDebInfo/MinSizeRel
 # (i.e. the NDEBUG configurations). Override with -DKUIKLY_OHOS_SIZE_OPTS=ON|OFF.

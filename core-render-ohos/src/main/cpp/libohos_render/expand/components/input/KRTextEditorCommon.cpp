@@ -1132,13 +1132,13 @@ ParsedTextInputState ParseTextInputStateJson(const std::string &json) {
         return ret;
     }
     auto parsed = KRRenderValue::Parse(json);
-    auto text_v = parsed.opt(kKeyText);
+    auto text_v = parsed.opt(u"text");
     if (text_v) {
         ret.text = text_v.toString();
     }
     uint32_t max_pos = static_cast<uint32_t>(GetUTF16Length(ret.text));
     bool has_start = false;
-    auto start_v = parsed.opt(kKeySelectionStart);
+    auto start_v = parsed.opt(u"selectionStart");
     if (start_v) {
         int v = start_v.toInt();
         ret.selection_start = v < 0 ? 0 : (static_cast<uint32_t>(v) > max_pos ? max_pos
@@ -1147,7 +1147,7 @@ ParsedTextInputState ParseTextInputStateJson(const std::string &json) {
     } else {
         ret.selection_start = max_pos;
     }
-    auto end_v = parsed.opt(kKeySelectionEnd);
+    auto end_v = parsed.opt(u"selectionEnd");
     if (end_v) {
         int v = end_v.toInt();
         ret.selection_end = v < 0 ? 0 : (static_cast<uint32_t>(v) > max_pos ? max_pos

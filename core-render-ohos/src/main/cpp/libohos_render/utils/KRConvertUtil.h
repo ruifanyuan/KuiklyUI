@@ -18,6 +18,7 @@
 
 #include <arkui/native_type.h>
 #include <native_drawing/drawing_text_typography.h>
+#include <cstddef>
 #include <string>
 #include "libohos_render/foundation/KRBorderRadiuses.h"
 #include "libohos_render/foundation/KRSize.h"
@@ -62,7 +63,10 @@ OH_Drawing_FontWeight ConvertFontWeight(int fontWeight, float scale);
 
 ArkUI_FontWeight ConvertArkUIFontWeight(int fontWeight, float scale);
 
-std::string ConvertSizeToString(const KRSize &size);
+std::u16string AsciiToUtf16(const char *s, size_t n);
+std::u16string AsciiToUtf16(const std::string &s);
+
+std::u16string ConvertSizeToString(const KRSize &size);
 
 KRBorderRadiuses ConverToBorderRadiuses(const std::string &borderRadiusString);
 

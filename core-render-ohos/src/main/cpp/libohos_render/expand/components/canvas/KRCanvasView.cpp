@@ -120,12 +120,12 @@ void KRCanvasView::BatchDraw(const KRAnyValue &params) {
     const size_t count = ops.size();
     for (size_t i = 0; i < count; ++i) {
         auto item = ops.at(i).container();
-        auto methodValue = item.opt("m");
+        auto methodValue = item.opt(u"m");
         if (!methodValue) {
             continue;
         }
         std::string method = methodValue.toString();
-        std::string p = item.opt("p").toString();
+        std::string p = item.opt(u"p").toString();
         if (ShouldCacheOp(method)) {
             ops_.push_back(std::pair{method, p});
         }

@@ -75,7 +75,6 @@ extern int g_kuikly_disable_view_reuse;
 void IKRRenderViewExport::CallMethod(const std::string &method, const KRAnyValue &params,
                                      const KRRenderCallback &callback) {
     if (method == "toImage") {
-        std::string instance_id = GetInstanceId();
         std::string method_name = method;
         // set node id before taking a snapshot
         std::string nodeId = GetNodeId();
@@ -86,7 +85,7 @@ void IKRRenderViewExport::CallMethod(const std::string &method, const KRAnyValue
             std::dynamic_pointer_cast<IKRRenderViewExport>(shared_from_this());
         if (auto root = GetRootView().lock()) {
             auto manager = root->GetSnapshotManager();
-            manager->TakeSnapshot(instance_id, method_name, nodeId, params, callback, weak_view);
+            manager->TakeSnapshot(GetInstanceIdValue(), method_name, nodeId, params, callback, weak_view);
         }
         return;
     }
@@ -103,10 +102,10 @@ void IKRRenderViewExport::CallMethod(const std::string &method, const KRAnyValue
         // announce params 直接透传 kotlin 侧的 message；focus params 覆盖为 nodeId，
         // 让 ArkTS 侧在 view 未注册（CAPI 组件）时也能拿到 customId 走全局兜底。
         auto forwarded_params =
-            (method == "accessibilityFocus") ? KRRenderValue::Make(nodeId) : params;
+            (method == "accessibilityFocus") ? KRRenderValue::MakeUtf16(nodeId) : params;
         KRArkTSManager::GetInstance().CallArkTSMethod(
-            GetInstanceId(), KRNativeCallArkTSMethod::CallViewMethod,
-            KRRenderValue::Make(GetViewTag()), KRRenderValue::Make(method),
+            GetInstanceIdValue(), KRNativeCallArkTSMethod::CallViewMethod,
+            KRRenderValue::Make(GetViewTag()), KRRenderValue::MakeUtf16(method),
             forwarded_params, nullptr, nullptr, callback);
         return;
     }

@@ -20,8 +20,10 @@
 #include <ark_runtime/jsvm_types.h>
 #include <js_native_api.h>
 #include <js_native_api_types.h>
+#include <cassert>
 #include <charconv>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -36,6 +38,7 @@
 #include "libohos_render/foundation/type/KRRenderCValue.h"
 #include "libohos_render/utils/KRJsUtil.h"
 #include "libohos_render/utils/NAPIUtil.h"
+#include "libohos_render/utils/json/EncodingStats.h"
 #include "libohos_render/utils/json/Reader.h"
 #include "libohos_render/utils/json/Value.h"
 
@@ -46,7 +49,7 @@ struct NapiValue {
 };
 
 class KRRenderValue;
-using KRRenderValueMap = std::unordered_map<std::string, KRRenderValue>;
+using KRRenderValueMap = std::unordered_map<std::u16string, KRRenderValue>;
 using KRRenderValueArray = std::vector<KRRenderValue>;
 
 /**
@@ -128,8 +131,17 @@ class KRRenderValue {
     }
 
     static KRRenderValue MakeEmptyString() {
-        static const auto value = MakeOwned(kuikly::util::json::NewString("", 0));
+        static const auto value = MakeOwned(kuikly::util::json::NewStringUtf16(nullptr, 0));
         return value;
+    }
+
+    /** Box a runtime UTF-8 buffer as UTF-16. C++ literals must use Make(u"..."), not this. */
+    static KRRenderValue MakeUtf16(const std::string &utf8) {
+        return MakeOwned(BuildUtf16FromUtf8(utf8.data(), utf8.size()));
+    }
+    static KRRenderValue MakeUtf16(const char *utf8) {
+        return utf8 == nullptr ? MakeEmptyString()
+                               : MakeOwned(BuildUtf16FromUtf8(utf8, std::char_traits<char>::length(utf8)));
     }
 
     static KRRenderValue MakeBorrowed(KRJSONValue value) {
@@ -150,7 +162,7 @@ class KRRenderValue {
     bool isLong() const { return kuikly::util::json::TagOf(value_) == kuikly::util::json::kTagLong; }
     bool isFloat() const { return type() == KRJSON_FLOAT; }
     bool isDouble() const { return type() == KRJSON_DOUBLE; }
-    bool isString() const { return type() == KRJSON_STRING; }
+    bool isString() const { return type() == KRJSON_STRING || type() == KRJSON_U16STRING; }
     bool isMap() const { return type() == KRJSON_OBJECT; }
     bool isArray() const { return type() == KRJSON_ARRAY; }
     bool isByteArray() const { return type() == KRJSON_BYTES; }
@@ -160,19 +172,63 @@ class KRRenderValue {
     // queries keep that conversion explicit and single-shot: bridge payloads
     // that may arrive as text call container() once, then opt/at on the result.
     KRRenderValue container() const {
-        return isString() ? MakeParsed(stringValue()) : *this;
+        return isString() ? parsedFromJsonText() : *this;
     }
 
     // Object/array point query without materializing unordered_map/vector.
     // Missing key / OOB index / wrong type → empty. String JSON is not
     // auto-parsed; call container()/Parse() once, then opt/at.
-    KRRenderValue opt(const char *key) const {
-        if (key == nullptr || !isMap()) {
+    // Prefer opt(u"key") / opt(std::u16string) for C++ literals. Pointer
+    // overloads forward to the string versions. Query-key encoding is converted
+    // only at this lookup edge when it does not match the object's stored keys.
+    KRRenderValue opt(std::nullptr_t) const { return KRRenderValue(); }
+    KRRenderValue opt(const std::string &key) const {
+        if (!isMap()) {
             return KRRenderValue();
         }
-        return ChildOrEmpty(kuikly::util::json::ObjectGet(value_, key, std::strlen(key)));
+        if (!kuikly::util::json::ObjectKeysAreUtf16(value_)) {
+            return ChildOrEmpty(kuikly::util::json::ObjectGet(value_, key.data(), key.size()));
+        }
+        uint16_t stack[64];
+        std::vector<uint16_t> heap;
+        uint16_t *units = stack;
+        if (key.size() > 64) {
+            heap.resize(key.size());
+            units = heap.data();
+        }
+        for (size_t i = 0; i < key.size(); ++i) {
+            const unsigned char c = static_cast<unsigned char>(key[i]);
+            assert(c < 0x80u && "opt(string) on UTF-16-key object requires ASCII keys");
+            units[i] = static_cast<uint16_t>(c);
+        }
+        return ChildOrEmpty(kuikly::util::json::ObjectGetUtf16(value_, units, key.size()));
     }
-    KRRenderValue opt(const std::string &key) const { return opt(key.c_str()); }
+    KRRenderValue opt(const std::u16string &key) const {
+        if (!isMap()) {
+            return KRRenderValue();
+        }
+        const uint16_t *key16 = reinterpret_cast<const uint16_t *>(key.data());
+        if (kuikly::util::json::ObjectKeysAreUtf16(value_)) {
+            return ChildOrEmpty(kuikly::util::json::ObjectGetUtf16(value_, key16, key.size()));
+        }
+        std::string utf8;
+        utf8.resize(key.size());
+        for (size_t i = 0; i < key.size(); ++i) {
+            assert(key[i] < 0x80 && "opt(u16string) on UTF-8-key object requires ASCII keys");
+            utf8[i] = static_cast<char>(key[i]);
+        }
+        return ChildOrEmpty(kuikly::util::json::ObjectGet(value_, utf8.data(), utf8.size()));
+    }
+    KRRenderValue opt(const char *key) const {
+        return key == nullptr ? KRRenderValue() : opt(std::string(key));
+    }
+    KRRenderValue opt(const char16_t *key) const {
+        return key == nullptr ? KRRenderValue() : opt(std::u16string(key));
+    }
+    KRRenderValue opt(const uint16_t *key) const {
+        return key == nullptr ? KRRenderValue()
+                              : opt(std::u16string(reinterpret_cast<const char16_t *>(key)));
+    }
     KRRenderValue at(size_t index) const {
         if (!isArray()) {
             return KRRenderValue();
@@ -263,7 +319,7 @@ class KRRenderValue {
 
     Map toMap() const {
         if (isString()) {
-            return MakeParsed(stringValue())->toMap();
+            return parsedFromJsonText()->toMap();
         }
         Map result;
         if (!isMap()) {
@@ -272,10 +328,22 @@ class KRRenderValue {
         const size_t count = kuikly::util::json::GetSize(value_);
         result.reserve(count);
         for (size_t i = 0; i < count; ++i) {
-            const char *key = kuikly::util::json::ObjectKeyAt(value_, i);
             const KRJSONValue child = kuikly::util::json::ObjectValueAt(value_, i);
-            if (key != nullptr && child != KRJSON_INVALID) {
-                result.emplace(key, MakeBorrowed(child));
+            if (child == KRJSON_INVALID) {
+                continue;
+            }
+            if (kuikly::util::json::ObjectKeysAreUtf16(value_)) {
+                size_t units = 0;
+                const uint16_t *key16 = kuikly::util::json::ObjectKeyAtUtf16(value_, i, &units);
+                if (key16 != nullptr) {
+                    result.emplace(std::u16string(reinterpret_cast<const char16_t *>(key16), units),
+                                   MakeBorrowed(child));
+                }
+            } else {
+                const char *key = kuikly::util::json::ObjectKeyAt(value_, i);
+                if (key != nullptr) {
+                    result.emplace(kuikly::util::json::Utf8ToUtf16(key, std::strlen(key)), MakeBorrowed(child));
+                }
             }
         }
         return result;
@@ -283,7 +351,7 @@ class KRRenderValue {
 
     Array toArray() const {
         if (isString()) {
-            return MakeParsed(stringValue())->toArray();
+            return parsedFromJsonText()->toArray();
         }
         Array result;
         if (!isArray()) {
@@ -336,9 +404,16 @@ class KRRenderValue {
             case KRJSON_UINT:
                 status = napi_create_double(env, toDouble(), result);
                 break;
+            case KRJSON_U16STRING: {
+                size_t units = 0;
+                const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+                status = napi_create_string_utf16(env, reinterpret_cast<const char16_t *>(utf16), units, result);
+                break;
+            }
             case KRJSON_STRING: {
-                const auto str = stringValue();
-                status = napi_create_string_utf8(env, str.data(), str.size(), result);
+                size_t len = 0;
+                const char *utf8 = kuikly::util::json::GetString(value_, &len);
+                status = napi_create_string_utf8(env, utf8, len, result);
                 break;
             }
             case KRJSON_BYTES:
@@ -375,9 +450,16 @@ class KRRenderValue {
             case KRJSON_UINT:
                 status = OH_JSVM_CreateDouble(env, toDouble(), result);
                 break;
+            case KRJSON_U16STRING: {
+                size_t units = 0;
+                const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+                status = OH_JSVM_CreateStringUtf16(env, reinterpret_cast<const char16_t *>(utf16), units, result);
+                break;
+            }
             case KRJSON_STRING: {
-                const auto str = stringValue();
-                status = OH_JSVM_CreateStringUtf8(env, str.data(), str.size(), result);
+                size_t len = 0;
+                const char *utf8 = kuikly::util::json::GetString(value_, &len);
+                status = OH_JSVM_CreateStringUtf8(env, utf8, len, result);
                 break;
             }
             case KRJSON_BYTES:
@@ -417,6 +499,19 @@ class KRRenderValue {
     static KRJSONValue Build(const char *value) {
         return value == nullptr ? Build() : kuikly::util::json::NewString(value, std::char_traits<char>::length(value));
     }
+    static KRJSONValue Build(const std::u16string &value) {
+        return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(value.data()), value.size());
+    }
+    static KRJSONValue Build(const char16_t *value) {
+        return value == nullptr
+                   ? Build()
+                   : kuikly::util::json::NewStringUtf16(
+                         reinterpret_cast<const uint16_t *>(value), std::char_traits<char16_t>::length(value));
+    }
+    static KRJSONValue BuildUtf16FromUtf8(const char *s, size_t n) {
+        const std::u16string u16 = kuikly::util::json::Utf8ToUtf16(s, n);
+        return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(u16.data()), u16.size());
+    }
     static KRJSONValue Build(const ByteArray &value) {
         if (!value || value->empty()) {
             return kuikly::util::json::NewBytes(nullptr, 0);
@@ -424,10 +519,11 @@ class KRRenderValue {
         return kuikly::util::json::NewBytes(value->data(), value->size());
     }
     static KRJSONValue Build(const Map &value) {
-        KRJSONValue object = kuikly::util::json::NewObject();
+        KRJSONValue object = kuikly::util::json::NewObjectUtf16();
         for (const auto &entry : value) {
             const KRJSONValue child = entry.second ? entry.second->value_ : kuikly::util::json::NewNull();
-            kuikly::util::json::ObjectPut(object, entry.first.data(), entry.first.size(), child);
+            kuikly::util::json::ObjectPutUtf16(object, reinterpret_cast<const uint16_t *>(entry.first.data()),
+                                               entry.first.size(), child);
         }
         return object;
     }
@@ -453,10 +549,59 @@ class KRRenderValue {
         return child == KRJSON_INVALID ? KRRenderValue() : MakeBorrowed(child);
     }
 
-    static KRRenderValue MakeParsed(const std::string &json) {
+    static KRRenderValue MakeParsed(const char *data, size_t length) {
         std::string error;
-        KRJSONValue parsed = kuikly::util::json::Reader::Parse(json.data(), json.size(), &error);
+        KRJSONValue parsed = kuikly::util::json::Reader::Parse(data, length, &error);
         return parsed == KRJSON_INVALID ? MakeNull() : MakeOwned(parsed);
+    }
+
+    static KRRenderValue MakeParsed(const std::string &json) {
+        return MakeParsed(json.data(), json.size());
+    }
+
+    static KRRenderValue MakeParsedUtf16(const uint16_t *data, size_t units) {
+        std::string error;
+        KRJSONValue parsed = kuikly::util::json::Reader::ParseUtf16(data, units, &error);
+        return parsed == KRJSON_INVALID ? MakeNull() : MakeOwned(parsed);
+    }
+
+    KRRenderValue parsedFromJsonText() const {
+        if (type() == KRJSON_U16STRING) {
+            size_t units = 0;
+            const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+            return MakeParsedUtf16(utf16, units);
+        }
+        size_t size = 0;
+        const char *data = kuikly::util::json::GetString(value_, &size);
+        return MakeParsed(data, size);
+    }
+
+    template <typename Get, typename Status>
+    static KRJSONValue NewStringFromUtf16Get(Get &&get, Status ok) {
+        // Probe with buf == nullptr: `*result` is the full unit count. A filled
+        // stack buffer reports at most bufsize-1, so it cannot tell a 255-unit
+        // string from a longer one.
+        size_t units = 0;
+        if (get(nullptr, 0, &units) != ok) {
+            return kuikly::util::json::NewStringUtf16(nullptr, 0);
+        }
+        constexpr size_t kStackUnits = 256;
+        if (units < kStackUnits) {
+            char16_t stack[kStackUnits];
+            size_t copied = 0;
+            if (get(stack, kStackUnits, &copied) != ok) {
+                return kuikly::util::json::NewStringUtf16(nullptr, 0);
+            }
+            kuikly::util::json::EncodingStatsNoteNapiUtf16();
+            return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(stack), copied);
+        }
+        std::vector<char16_t> heap(units + 1);
+        size_t copied = 0;
+        if (get(heap.data(), units + 1, &copied) != ok) {
+            return kuikly::util::json::NewStringUtf16(nullptr, 0);
+        }
+        kuikly::util::json::EncodingStatsNoteNapiUtf16();
+        return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(heap.data()), copied);
     }
 
     static KRJSONValue FromNapi(napi_env env, napi_value value) {
@@ -473,9 +618,11 @@ class KRRenderValue {
             return Build(result);
         }
         if (value_type == napi_string) {
-            std::string result;
-            kuikly::util::GetNApiArgsStdString(env, value, result);
-            return Build(result);
+            return NewStringFromUtf16Get(
+                [&](char16_t *buf, size_t bufsize, size_t *result) {
+                    return napi_get_value_string_utf16(env, value, buf, bufsize, result);
+                },
+                napi_ok);
         }
         if (value_type != napi_object) {
             return Build();
@@ -553,9 +700,11 @@ class KRRenderValue {
             return Build(result);
         }
         if (value_type == JSVM_STRING) {
-            std::string result;
-            kuikly::util::get_str_from_js_str(env, value, result);
-            return Build(result);
+            return NewStringFromUtf16Get(
+                [&](char16_t *buf, size_t bufsize, size_t *result) {
+                    return OH_JSVM_GetValueStringUtf16(env, value, buf, bufsize, result);
+                },
+                JSVM_OK);
         }
         bool is_array_buffer = false;
         OH_JSVM_IsArraybuffer(env, value, &is_array_buffer);
@@ -584,6 +733,11 @@ class KRRenderValue {
     }
 
     std::string stringValue() const {
+        if (type() == KRJSON_U16STRING) {
+            size_t units = 0;
+            const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+            return utf16 == nullptr ? std::string() : kuikly::util::json::Utf16ToUtf8(utf16, units);
+        }
         size_t size = 0;
         const char *data = kuikly::util::json::GetString(value_, &size);
         return std::string(data, size);

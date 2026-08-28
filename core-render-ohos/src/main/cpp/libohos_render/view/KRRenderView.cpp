@@ -24,9 +24,9 @@
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/KRViewUtil.h"
 
-static constexpr char PAGER_EVENT_FIRST_FRAME_PAINT[] = "pageFirstFramePaint";
-static constexpr char KR_PERFORMANCE_MODULE[] = "KRPerformanceModule";
-static constexpr char NOTIFY_INIT_STATE[] = "notifyInitState";
+static constexpr char16_t PAGER_EVENT_FIRST_FRAME_PAINT[] = u"pageFirstFramePaint";
+static constexpr char16_t KR_PERFORMANCE_MODULE[] = u"KRPerformanceModule";
+static constexpr char16_t NOTIFY_INIT_STATE[] = u"notifyInitState";
 
 const unsigned int LOG_PRINT_DOMAIN = 0xFF01;
 static std::string GetIncreaseCallbackId() {
@@ -160,6 +160,23 @@ void KRRenderView::SendEvent(std::string event_name, const KRAnyValue &data, boo
     }
 }
 
+void KRRenderView::SendEvent(const KRAnyValue &event, const KRAnyValue &data) {
+    bool need_sync = syncSendEvent(event ? event->toString() : std::string());
+    SendEvent(event, data, need_sync);
+}
+
+void KRRenderView::SendEvent(const KRAnyValue &event, const KRAnyValue &data, bool sync) {
+    if (core_) {
+        const std::string event_name = event ? event->toString() : std::string();
+        if (event_name == "viewDidAppear") {
+            DispatchInitState(KRInitState::kStateResume);
+        } else if (event_name == "viewDidDisappear") {
+            DispatchInitState(KRInitState::kStatePause);
+        }
+        return core_->SendEvent(event, data, sync);
+    }
+}
+
 bool KRRenderView::syncSendEvent(const std::string &event_name) {
     // 与 ETS 侧常量保持一致：'onBackPressed'
     if (event_name == "onBackPressed") {
@@ -267,7 +284,7 @@ void KRRenderView::Init(std::shared_ptr<KRRenderContextParams> context, ArkUI_Co
     ui_context_handle_ = ui_context_handle;
     native_resources_manager_ = native_resources_manager;
     int performanceMonitorTypesMask = context->Config()->GetPerformanceMonitorTypesMask();
-    performance_manager_ = std::make_shared<KRPerformanceManager>(performanceMonitorTypesMask, context->PageName(), context->InstanceId(), context->ExecuteMode());
+    performance_manager_ = std::make_shared<KRPerformanceManager>(performanceMonitorTypesMask, context->PageName(), context->InstanceIdValue(), context->ExecuteMode());
     performance_manager_->SetArkLaunchTime(launch_time);
     root_view_width_ = width;
     root_view_height_ = height;
@@ -345,7 +362,7 @@ KRRenderCallback KRRenderView::GetArgCallback(std::string callbackId, bool &arg_
 
 void KRRenderView::OnFirstFramePaint() {
     DispatchInitState(KRInitState::kStateFirstFramePaint);
-    SendEvent(PAGER_EVENT_FIRST_FRAME_PAINT, "{}");
+    SendEvent(KRRenderValue::Make(PAGER_EVENT_FIRST_FRAME_PAINT), KRRenderValue::Make(KRRenderValue::Map{}));
 }
 
 KRPoint KRRenderView::GetRootNodePositionInWindow() const {
@@ -394,10 +411,10 @@ void KRRenderView::DispatchInitState(KRInitState state) {
         break;
     }
     // 通知ArkTS侧
-    std::string instance_id = context_->InstanceId();
-    KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id, state] {
-        KRArkTSManager::GetInstance().CallArkTSMethod(instance_id, KRNativeCallArkTSMethod::CallModuleMethod,
-            NewKRRenderValue(KR_PERFORMANCE_MODULE), NewKRRenderValue(NOTIFY_INIT_STATE),
+    auto instance_id_value = context_->InstanceIdValue();
+    KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id_value, state] {
+        KRArkTSManager::GetInstance().CallArkTSMethod(instance_id_value, KRNativeCallArkTSMethod::CallModuleMethod,
+            KRRenderValue::Make(KR_PERFORMANCE_MODULE), KRRenderValue::Make(NOTIFY_INIT_STATE),
             NewKRRenderValue(static_cast<int>(state)), nullptr, nullptr, nullptr);
     });
 }

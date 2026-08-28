@@ -16,6 +16,7 @@
 #ifndef CORE_RENDER_OHOS_JSON_DOMBUILDER_H
 #define CORE_RENDER_OHOS_JSON_DOMBUILDER_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -44,20 +45,28 @@ class DomBuilder : public SaxHandler {
     bool OnUint(uint64_t value) override;
     bool OnDouble(double value) override;
     bool OnString(const char *data, size_t length, bool copy) override;
+    /** UTF-16 JSON string value (`ParseUtf16`); not part of the UTF-8 SaxHandler. */
+    bool OnStringUtf16(const uint16_t *data, size_t units);
     bool OnStartObject() override;
     bool OnKey(const char *data, size_t length, bool copy) override;
+    /** UTF-16 object key (`ParseUtf16`); not part of the UTF-8 SaxHandler. */
+    bool OnKeyUtf16(const uint16_t *data, size_t units);
     bool OnEndObject(size_t member_count) override;
     bool OnStartArray() override;
     bool OnEndArray(size_t element_count) override;
 
     /** Transfer the parsed root (OWNED) to the caller. KRJSON_INVALID if none. */
     KRJSONValue TakeResult();
+    /** UTF-16 parse: objects store UTF-16 keys and string values. */
+    void SetUtf16Mode(bool enabled) { utf16_mode_ = enabled; }
 
  private:
     struct Frame {
-        KRJSONValue container;  // owned array/object being built
-        std::string key;        // pending object key
+        KRJSONValue container = KRJSON_INVALID;
+        std::string key;
+        std::u16string key16;
         bool has_key = false;
+        bool key_is_utf16 = false;
     };
 
     // Bounds tree depth so a parsed-then-serialized document can't overflow the
@@ -72,6 +81,7 @@ class DomBuilder : public SaxHandler {
 
     std::vector<Frame> stack_;
     KRJSONValue root_ = KRJSON_INVALID;
+    bool utf16_mode_ = false;
 };
 
 }  // namespace json
