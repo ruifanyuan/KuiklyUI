@@ -22,53 +22,55 @@
 
 class KRConfig {
  public:
-    explicit KRConfig(const std::string &configJson) {
+    explicit KRConfig(const KRRenderValue &configJson) {
         Update(configJson);
     }
 
-    void Update(const std::string &configJson) {
-        const auto cfg = KRRenderValue::Parse(configJson);
-        if (auto vp2px = cfg.opt("vp2px")) {
+    void Update(const KRRenderValue &configJson) {
+        // ArkTS JSON.stringify text arrives as a NAPI UTF-16 string. ParseUtf16
+        // at this edge so path leaves match the source encoding.
+        const auto cfg = configJson.container();
+        if (auto vp2px = cfg.opt(u"vp2px")) {
             vp2px_ = vp2px.toFloat();
             GetDpi(vp2px_);
         }
-        if (auto screen_width = cfg.opt("screen_width")) {
+        if (auto screen_width = cfg.opt(u"screen_width")) {
             screen_width_ = screen_width.toFloat();
         }
-        if (auto screen_height = cfg.opt("screen_height")) {
+        if (auto screen_height = cfg.opt(u"screen_height")) {
             screen_height_ = screen_height.toFloat();
         }
-        if (auto resfile_dir = cfg.opt("resfile_dir")) {
+        if (auto resfile_dir = cfg.opt(u"resfile_dir")) {
             resfile_dir_ = resfile_dir.toString();
         }
-        if (auto files_dir = cfg.opt("files_dir")) {
+        if (auto files_dir = cfg.opt(u"files_dir")) {
             files_dir_ = files_dir.toString();
         }
-        if (auto assets_dir = cfg.opt("assets_dir")) {
+        if (auto assets_dir = cfg.opt(u"assets_dir")) {
             assets_dir_ = assets_dir.toString();
         }
-        if (auto useOhSharedPreferences = cfg.opt("useOhSharedPreferences")) {
+        if (auto useOhSharedPreferences = cfg.opt(u"useOhSharedPreferences")) {
             useOhSharedPreferences_ = (useOhSharedPreferences.toString().compare("1") == 0);
         }
-        if (auto screenDensity = cfg.opt("screenDensity")) {
+        if (auto screenDensity = cfg.opt(u"screenDensity")) {
             screenDensity_ = screenDensity.toFloat();
         }
-        if (auto fontWeightScale = cfg.opt("fontWeightScale")) {
+        if (auto fontWeightScale = cfg.opt(u"fontWeightScale")) {
             fontWeightScale_ = fontWeightScale.toFloat();
         }
-        if (auto fontSizeScale = cfg.opt("fontSizeScale")) {
+        if (auto fontSizeScale = cfg.opt(u"fontSizeScale")) {
             fontSizeScale_ = fontSizeScale.toFloat();
         }
-        if (auto ime_mode = cfg.opt("imeMode")) {
+        if (auto ime_mode = cfg.opt(u"imeMode")) {
             ime_mode_ = ime_mode.toBool();
         }
-        if (auto windowId = cfg.opt("windowId")) {
+        if (auto windowId = cfg.opt(u"windowId")) {
             window_id_ = windowId.toString();
         }
-        if (auto fontSizeScaleFollowSystem = cfg.opt("fontSizeScaleFollowSystem")) {
+        if (auto fontSizeScaleFollowSystem = cfg.opt(u"fontSizeScaleFollowSystem")) {
             fontSizeScaleFollowSystem_ = fontSizeScaleFollowSystem.toBool();
         }
-        if (auto performanceMonitorTypesMask = cfg.opt("performanceMonitorTypesMask")) {
+        if (auto performanceMonitorTypesMask = cfg.opt(u"performanceMonitorTypesMask")) {
             performanceMonitorTypesMask_ = performanceMonitorTypesMask.toInt();
         }
     }

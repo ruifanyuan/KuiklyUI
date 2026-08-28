@@ -26,15 +26,19 @@
  */
 class KRRenderContextParams {
  public:
-    KRRenderContextParams(const std::string &page_name, const KRRenderValue &page_data,
-                          const std::string &instance_id, const std::string &configJsonStr) {
-        this->page_name_ = page_name;
-        this->instance_id_ = instance_id;
+    KRRenderContextParams(const KRRenderValue &page_name, const KRRenderValue &page_data,
+                          const KRRenderValue &instance_id, const KRRenderValue &configJson) {
+        // Keep the NAPI UTF-16 boxes for CallKotlin. std::string copies are
+        // only for C++ lookup / logs / paths — do not Make() them back to Kotlin.
+        this->page_name_value_ = page_name;
+        this->instance_id_value_ = instance_id;
+        this->page_name_ = page_name.toString();
+        this->instance_id_ = instance_id.toString();
         this->page_data_ = page_data;
         this->parsed_page_data_ = this->page_data_.container();
-        this->config_ = std::make_shared<KRConfig>(configJsonStr);
+        this->config_ = std::make_shared<KRConfig>(configJson);
 
-        int page_data_mode = this->parsed_page_data_.opt("executeMode").toInt();
+        int page_data_mode = this->parsed_page_data_.opt(u"executeMode").toInt();
         std::unordered_map<int, KRRenderExecuteModeCreator> mode_creator_register =
             KRRenderExecuteMode::GetExecuteModeCreatorRegister();
         if (mode_creator_register.find(page_data_mode) != mode_creator_register.end()) {
@@ -46,7 +50,7 @@ class KRRenderContextParams {
                 execute_mode_ = defaultMode;
             }
         }
-        context_code_ = this->parsed_page_data_.opt("contextCode").toString();
+        context_code_ = this->parsed_page_data_.opt(u"contextCode").toString();
     }
     const std::string &PageName() const {
         return page_name_;
@@ -59,6 +63,12 @@ class KRRenderContextParams {
     }
     const std::string &InstanceId() const {
         return instance_id_;
+    }
+    const KRRenderValue &PageNameValue() const {
+        return page_name_value_;
+    }
+    const KRRenderValue &InstanceIdValue() const {
+        return instance_id_value_;
     }
     /** 取出原始 pageData（多为 JSON 字符串），成员被置空。 */
     KRRenderValue RemovePageData() {
@@ -83,6 +93,9 @@ class KRRenderContextParams {
     std::string page_name_;
     /** 唯一页面实例ID，用于与context产物交互时指定所在页面实例(对标kotlin侧pagerId) */
     std::string instance_id_;
+    /** ArkTS 入口留下的 UTF-16 盒，CallKotlin 用这两份，不用上面的 UTF-8 拷贝。 */
+    KRRenderValue page_name_value_;
+    KRRenderValue instance_id_value_;
     /** 页面执行模式*/
     std::shared_ptr<KRRenderExecuteMode> execute_mode_;
     /**

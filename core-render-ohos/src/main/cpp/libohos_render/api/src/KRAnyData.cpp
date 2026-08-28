@@ -16,6 +16,21 @@
 #include "libohos_render/api/include/Kuikly/KRAnyData.h"
 #include "KRAnyDataInternal.h"
 
+namespace {
+const char *AnyDataUtf8(struct KRAnyDataInternal *internal) {
+    if (internal == nullptr || internal->anyValue == nullptr) {
+        return nullptr;
+    }
+    if (kuikly::util::json::GetType(internal->anyValue->jsonValue()) == KRJSON_U16STRING) {
+        if (!internal->utf8_cache_valid) {
+            internal->utf8_cache = internal->anyValue->toString();
+            internal->utf8_cache_valid = true;
+        }
+        return internal->utf8_cache.c_str();
+    }
+    return kuikly::util::json::GetString(internal->anyValue->jsonValue(), nullptr);
+}
+}  // namespace
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,12 +117,25 @@ int KRAnyDataVisitMap(KRAnyData data, KRAnyDataMapVisitor visitor, void *userDat
     const KRJSONValue root = internal->anyValue.jsonValue();
     const size_t count = kuikly::util::json::GetSize(root);
     for (size_t i = 0; i < count; ++i) {
-        const char *key = kuikly::util::json::ObjectKeyAt(root, i);
         const KRJSONValue child = kuikly::util::json::ObjectValueAt(root, i);
-        if (key == nullptr || child == KRJSON_INVALID) {
+        if (child == KRJSON_INVALID) {
             continue;
         }
-        visitor(key, internal->Borrow(KRRenderValue::MakeBorrowed(child)), userData);
+        if (kuikly::util::json::ObjectKeysAreUtf16(root)) {
+            size_t units = 0;
+            const uint16_t *key16 = kuikly::util::json::ObjectKeyAtUtf16(root, i, &units);
+            if (key16 == nullptr) {
+                continue;
+            }
+            const std::string key = kuikly::util::json::Utf16ToUtf8(key16, units);
+            visitor(key.c_str(), internal->Borrow(KRRenderValue::MakeBorrowed(child)), userData);
+        } else {
+            const char *key = kuikly::util::json::ObjectKeyAt(root, i);
+            if (key == nullptr) {
+                continue;
+            }
+            visitor(key, internal->Borrow(KRRenderValue::MakeBorrowed(child)), userData);
+        }
     }
     return KRANYDATA_SUCCESS;
 }
@@ -140,7 +168,7 @@ const char *KRAnyDataGetString(KRAnyData data) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return nullptr;
     }
-    return kuikly::util::json::GetString(internal->anyValue->jsonValue(), nullptr);
+    return AnyDataUtf8(internal);
 }
 
 int KRAnyDataGetInt(KRAnyData data, int32_t* value) {
@@ -214,7 +242,7 @@ int KRAnyDataGetStr(KRAnyData data, const char** value) {
     if (internal == nullptr || internal->anyValue == nullptr) {
         return KRANYDATA_NULL_INPUT;
     }
-    *value = kuikly::util::json::GetString(internal->anyValue->jsonValue(), nullptr);
+    *value = AnyDataUtf8(internal);
     return KRANYDATA_SUCCESS;
 }
 
@@ -283,7 +311,7 @@ KRAnyData KRAnyDataCreateBool(bool value) {
 
 KRAnyData KRAnyDataCreateString(const char* value) {
     auto data = new KRAnyDataInternal();
-    data->anyValue = KRRenderValue::Make(value);
+    data->anyValue = KRRenderValue::MakeUtf16(value);
     return data;
 }
 

@@ -17,6 +17,7 @@
 #define CORE_RENDER_OHOS_JSON_READER_H
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "libohos_render/api/include/Kuikly/KRJSON.h"
@@ -53,6 +54,12 @@ class Reader {
     static KRJSONValue Parse(const std::string &json, std::string *error = nullptr) {
         return Parse(json.data(), json.size(), error);
     }
+
+    /**
+     * Parse UTF-16 JSON source (ArkTS `JSON.stringify` / NAPI string units).
+     * String values become `kTagU16String`; object keys stay UTF-8 `std::string`.
+     */
+    static KRJSONValue ParseUtf16(const uint16_t *data, size_t units, std::string *error = nullptr);
 };
 
 }  // namespace json

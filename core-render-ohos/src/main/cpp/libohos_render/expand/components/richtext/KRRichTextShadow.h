@@ -39,7 +39,7 @@ namespace richtext {
 // 内置 props key：双下划线前后缀避免与业务字段冲突。仅由 KRRichTextShadow 内部
 // PostProcessor 拆段路径写入与读取，业务零感知。如需在其它 shadow / view 引用，
 // 请统一使用此常量。
-inline constexpr const char *kInternalImageSrcKey = "__kr_image_src__";
+inline constexpr const char16_t *kInternalImageSrcKey = u"__kr_image_src__";
 }  // namespace richtext
 }  // namespace kuikly
 

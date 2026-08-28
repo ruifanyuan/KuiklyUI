@@ -18,7 +18,7 @@
 
 - `KRJSONValue` 是 POD `uint64_t`：**按值拷贝不改变引用计数**。共享所有权必须显式 `KRJSONRetain`，释放用 `KRJSONRelease`。
 - 立即值（标量）无堆分配，`Retain`/`Release` 为 **no-op**；堆对象带原子 `rc`（`std::atomic<int32_t>`，初值 1）。
-- 访问器：标量按值返回；`KRJSONGetString` 返回借用的、NUL 结尾的 `const char*`（仅在该值存活期有效）。
+- 访问器：标量按值返回；`KRJSONGetString` 只对 `kTagString`（UTF-8）返回借用的 NUL 结尾 `const char*`。`kTagU16String` 必须走 `KRJSONGetStringUtf16`（借用 `const uint16_t*`）。Dump / C++ `stringValue()` 若需要 UTF-8 文本，在调用方把 UTF-16 转成 UTF-8，不写回盒子。ArkTS stringify 的 JSON 文本用 `ParseUtf16` / `KRJSONParseUtf16` 解析：叶子字符串是 `kTagU16String`，object key 仍是 UTF-8。`KRJSONParse` / `Make(std::string)` 保持 UTF-8 盒，不做 utf8→utf16。
 - 容器访问（`KRJSONArrayGet`/`KRJSONObjectGet`）返回 **borrowed** 值；如需延长寿命，调用方自行 `KRJSONRetain`。
 - 堆对象析构需**手动**递归 `Release` 子 cell（`vector<KRJSONValue>` / map value 是 POD，不会自动释放）。
 
@@ -39,9 +39,14 @@ bits[8..63]  = 立即值 payload  或  48 位指针（堆类型：ptr = v >> 8�
 | kTagDouble(3) | double | 堆 `NumberBox`（double 需 64 位，无法内联） |
 | kTagInt64(4)  | 整数 | 堆 `NumberBox`（超 56 位的 int64） |
 | kTagUint64(5) | 无符号 | 堆 `NumberBox`（> int64 max） |
-| kTagString(6) | string | 堆 `StringBox`：`[rc][len][bytes][NUL]` 单次尾随分配、不可变 |
+| kTagString(6) | string | 堆 `StringBox`：UTF-8 `[rc][len bytes][bytes][NUL]`；`GetType` = `KRJSON_STRING`(6) |
 | kTagArray(7)  | array | 堆 `ArrayBox { rc; vector<KRJSONValue> }` |
 | kTagObject(8) | object | 堆 `ObjectBox { rc; vector<pair<string,KRJSONValue>> }`（保序，线性查找；对小对象比 hash map 更快、更省分配） |
+| kTagBytes(9)  | bytes | 堆 `BytesBox`（桥接扩展） |
+| kTagInt32(10) | 整数 | 立即值；`GetType` 折叠为 `KRJSON_INT`(2) |
+| kTagFloat(11) | float | 堆 `NumberBox`；`GetType` = `KRJSON_FLOAT`(11) |
+| kTagLong(12)  | long | 堆 `NumberBox`；`GetType` = `KRJSON_LONG`(12) |
+| kTagU16String(13) | string | 堆 `U16StringBox`：UTF-16 `[rc][unit_count][units][0]`；`GetType` = `KRJSON_U16STRING`(13) |
 
 **判别值/指针**：`type = v & 0xFF`；`type < kFirstHeapTag(=3)` → 立即值（就地解码，整数用算术右移 8 位 sign-extend）；
 否则 → 指针 `(HeapBox*)(v >> 8)`（逻辑右移）。`kTagInvalid=0xFF` 为错误哨兵，`AsBox` 返回 null → retain/release 安全 no-op。

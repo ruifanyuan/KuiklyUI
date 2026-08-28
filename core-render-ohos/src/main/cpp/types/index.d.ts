@@ -78,4 +78,7 @@ export const sendEventSync: (
 
 export const createNativeRoot: (content: Object, instanceId: string) => void;
 
-export const isBackPressConsumed: (instanceId: string, sendTime: number) => number;
+export const isBackPressConsumed: (instanceId: string, sendTime: number) => number
+
+/** 仅当 C++ `KUIKLY_OHOS_NAPI_RECORD_BENCH=1` 时 so 才导出该符号。 */
+export const benchNapiRecordConvert: (value: object, iterations: number) => string;

@@ -75,6 +75,9 @@ class KRRenderCore : public std::enable_shared_from_this<KRRenderCore>,
     /** 结构化数据入口（Map/Array）：直接传 KRJSON tagged word，不做 JSON 序列化 */
     void SendEvent(std::string event_name, const KRAnyValue &data);
     void SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync);
+    /** ArkTS event 名已是 NAPI UTF-16 盒，不要再经 std::string Make。 */
+    void SendEvent(const KRAnyValue &event, const KRAnyValue &data);
+    void SendEvent(const KRAnyValue &event, const KRAnyValue &data, bool need_sync);
 
     /**
      * 获取渲染节点视图（要求在主线程调用）

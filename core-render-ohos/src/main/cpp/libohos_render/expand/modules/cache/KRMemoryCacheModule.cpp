@@ -34,16 +34,16 @@ extern Image_ErrorCode OH_PixelmapNative_Destroy(OH_PixelmapNative **pixelmap) _
 
 constexpr char kMethodNameSetObject[] = "setObject";
 constexpr char kMethodNameCacheImage[] = "cacheImage";
-constexpr char kParamNameKey[] = "key";
-constexpr char kParamNameValue[] = "value";
-constexpr char kParamNameSrc[] = "src";
+constexpr char16_t kParamNameKey[] = u"key";
+constexpr char16_t kParamNameValue[] = u"value";
+constexpr char16_t kParamNameSrc[] = u"src";
 constexpr char kParamNameSync[] = "sync";
-constexpr char kStatusKeyErrorCode[] = "errorCode";
-constexpr char kStatusKeyErrorMsg[] = "errorMsg";
-constexpr char kStatusKeyState[] = "state";
-constexpr char kStatusKeyCacheKey[] = "cacheKey";
-constexpr char kStatusKeyWidth[] = "width";
-constexpr char kStatusKeyHeight[] = "height";
+constexpr char16_t kStatusKeyErrorCode[] = u"errorCode";
+constexpr char16_t kStatusKeyErrorMsg[] = u"errorMsg";
+constexpr char16_t kStatusKeyState[] = u"state";
+constexpr char16_t kStatusKeyCacheKey[] = u"cacheKey";
+constexpr char16_t kStatusKeyWidth[] = u"width";
+constexpr char16_t kStatusKeyHeight[] = u"height";
 constexpr char kCacheStateComplete[] = "Complete";
 constexpr char kCacheStateInProgress[] = "InProgress";
 constexpr char kCacheKeyPrefix[] = "data:image_Md5_";

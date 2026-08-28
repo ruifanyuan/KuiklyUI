@@ -15,11 +15,21 @@
 
 package com.tencent.kuikly.core.nvi.serialization.json
 
+import kotlin.concurrent.AtomicInt
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.UShortVar
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
+import kotlinx.cinterop.get
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.value
 import ohos.KRJSONArrayGet
 import ohos.KRJSONDump
 import ohos.KRJSONFreeString
@@ -29,32 +39,39 @@ import ohos.KRJSONGetDouble
 import ohos.KRJSONGetInt
 import ohos.KRJSONGetSize
 import ohos.KRJSONGetString
+import ohos.KRJSONGetStringUtf16
 import ohos.KRJSONGetType
 import ohos.KRJSONGetUint
 import ohos.KRJSONObjectGet
+import ohos.KRJSONObjectGetUtf16
 import ohos.KRJSONObjectKeyAt
+import ohos.KRJSONObjectKeyAtUtf16
+import ohos.KRJSONObjectKeysAreUtf16
 import ohos.KRJSONObjectValueAt
-import ohos.KRJSONParse
+import ohos.KRJSONParseUtf16
 import ohos.KRJSONRelease
 import ohos.KRJSONRetain
 import ohos.KRJSON_INVALID
+import platform.posix.memcpy
 import platform.posix.size_t
+import platform.posix.size_tVar
 
 /**
- * 与 `KRJSONType` 一致（cinterop 枚举 ordinal / 底层 int）。
- * NULL=0 … OBJECT=7；缺失 / 失败用 [KRJSON_INVALID]（0xFF），不要当成 JSON null。
+ * 与 `KRJSONType` / 存储 `kTag*` 对齐（INT 含 kTagInt/Int32/Int64；4 与 10 为空洞）。
+ * 缺失 / 失败用 [KRJSON_INVALID]（0xFF），不要当成 JSON null。
  */
 internal const val JSON_KIND_NULL = 0
 internal const val JSON_KIND_BOOL = 1
 internal const val JSON_KIND_INT = 2
-internal const val JSON_KIND_UINT = 3
-internal const val JSON_KIND_DOUBLE = 4
-internal const val JSON_KIND_STRING = 5
-internal const val JSON_KIND_ARRAY = 6
-internal const val JSON_KIND_OBJECT = 7
-internal const val JSON_KIND_BYTES = 8
-internal const val JSON_KIND_LONG = 9
-internal const val JSON_KIND_FLOAT = 10
+internal const val JSON_KIND_DOUBLE = 3
+internal const val JSON_KIND_UINT = 5
+internal const val JSON_KIND_STRING = 6
+internal const val JSON_KIND_ARRAY = 7
+internal const val JSON_KIND_OBJECT = 8
+internal const val JSON_KIND_BYTES = 9
+internal const val JSON_KIND_FLOAT = 11
+internal const val JSON_KIND_LONG = 12
+internal const val JSON_KIND_U16STRING = 13
 
 /** JSON null 的 tagged word 是 0；缺失成员是 [KRJSON_INVALID]。 */
 internal const val JSON_NULL_BITS = 0L
@@ -68,6 +85,51 @@ internal const val JSON_NULL_BITS = 0L
  */
 @OptIn(ExperimentalForeignApi::class)
 internal object JsonNative {
+
+    private val asStringUtf8 = AtomicInt(0)
+    private val asStringUtf16 = AtomicInt(0)
+    private val keyUtf8 = AtomicInt(0)
+    private val keyUtf16 = AtomicInt(0)
+    private val lastFlushTotal = AtomicInt(0)
+
+    private fun noteKotlinString(utf16: Boolean) {
+        if (utf16) {
+            asStringUtf16.addAndGet(1)
+        } else {
+            asStringUtf8.addAndGet(1)
+        }
+        flushKotlinStringStats(false)
+    }
+
+    private fun noteKotlinKeyUtf8() {
+        keyUtf8.addAndGet(1)
+        flushKotlinStringStats(false)
+    }
+
+    private fun noteKotlinKeyUtf16() {
+        keyUtf16.addAndGet(1)
+        flushKotlinStringStats(false)
+    }
+
+    private fun flushKotlinStringStats(force: Boolean) {
+        val utf8 = asStringUtf8.value
+        val utf16 = asStringUtf16.value
+        val keys8 = keyUtf8.value
+        val keys16 = keyUtf16.value
+        val total = utf8 + utf16 + keys8 + keys16
+        val last = lastFlushTotal.value
+        if (!force && total - last < 32) {
+            return
+        }
+        if (!lastFlushTotal.compareAndSet(last, total) && !force) {
+            return
+        }
+        val valueTotal = utf8 + utf16
+        val pct = if (valueTotal == 0) 0 else utf16 * 100 / valueTotal
+        println(
+            "[KRJSON_ENC] kotlin_asString utf8=$utf8 utf16=$utf16 ($pct% u16) key_utf8=$keys8 key_utf16=$keys16"
+        )
+    }
 
     fun isInvalid(bits: Long): Boolean = bits.toULong() == KRJSON_INVALID
 
@@ -89,7 +151,13 @@ internal object JsonNative {
         if (json.isEmpty()) {
             return 0L
         }
-        val parsed = KRJSONParse(json, json.encodeToByteArray().size.convert<size_t>(), null)
+        val parsed = json.toCharArray().usePinned { pinned ->
+            KRJSONParseUtf16(
+                pinned.addressOf(0).reinterpret(),
+                json.length.convert<size_t>(),
+                null,
+            )
+        }
         return if (parsed == KRJSON_INVALID) 0L else parsed.toLong()
     }
 
@@ -111,12 +179,24 @@ internal object JsonNative {
         if (objectBits == JSON_NULL_BITS || isInvalid(objectBits)) {
             return false
         }
-        return !isInvalid(KRJSONObjectGet(objectBits.toULong(), key).toLong())
+        return !isInvalid(objectGet(objectBits, key))
     }
 
     fun objectGet(objectBits: Long, key: String): Long {
         if (objectBits == JSON_NULL_BITS || isInvalid(objectBits)) {
             return KRJSON_INVALID.toLong()
+        }
+        if (KRJSONObjectKeysAreUtf16(objectBits.toULong())) {
+            if (key.isEmpty()) {
+                return KRJSONObjectGetUtf16(objectBits.toULong(), null, 0.convert<size_t>()).toLong()
+            }
+            return key.toCharArray().usePinned { pinned ->
+                KRJSONObjectGetUtf16(
+                    objectBits.toULong(),
+                    pinned.addressOf(0).reinterpret(),
+                    key.length.convert<size_t>(),
+                ).toLong()
+            }
         }
         return KRJSONObjectGet(objectBits.toULong(), key).toLong()
     }
@@ -125,6 +205,19 @@ internal object JsonNative {
         if (objectBits == JSON_NULL_BITS || isInvalid(objectBits) || index < 0) {
             return null
         }
+        if (KRJSONObjectKeysAreUtf16(objectBits.toULong())) {
+            return memScoped {
+                val units = alloc<size_tVar>()
+                val ptr = KRJSONObjectKeyAtUtf16(
+                    objectBits.toULong(),
+                    index.convert<size_t>(),
+                    units.ptr,
+                ) ?: return@memScoped null
+                noteKotlinKeyUtf16()
+                stringFromUtf16Chars(ptr, units.value.toInt())
+            }
+        }
+        noteKotlinKeyUtf8()
         return KRJSONObjectKeyAt(objectBits.toULong(), index.convert<size_t>())?.toKString()
     }
 
@@ -165,10 +258,85 @@ internal object JsonNative {
     }
 
     fun asString(bits: Long): String? {
-        if (isInvalid(bits) || type(bits) != JSON_KIND_STRING) {
-            return null
+        return memScoped {
+            val len = alloc<size_tVar>()
+            when (type(bits)) {
+                JSON_KIND_U16STRING -> {
+                    val ptr = KRJSONGetStringUtf16(bits.toULong(), len.ptr) ?: return@memScoped null
+                    noteKotlinString(true)
+                    stringFromUtf16Chars(ptr, len.value.toInt())
+                }
+                JSON_KIND_STRING -> {
+                    val ptr = KRJSONGetString(bits.toULong(), len.ptr) ?: return@memScoped null
+                    noteKotlinString(false)
+                    stringFromUtf8Chars(ptr, len.value.toInt())
+                }
+                else -> null
+            }
         }
-        return KRJSONGetString(bits.toULong(), null)?.toKString()
+    }
+
+    /** UTF-16 unit 数即 Kotlin `Char` 数：定长 `CharArray` + memcpy，避免 `toKStringFromUtf16` 扫 NUL。 */
+    private fun stringFromUtf16Chars(ptr: CPointer<UShortVar>, units: Int): String {
+        if (units <= 0) {
+            return ""
+        }
+        val chars = CharArray(units)
+        chars.usePinned { pinned ->
+            memcpy(pinned.addressOf(0), ptr, (units * 2).convert<size_t>())
+        }
+        return chars.concatToString()
+    }
+
+    /**
+     * UTF-8 `out_len` 是字节数，UTF-16 单元数 ≤ 字节数。定长 `CharArray` 解码，避免 `toKString` 扫 NUL。
+     */
+    private fun stringFromUtf8Chars(ptr: CPointer<ByteVar>, bytes: Int): String {
+        if (bytes <= 0) {
+            return ""
+        }
+        val chars = CharArray(bytes)
+        val n = decodeUtf8Into(ptr, bytes, chars)
+        return if (n == bytes) chars.concatToString() else chars.concatToString(0, n)
+    }
+
+    private fun decodeUtf8Into(src: CPointer<ByteVar>, byteLen: Int, dst: CharArray): Int {
+        var i = 0
+        var o = 0
+        while (i < byteLen) {
+            val c0 = src[i].toInt() and 0xff
+            when {
+                c0 < 0x80 -> {
+                    dst[o++] = c0.toChar()
+                    i++
+                }
+                c0 and 0xe0 == 0xc0 && i + 1 < byteLen -> {
+                    dst[o++] = (((c0 and 0x1f) shl 6) or (src[i + 1].toInt() and 0x3f)).toChar()
+                    i += 2
+                }
+                c0 and 0xf0 == 0xe0 && i + 2 < byteLen -> {
+                    val c1 = src[i + 1].toInt() and 0x3f
+                    val c2 = src[i + 2].toInt() and 0x3f
+                    dst[o++] = (((c0 and 0x0f) shl 12) or (c1 shl 6) or c2).toChar()
+                    i += 3
+                }
+                c0 and 0xf8 == 0xf0 && i + 3 < byteLen -> {
+                    val c1 = src[i + 1].toInt() and 0x3f
+                    val c2 = src[i + 2].toInt() and 0x3f
+                    val c3 = src[i + 3].toInt() and 0x3f
+                    val cp = ((c0 and 0x07) shl 18) or (c1 shl 12) or (c2 shl 6) or c3
+                    val u = cp - 0x10000
+                    dst[o++] = ((u shr 10) + 0xD800).toChar()
+                    dst[o++] = ((u and 0x3FF) + 0xDC00).toChar()
+                    i += 4
+                }
+                else -> {
+                    dst[o++] = '\uFFFD'
+                    i++
+                }
+            }
+        }
+        return o
     }
 
     fun asByteArray(bits: Long): ByteArray {
@@ -182,7 +350,7 @@ internal object JsonNative {
         val source = KRJSONGetBytes(bits.toULong(), null) ?: return ByteArray(0)
         return ByteArray(size).also { bytes ->
             bytes.usePinned { pinned ->
-                platform.posix.memcpy(pinned.addressOf(0), source, size.convert<size_t>())
+            memcpy(pinned.addressOf(0), source, size.convert<size_t>())
             }
         }
     }

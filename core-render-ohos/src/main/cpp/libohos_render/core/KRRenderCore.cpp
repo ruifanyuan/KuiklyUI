@@ -103,7 +103,7 @@ void KRRenderCore::DidInit() {
     // createInstance to kotlin
     auto sync = context_->ExecuteMode()->IsContextSyncInit();
     KRContextScheduler::DirectRunOnMainThread(sync, [strongSelf = shared_from_this(), sync] {
-        auto page_name = KRRenderValue::Make(strongSelf->context_->PageName());
+        auto page_name = strongSelf->context_->PageNameValue();
         // arg2 保持原始 pageData（动态化仍是 JSON 字符串）；arg3 带上已解析的 object。
         auto page_data = strongSelf->context_->RemovePageData();
         auto parsed_page_data = strongSelf->context_->RemoveParsedPageData();
@@ -135,7 +135,7 @@ void KRRenderCore::SendEvent(std::string event_name, const std::string &json_dat
     // 历史字符串接口保持字符串下发：这里若解析成 Map 再建 KRJSON，key 顺序会变成
     // unordered_map 的顺序，Kotlin 侧拿到的 JSONObject 顺序与原始文本不再一致。
     // Kotlin 的 PagerManager 同时接受 JSON 字符串与结构化 JSONObject。
-    SendEvent(std::move(event_name), KRRenderValue::Make(json_data), need_sync);
+    SendEvent(std::move(event_name), KRRenderValue::MakeUtf16(json_data), need_sync);
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
@@ -147,8 +147,19 @@ void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync) {
-    auto task = [self = shared_from_this(), need_sync, event_name, data] {
-        auto event = KRRenderValue::Make(event_name);
+    SendEvent(KRRenderValue::MakeUtf16(event_name), data, need_sync);
+}
+
+void KRRenderCore::SendEvent(const KRAnyValue &event, const KRAnyValue &data) {
+    bool needSync = false;
+    if (auto rv = renderView_.lock()) {
+        needSync = rv->syncSendEvent(event ? event->toString() : std::string());
+    }
+    SendEvent(event, data, needSync);
+}
+
+void KRRenderCore::SendEvent(const KRAnyValue &event, const KRAnyValue &data, bool need_sync) {
+    auto task = [self = shared_from_this(), need_sync, event, data] {
         // Map / Array 与字符串都直接复用各自的 KRJSON tagged word
         auto payload = data ? data : KRRenderValue::Make(KRRenderValue::Map{});
         auto nullValue = self->defaultNullValue_;
@@ -423,7 +434,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
     }
 
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodFireFatalException: {
-        KRRenderAdapterManager::GetInstance().OnFatalException(context_->InstanceId(), arg1->toString());
+        KRRenderAdapterManager::GetInstance().OnFatalException(context_->InstanceIdValue(), arg1->toString());
         break;
     }
 
@@ -449,7 +460,7 @@ void KRRenderCore::WillPerformUITasksWithScheduler() {  // 运行在 context 线
 
 void KRRenderCore::CallKotlinMethod(const KuiklyRenderContextMethod &method, const KRAnyValue &arg1, const KRAnyValue &arg2,
                                     const KRAnyValue &arg3, const KRAnyValue &arg4, const KRAnyValue &arg5) {
-    auto arg0 = KRRenderValue::Make(context_->InstanceId());
+    auto arg0 = context_->InstanceIdValue();
     contextHandler_->Call(method, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 

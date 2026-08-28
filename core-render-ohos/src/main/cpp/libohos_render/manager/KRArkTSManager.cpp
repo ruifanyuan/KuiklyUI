@@ -81,7 +81,7 @@ void KRArkTSManager::RegisterArkTSCallback(napi_env env, napi_value *args, size_
  * 调用ArkTS方法
  * 注：不允许在子线程调用，若要在子线程调用，请用KRContextScheduler::ScheduleTaskOnMainThread
  */
-KRAnyValue KRArkTSManager::CallArkTSMethod(const std::string &instanceId, KRNativeCallArkTSMethod methodId,
+KRAnyValue KRArkTSManager::CallArkTSMethod(const KRAnyValue &instanceId, KRNativeCallArkTSMethod methodId,
                                            const KRAnyValue &arg0, const KRAnyValue &arg1, const KRAnyValue &arg2,
                                            const KRAnyValue &arg3, const KRAnyValue &arg4,
                                            const KRRenderCallback &callback, bool callback_keep_alive,
@@ -94,10 +94,8 @@ KRAnyValue KRArkTSManager::CallArkTSMethod(const std::string &instanceId, KRNati
     napi_value callbackFun;
     napi_get_reference_value(env, arkTSCallbackData_->callbackRef, &callbackFun);
     napi_value callbackArgs[8] = {nullptr};
-    napi_value instanceIdValue;
     napi_status status;
-    KRRenderValue::Make(instanceId)->ToNapiValue(env, &instanceIdValue, status);
-    callbackArgs[0] = instanceIdValue;
+    callbackArgs[0] = CToNApiValue(env, instanceId);
     napi_value methodIdValue;
     napi_create_int32(env, (int32_t)methodId, &methodIdValue);
     callbackArgs[1] = methodIdValue;
@@ -107,7 +105,7 @@ KRAnyValue KRArkTSManager::CallArkTSMethod(const std::string &instanceId, KRNati
     callbackArgs[5] = CToNApiValue(env, arg3);
     callbackArgs[6] = CToNApiValue(env, arg4);
     if (callback != nullptr) {
-        auto pager_id = instanceId;
+        auto pager_id = instanceId.toString();
         auto renderView = KRRenderManager::GetInstance().GetRenderView(pager_id);
         if (renderView != nullptr) {
             auto callback_id =

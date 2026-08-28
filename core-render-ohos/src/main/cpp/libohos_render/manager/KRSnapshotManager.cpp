@@ -199,24 +199,24 @@ struct KRSnapshotManager::ResultData KRSnapshotManager::ProcessSnapshotResultWit
     return resultData;
 }
 
-void KRSnapshotManager::TakeSnapshot(const std::string &instance_id, const std::string &method_name,
+void KRSnapshotManager::TakeSnapshot(const KRAnyValue &instance_id, const std::string &method_name,
                                      const std::string &nodeId, const KRAnyValue &params, const KRRenderCallback &cb,
                                      std::weak_ptr<IKRRenderViewExport> weak_view) {
     KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id, method_name, nodeId, params, cb, weak_view] {
-        auto module_name = NewKRRenderValue("KRSnapshotModule");
+        auto module_name = KRRenderValue::Make(u"KRSnapshotModule");
         KRRenderValueMap valueMap;
-        valueMap["node_id"] = NewKRRenderValue(nodeId);
-        valueMap["params"] = params;
+        valueMap[u"node_id"] = KRRenderValue::MakeUtf16(nodeId);
+        valueMap[u"params"] = params;
         KRRenderCallback callback = cb;
         KRRenderCallback toImageCb = [params, callback, weak_view](KRAnyValue result) {
             bool isNapiValue = result->isNapiValue();
             auto strongView = weak_view.lock();
             if (isNapiValue && strongView) {
-                std::string type = params.container().opt("type").toString();
+                std::string type = params.container().opt(u"type").toString();
                 if (type.empty()) {
                     KRRenderValue::Map resultMap;
-                    resultMap["code"] = KRRenderValue::Make(-1);
-                    resultMap["message"] = KRRenderValue::Make("type is required");
+                    resultMap[u"code"] = KRRenderValue::Make(-1);
+                    resultMap[u"message"] = KRRenderValue::Make(u"type is required");
                     callback(KRRenderValue::Make(resultMap));
                     return;
                 }
@@ -273,22 +273,22 @@ void KRSnapshotManager::TakeSnapshot(const std::string &instance_id, const std::
                     }
                 }
                 KRRenderValue::Map resultMap;
-                resultMap["code"] = KRRenderValue::Make(resultData.code);
+                resultMap[u"code"] = KRRenderValue::Make(resultData.code);
                 if (resultData.code == 0) {
-                    resultMap["data"] = KRRenderValue::Make(resultData.data);
+                    resultMap[u"data"] = KRRenderValue::MakeUtf16(resultData.data);
                 } else {
-                    resultMap["message"] = KRRenderValue::Make(resultData.message);
+                    resultMap[u"message"] = KRRenderValue::MakeUtf16(resultData.message);
                 }
                 callback(KRRenderValue::Make(resultMap));
             } else {
                 KRRenderValue::Map resultMap;
-                resultMap["code"] = KRRenderValue::Make(-1);
-                resultMap["message"] = KRRenderValue::Make("invalid result from arkts");
+                resultMap[u"code"] = KRRenderValue::Make(-1);
+                resultMap[u"message"] = KRRenderValue::Make(u"invalid result from arkts");
                 callback(KRRenderValue::Make(resultMap));
             }
         };
         KRArkTSManager::GetInstance().CallArkTSMethod(
-            instance_id, KRNativeCallArkTSMethod::CallModuleMethod, module_name, NewKRRenderValue(method_name),
+            instance_id, KRNativeCallArkTSMethod::CallModuleMethod, module_name, KRRenderValue::MakeUtf16(method_name),
             NewKRRenderValue(valueMap), nullptr, nullptr, toImageCb, false, nullptr, true);
     });
 }

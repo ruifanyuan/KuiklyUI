@@ -39,8 +39,8 @@ class IKRRenderView : public std::enable_shared_from_this<IKRRenderView> {
      * @param json_data json数据字符串）,该data可参考以下代码：
      *  参考代码：
      *    KRRenderValue::Map data;
-     *    data["width"] = KRRenderValue::Make(width);
-     *    data["height"] = KRRenderValue::Make(height);
+     *    data[u"width"] = KRRenderValue::Make(width);
+     *    data[u"height"] = KRRenderValue::Make(height);
      *    auto json_data = KRRenderValue::Make(data)->toString();
      */
     virtual void SendEvent(std::string event_name, const std::string &json_data) = 0;
@@ -48,6 +48,8 @@ class IKRRenderView : public std::enable_shared_from_this<IKRRenderView> {
     /** 结构化数据入口（Map/Array）：不经过 JSON 字符串，Kotlin 侧拿到惰性 JSON */
     virtual void SendEvent(std::string event_name, const KRAnyValue &data) = 0;
     virtual void SendEvent(std::string event_name, const KRAnyValue &data, bool sync) = 0;
+    virtual void SendEvent(const KRAnyValue &event, const KRAnyValue &data) = 0;
+    virtual void SendEvent(const KRAnyValue &event, const KRAnyValue &data, bool sync) = 0;
     
     /**
      * 是否需要同步发送事件（默认异步）

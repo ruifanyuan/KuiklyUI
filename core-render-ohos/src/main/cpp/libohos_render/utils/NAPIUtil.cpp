@@ -15,6 +15,8 @@
 
 #include "NAPIUtil.h"
 
+#include "libohos_render/utils/json/EncodingStats.h"
+
 namespace kuikly {
 namespace util {
 
@@ -58,6 +60,7 @@ char *getNApiArgsString(napi_env env, napi_value value) {
         napi_throw_error(env, "-1005", "napi_get_value_string_utf8 error");
         return 0;
     }
+    kuikly::util::json::EncodingStatsNoteNapiUtf8();
     return buffer;
 }
 
@@ -82,6 +85,7 @@ void GetNApiArgsStdString(const napi_env &env, const napi_value &value, std::str
         napi_throw_error(env, "-1005", "napi_get_value_string_utf8 error");
         return;
     }
+    kuikly::util::json::EncodingStatsNoteNapiUtf8();
     result.append(buffer.data());
 }
 }  // namespace util

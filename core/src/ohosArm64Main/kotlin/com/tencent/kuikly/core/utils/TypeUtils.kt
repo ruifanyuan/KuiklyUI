@@ -27,6 +27,7 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_LONG
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_NULL
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_OBJECT
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_STRING
+import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_U16STRING
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_UINT
 import com.tencent.kuikly.core.nvi.serialization.json.JsonNative
 import com.tencent.kuikly.core.nvi.serialization.json.numberFromJson
@@ -44,7 +45,7 @@ import ohos.KRJSONNewFloat
 import ohos.KRJSONNewInt32
 import ohos.KRJSONNewLong
 import ohos.KRJSONNewNull
-import ohos.KRJSONNewString
+import ohos.KRJSONNewStringUtf16
 import ohos.KRJSONRelease
 import ohos.KRJSONObjectPut
 import ohos.KRRenderCValue
@@ -63,7 +64,16 @@ fun Any?.toKRRenderCValue(): KRRenderCValue {
         is Long -> KRJSONNewLong(this)
         is Float -> KRJSONNewFloat(this)
         is Double -> KRJSONNewDouble(this)
-        is String -> KRJSONNewString(this, encodeToByteArray().size.convert<size_t>())
+        is String -> if (isEmpty()) {
+            KRJSONNewStringUtf16(null, 0.convert<size_t>())
+        } else {
+            toCharArray().usePinned { pinned ->
+                KRJSONNewStringUtf16(
+                    pinned.addressOf(0).reinterpret(),
+                    length.convert<size_t>(),
+                )
+            }
+        }
         is ByteArray -> usePinned {
             KRJSONNewBytes(
                 if (isEmpty()) null else it.addressOf(0).reinterpret(),
@@ -120,7 +130,7 @@ fun KRRenderCValue.toAny(): Any? {
         JSON_KIND_INT, JSON_KIND_UINT, JSON_KIND_DOUBLE -> numberFromJson(bits)
         JSON_KIND_LONG -> JsonNative.asInt(bits)
         JSON_KIND_FLOAT -> JsonNative.asDouble(bits, 0.0).toFloat()
-        JSON_KIND_STRING -> JsonNative.asString(bits)
+        JSON_KIND_STRING, JSON_KIND_U16STRING -> JsonNative.asString(bits)
         JSON_KIND_BYTES -> JsonNative.asByteArray(bits)
         JSON_KIND_ARRAY, JSON_KIND_OBJECT -> JSONObject.fromJsonOwnerAny(bits)
         else -> null

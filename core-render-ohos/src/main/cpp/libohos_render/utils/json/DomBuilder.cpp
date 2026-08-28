@@ -49,10 +49,17 @@ bool DomBuilder::AddValue(KRJSONValue owned) {
             Release(owned);
             return false;  // value without a preceding key
         }
-        ObjectPut(top.container, top.key.data(), top.key.size(), owned);  // container retains
+        if (top.key_is_utf16) {
+            ObjectPutUtf16(top.container, reinterpret_cast<const uint16_t *>(top.key16.data()),
+                           top.key16.size(), owned);
+            top.key16.clear();
+        } else {
+            ObjectPut(top.container, top.key.data(), top.key.size(), owned);
+            top.key.clear();
+        }
         Release(owned);
-        top.key.clear();
         top.has_key = false;
+        top.key_is_utf16 = false;
     }
     return true;
 }
@@ -81,12 +88,17 @@ bool DomBuilder::OnDouble(double value) {
 bool DomBuilder::OnString(const char *data, size_t length, bool /*copy*/) {
     return AddValue(NewString(data, length));
 }
+bool DomBuilder::OnStringUtf16(const uint16_t *data, size_t units) {
+    return AddValue(NewStringUtf16(data, units));
+}
 
 bool DomBuilder::OnStartObject() {
     if (stack_.size() >= kMaxDepth) {
         return false;  // too deep; abort parse
     }
-    stack_.push_back(Frame{NewObject(), std::string(), false});
+    Frame frame;
+    frame.container = utf16_mode_ ? NewObjectUtf16() : NewObject();
+    stack_.push_back(std::move(frame));
     return true;
 }
 bool DomBuilder::OnKey(const char *data, size_t length, bool /*copy*/) {
@@ -95,7 +107,20 @@ bool DomBuilder::OnKey(const char *data, size_t length, bool /*copy*/) {
     }
     Frame &top = stack_.back();
     top.key.assign(data, length);
+    top.key16.clear();
     top.has_key = true;
+    top.key_is_utf16 = false;
+    return true;
+}
+bool DomBuilder::OnKeyUtf16(const uint16_t *data, size_t units) {
+    if (stack_.empty() || data == nullptr) {
+        return false;
+    }
+    Frame &top = stack_.back();
+    top.key.clear();
+    top.key16.assign(reinterpret_cast<const char16_t *>(data), units);
+    top.has_key = true;
+    top.key_is_utf16 = true;
     return true;
 }
 bool DomBuilder::OnEndObject(size_t /*member_count*/) {
@@ -106,7 +131,9 @@ bool DomBuilder::OnStartArray() {
     if (stack_.size() >= kMaxDepth) {
         return false;  // too deep; abort parse
     }
-    stack_.push_back(Frame{NewArray(), std::string(), false});
+    Frame frame;
+    frame.container = NewArray();
+    stack_.push_back(std::move(frame));
     return true;
 }
 bool DomBuilder::OnEndArray(size_t /*element_count*/) {
