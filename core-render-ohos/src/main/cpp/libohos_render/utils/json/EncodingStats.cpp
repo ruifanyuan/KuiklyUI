@@ -37,6 +37,9 @@ std::atomic<uint64_t> g_utf8_parse{0};
 std::atomic<uint64_t> g_utf16_parse{0};
 std::atomic<uint64_t> g_napi_utf8{0};
 std::atomic<uint64_t> g_napi_utf16{0};
+std::atomic<uint64_t> g_conv_u8_to_u16{0};
+std::atomic<uint64_t> g_conv_u16_to_u8{0};
+std::atomic<uint64_t> g_ascii_widen{0};
 std::atomic<uint64_t> g_last_flush_events{0};
 std::atomic<int64_t> g_last_flush_ms{0};
 
@@ -53,7 +56,9 @@ uint64_t EventTotal() {
     return g_utf8_new.load(std::memory_order_relaxed) + g_utf16_new.load(std::memory_order_relaxed) +
            g_utf8_get.load(std::memory_order_relaxed) + g_utf16_get.load(std::memory_order_relaxed) +
            g_utf8_parse.load(std::memory_order_relaxed) + g_utf16_parse.load(std::memory_order_relaxed) +
-           g_napi_utf8.load(std::memory_order_relaxed) + g_napi_utf16.load(std::memory_order_relaxed);
+           g_napi_utf8.load(std::memory_order_relaxed) + g_napi_utf16.load(std::memory_order_relaxed) +
+           g_conv_u8_to_u16.load(std::memory_order_relaxed) + g_conv_u16_to_u8.load(std::memory_order_relaxed) +
+           g_ascii_widen.load(std::memory_order_relaxed);
 }
 
 void Emit(const char *reason) {
@@ -70,7 +75,10 @@ void Emit(const char *reason) {
         << " parse utf8=" << g_utf8_parse.load(std::memory_order_relaxed)
         << " utf16=" << g_utf16_parse.load(std::memory_order_relaxed)
         << " napi utf8=" << g_napi_utf8.load(std::memory_order_relaxed)
-        << " utf16=" << g_napi_utf16.load(std::memory_order_relaxed);
+        << " utf16=" << g_napi_utf16.load(std::memory_order_relaxed)
+        << " conv u8->u16=" << g_conv_u8_to_u16.load(std::memory_order_relaxed)
+        << " u16->u8=" << g_conv_u16_to_u8.load(std::memory_order_relaxed)
+        << " ascii_widen=" << g_ascii_widen.load(std::memory_order_relaxed);
 }
 
 void MaybeFlush() {
@@ -121,6 +129,18 @@ void EncodingStatsNoteNapiUtf8() {
 }
 void EncodingStatsNoteNapiUtf16() {
     g_napi_utf16.fetch_add(1, std::memory_order_relaxed);
+    MaybeFlush();
+}
+void EncodingStatsNoteConvertUtf8ToUtf16(size_t) {
+    g_conv_u8_to_u16.fetch_add(1, std::memory_order_relaxed);
+    MaybeFlush();
+}
+void EncodingStatsNoteConvertUtf16ToUtf8(size_t) {
+    g_conv_u16_to_u8.fetch_add(1, std::memory_order_relaxed);
+    MaybeFlush();
+}
+void EncodingStatsNoteAsciiWiden(size_t) {
+    g_ascii_widen.fetch_add(1, std::memory_order_relaxed);
     MaybeFlush();
 }
 void EncodingStatsFlush(const char *reason) {

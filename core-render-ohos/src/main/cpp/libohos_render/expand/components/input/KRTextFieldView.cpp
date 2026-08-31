@@ -16,6 +16,7 @@
 #include "libohos_render/expand/components/input/KRTextFieldView.h"
 
 #include "libohos_render/manager/KRKeyboardManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include <algorithm>
 #include <arkui/drag_and_drop.h>
 #include <cstddef>
@@ -493,7 +494,7 @@ KRRenderValueMap KRTextFieldView::CreateTextInputStateMap() {
     selection_end = std::max(selection_start, selection_end);
 
     KRRenderValueMap map;
-    map[kKeyText] = NewKRRenderValue(text);
+    map[kKeyText] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
     map[kKeySelectionStart] = NewKRRenderValue(selection_start);
     map[kKeySelectionEnd] = NewKRRenderValue(selection_end);
     map[kKeyCompositionStart] = NewKRRenderValue(kNoComposition);
@@ -588,7 +589,7 @@ void KRTextFieldView::OnTextDidChanged(ArkUI_NodeEvent *event) {
     if (text_did_change_callback_) {
         auto text = GetContentText();
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(text);
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
         if (length_limit_type_ != -1) {
             int length = CalculateTextLength(text);
             map[u"length"] = NewKRRenderValue(length);
@@ -607,7 +608,7 @@ void KRTextFieldView::OnTextDidChanged(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputFocus(ArkUI_NodeEvent *event) {
     if (input_focus_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(GetContentText());
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
         input_focus_callback_(NewKRRenderValue(map));
     }
 }
@@ -617,7 +618,7 @@ void KRTextFieldView::OnInputFocus(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputBlur(ArkUI_NodeEvent *event) {
     if (input_blur_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(GetContentText());
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
         input_blur_callback_(NewKRRenderValue(map));
     }
 }
@@ -627,9 +628,9 @@ void KRTextFieldView::OnInputBlur(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputReturn(ArkUI_NodeEvent *event) {
     if (input_return_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(GetContentText());
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
         auto returnKeyType = GetInputNodeEnterKeyType();
-        map[u"ime_action"] = NewKRRenderValue(kuikly::util::ConvertEnterKeyTypeToString(returnKeyType));
+        map[u"ime_action"] = KRRenderValue::Make(kuikly::util::ConvertEnterKeyTypeToString(returnKeyType));
         input_return_callback_(NewKRRenderValue(map));
         
         // 强制关闭软键盘

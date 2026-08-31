@@ -49,7 +49,7 @@ KRAnyValue KRCalendarModule::CallMethod(bool sync, const std::string &method, KR
     } else if (method == this->METHOD_GET_TIME_IN_MILLIS) {
         return KRRenderValue::Make(this->GetTimeMillis(params));
     } else if (method == this->METHOD_FORMAT) {
-        return KRRenderValue::MakeUtf16(this->Format(params));
+        return KRRenderValue::Make(this->Format(params));
     } else if (method == this->METHOD_PARSE_FORMAT) {
         return KRRenderValue::Make(this->Parse(params));
     }
@@ -207,7 +207,7 @@ std::string KRCalendarModule::ZeroPadded(int num, int digits) {
     return s.substr(s.length() - digits);
 }
 
-std::string KRCalendarModule::Format(const KRAnyValue &params) {
+std::u16string KRCalendarModule::Format(const KRAnyValue &params) {
     // KLOG_INFO(TAG) << "format: " << params.ToStringChecked();
     cJSON *paramObj = cJSON_Parse(params->toString().data());
     cJSON *dateMillisPtr = cJSON_GetObjectItemCaseSensitive(paramObj, this->PARAM_TIME_MILLIS);
@@ -239,7 +239,7 @@ std::string KRCalendarModule::Format(const KRAnyValue &params) {
         }
     }
     // KLOG_INFO(TAG) << "format: " << result;
-    return convertResult;
+    return util::Utf8ToUtf16(convertResult);
 }
 
 std::u16string KRCalendarModule::Parse(const KRAnyValue &params) {

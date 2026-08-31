@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 
 KRRenderAdapterManager &KRRenderAdapterManager::GetInstance() {
     static KRRenderAdapterManager adapter_manager;
@@ -33,9 +34,9 @@ void KRRenderAdapterManager::CallArkTsExceptionModule(const KRAnyValue &instance
     KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id, method_name, stack] {
         auto module_name = KRRenderValue::Make(u"KRExceptionModule");
         KRRenderValueMap params;
-        params[u"stack"] = KRRenderValue::MakeUtf16(std::move(stack));
+        params[u"stack"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(stack));
         KRArkTSManager::GetInstance().CallArkTSMethod(instance_id, KRNativeCallArkTSMethod::CallModuleMethod,
-                                                      module_name, KRRenderValue::MakeUtf16(method_name),
+                                                      module_name, KRRenderValue::Make(kuikly::util::AsciiToUtf16(method_name)),
                                                       NewKRRenderValue(params), nullptr, nullptr, nullptr);
     });
 }

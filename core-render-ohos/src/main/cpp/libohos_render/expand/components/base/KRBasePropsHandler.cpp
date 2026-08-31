@@ -381,8 +381,8 @@ void KRBasePropsHandler::OnAnimationCompletion(std::shared_ptr<IKRNodeAnimation>
     if (finished) {
         params[kParamKeyFinish] = NewKRRenderValue(1);
     }
-    params[kParamKeyAttr] = NewKRRenderValue(propKey);
-    params[kParamKeyAnimationKey] = NewKRRenderValue(animationKey);
+    params[kParamKeyAttr] = KRRenderValue::Make(kuikly::util::AsciiToUtf16(propKey));
+    params[kParamKeyAnimationKey] = KRRenderValue::Make(kuikly::util::AsciiToUtf16(animationKey));
     animation_completion_callback_(NewKRRenderValue(params));
 }
 

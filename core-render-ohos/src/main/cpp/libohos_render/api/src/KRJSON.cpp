@@ -178,6 +178,9 @@ KRJSONValue KRJSONNewArray(void) {
 KRJSONValue KRJSONNewObject(void) {
     return kjson::NewObject();
 }
+KRJSONValue KRJSONNewObjectUtf16(void) {
+    return kjson::NewObjectUtf16();
+}
 void KRJSONArrayAppend(KRJSONValue array, KRJSONValue child) {
     kjson::ArrayAppend(array, child);
 }

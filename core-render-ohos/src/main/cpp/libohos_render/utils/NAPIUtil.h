@@ -37,6 +37,10 @@ std::string getNApiArgsStdString(napi_env env, napi_value value);
 
 void GetNApiArgsStdString(const napi_env &env, const napi_value &value, std::string &result);
 
+std::u16string getNApiArgsStdU16String(napi_env env, napi_value value);
+
+void GetNApiArgsStdU16String(const napi_env &env, const napi_value &value, std::u16string &result);
+
 }  // namespace util
 }  // namespace kuikly
 

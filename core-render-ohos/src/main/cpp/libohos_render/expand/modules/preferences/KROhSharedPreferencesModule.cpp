@@ -15,6 +15,7 @@
 
 #include "KROhPreferences.h"
 #include "KROhSharedPreferencesModule.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRJSONObject.h"
 #include "hilog/log.h"
 
@@ -48,27 +49,27 @@ void KROhSharedPreferencesModule::InitIfNeeded() {
 KRAnyValue KROhSharedPreferencesModule::CallMethod(bool sync, const std::string &method, KRAnyValue params,
                                                  const KRRenderCallback &callback) {
     if (method == this->GET_ITEM) {
-        return KRRenderValue::MakeUtf16(this->GetItem(params));
+        return KRRenderValue::Make(this->GetItem(params));
     } else if (method == this->SET_ITEM) {
-        return KRRenderValue::MakeUtf16(this->SetItem(params));
+        return KRRenderValue::Make(this->SetItem(params));
     }
     return KRRenderValue::Make(u"");
 }
 
-std::string KROhSharedPreferencesModule::GetItem(const KRAnyValue &params) {
+std::u16string KROhSharedPreferencesModule::GetItem(const KRAnyValue &params) {
     InitIfNeeded();
     auto key = params->toString();
     auto value = this->preferences->GetSync(key, "");
-    return value;
+    return kuikly::util::Utf8ToUtf16(value);
 }
 
-std::string KROhSharedPreferencesModule::SetItem(const KRAnyValue &params) {
+std::u16string KROhSharedPreferencesModule::SetItem(const KRAnyValue &params) {
     InitIfNeeded();
     auto jsonObj = util::JSONObject::Parse(params->toString());
     std::string key = jsonObj->GetString("key");
     std::string value = jsonObj->GetString("value");
     this->preferences->SetSync(key, value);
-    return "";
+    return std::u16string();
 }
 
 void KROhSharedPreferencesModule::OnDestroy() {

@@ -17,6 +17,8 @@
 #include "libohos_render/adapter/KRRenderAdapterManager.h"
 #include "libohos_render/foundation/KRConfig.h"
 #include "libohos_render/utils/KRRenderLoger.h"
+#include "libohos_render/utils/json/EncodingStats.h"
+#include "libohos_render/utils/json/Value.h"
 #include <array>
 #include <codecvt>
 #include <cstdio>
@@ -52,22 +54,22 @@ ArkUI_EnterKeyType ConvertToEnterKeyType(const std::string &enter_key_type) {
     return ARKUI_ENTER_KEY_TYPE_DONE;
 }
 
-const std::string ConvertEnterKeyTypeToString(ArkUI_EnterKeyType enter_key_type) {
+const std::u16string ConvertEnterKeyTypeToString(ArkUI_EnterKeyType enter_key_type) {
     switch (enter_key_type) {
         case ARKUI_ENTER_KEY_TYPE_SEARCH:
-            return "search";
+            return u"search";
         case ARKUI_ENTER_KEY_TYPE_SEND:
-            return "send";
+            return u"send";
         case ARKUI_ENTER_KEY_TYPE_GO:
-            return "go";
+            return u"go";
         case ARKUI_ENTER_KEY_TYPE_DONE:
-            return "done";
+            return u"done";
         case ARKUI_ENTER_KEY_TYPE_NEXT:
-            return "next";
+            return u"next";
         case ARKUI_ENTER_KEY_TYPE_PREVIOUS:
-            return "previous";
+            return u"previous";
         default:
-            return "";
+            return u"";
     }
 }
 
@@ -266,6 +268,7 @@ static_assert(ConvertFontWeightCommon(600, 1) == 5);
 static_assert(ConvertFontWeightCommon(600, 1.5) == 8);
 
 std::u16string AsciiToUtf16(const char *s, size_t n) {
+    kuikly::util::json::EncodingStatsNoteAsciiWiden(n);
     std::u16string out;
     if (s == nullptr || n == 0) {
         return out;
@@ -279,6 +282,21 @@ std::u16string AsciiToUtf16(const char *s, size_t n) {
 
 std::u16string AsciiToUtf16(const std::string &s) {
     return AsciiToUtf16(s.data(), s.size());
+}
+
+std::u16string Utf8ToUtf16(const char *s, size_t n) {
+    if (s == nullptr || n == 0) {
+        return std::u16string();
+    }
+    return kuikly::util::json::Utf8ToUtf16(s, n);
+}
+
+std::u16string Utf8ToUtf16(const std::string &s) {
+    return kuikly::util::json::Utf8ToUtf16(s.data(), s.size());
+}
+
+std::string Utf16ToUtf8(const std::u16string &s) {
+    return kuikly::util::json::Utf16ToUtf8(reinterpret_cast<const uint16_t *>(s.data()), s.size());
 }
 
 std::u16string ConvertSizeToString(const KRSize &size) {

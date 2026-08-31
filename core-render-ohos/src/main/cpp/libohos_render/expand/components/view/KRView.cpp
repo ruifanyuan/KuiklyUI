@@ -22,6 +22,7 @@
 #include "libohos_render/foundation/KRConfig.h"
 #include "libohos_render/foundation/type/KRRenderValue.h"
 #include "libohos_render/manager/KRSnapshotManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRJSONObject.h"
 #include "libohos_render/utils/KRViewUtil.h"
 #include "libohos_render/view/KRRenderView.h"
@@ -323,24 +324,24 @@ void KRView::HandleGetSelection(const KRAnyValue &params, const KRRenderCallback
     bool postContentInserted = false;
 
     if (pre && !pre->GetTextContent().empty()) {
-        preContent.push_back(NewKRRenderValue(pre->GetTextContent()));
+        preContent.push_back(KRRenderValue::Make(kuikly::util::Utf8ToUtf16(pre->GetTextContent())));
     }
 
     if (post && !post->GetTextContent().empty()) {
-        postContent.push_back(NewKRRenderValue(post->GetTextContent()));
+        postContent.push_back(KRRenderValue::Make(kuikly::util::Utf8ToUtf16(post->GetTextContent())));
     }
     for (auto item : selected_text_views) {
-        std::string preText;
-        std::string postText;
-        content.push_back(NewKRRenderValue(item->GetSelectedContent(preText, postText)));
+        std::u16string preText;
+        std::u16string postText;
+        content.push_back(KRRenderValue::Make(item->GetSelectedContent(preText, postText)));
 
         if (!preContentInserted && !preText.empty()) {
-            preContent.push_back(NewKRRenderValue(preText));
+            preContent.push_back(KRRenderValue::Make(preText));
             preContentInserted = true;
         }
 
         if (!postContentInserted && !postText.empty()) {
-            postContent.insert(postContent.begin(), NewKRRenderValue(postText));
+            postContent.insert(postContent.begin(), KRRenderValue::Make(postText));
             postContentInserted = true;
         }
     }
