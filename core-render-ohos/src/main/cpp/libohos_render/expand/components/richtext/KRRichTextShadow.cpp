@@ -25,10 +25,11 @@
 #include <native_drawing/drawing_shader_effect.h>
 #include <native_drawing/drawing_text_declaration.h>
 #include <native_drawing/drawing_text_typography.h>
+#include <native_drawing/drawing_types.h>
+#include <deviceinfo.h>
 #include <multimedia/image_framework/image/image_source_native.h>
 #include <multimedia/image_framework/image/pixelmap_native.h>
 
-#include <codecvt>
 #include <thread>
 #include <unordered_set>
 
@@ -52,16 +53,14 @@ extern void OH_Drawing_DestroyTextLines(OH_Drawing_Array* lines) __attribute__((
 // 垂直对齐接口的弱符号声明（系统 API 20+ 提供，低版本系统该符号为 nullptr）
 extern void OH_Drawing_SetTypographyVerticalAlignment(OH_Drawing_TypographyStyle* style,
                                                       OH_Drawing_TextVerticalAlignment alignment) __attribute__((weak));
+// API 20+：按指定编码喂文本。低版本符号为 nullptr，回退 AddText + UTF-8。
+extern void OH_Drawing_TypographyHandlerAddEncodedText(OH_Drawing_TypographyCreate *handler, const void *text,
+                                                       size_t byteLength, OH_Drawing_TextEncoding textEncodingType)
+    __attribute__((weak));
 
 #ifdef __cplusplus
 };
 #endif
-
-// utility wrapper to adapt locale-bound facets for wstring/wbuffer convert
-template <class Facet> struct deletable_facet : Facet {
-    template <class... Args> deletable_facet(Args &&...args) : Facet(std::forward<Args>(args)...) {}
-    ~deletable_facet() {}
-};
 
 constexpr char kRawFilePrefix[] = "rawfile:";
 
@@ -207,6 +206,59 @@ KRSchedulerTask KRRichTextShadow::TaskToMainQueueWhenWillSetShadowToView() {
         shadow->main_thread_text_align_ = text_align;
         shadow->main_measure_size_ = measure_size;
     };
+}
+
+constexpr int kAddEncodedTextApiLevel = 20;
+
+static bool CanAddEncodedText() {
+    return OH_GetSdkApiVersion() >= kAddEncodedTextApiLevel &&
+           &OH_Drawing_TypographyHandlerAddEncodedText != nullptr;
+}
+
+static bool IsEmptyTextBox(const KRRenderValue &value) {
+    if (!value || !value->isString()) {
+        return true;
+    }
+    const auto u16 = value.utf16View();
+    if (u16.first != nullptr) {
+        return u16.second == 0;
+    }
+    return value.toString().empty();
+}
+
+// API 20+ 且盒子是 U16：AddEncodedText 直喂，选区缓存按 unit append，不转 UTF-8。
+// 低版本仍 AddText（Drawing 要 UTF-8）；缓存优先复用 U16 view，避免 codecvt 再转一圈。
+static void AppendUtf16(std::u16string &dst, const uint16_t *units, size_t count) {
+    dst.append(reinterpret_cast<const char16_t *>(units), count);
+}
+
+static void AddTypographySpanText(OH_Drawing_TypographyCreate *handler, const KRRenderValue &text_val,
+                                  std::u16string &text_content, int &char_offset, int span_index,
+                                  std::vector<std::tuple<int, int, int>> &span_offsets) {
+    const auto u16 = text_val.utf16View();
+    if (CanAddEncodedText() && u16.first != nullptr) {
+        OH_Drawing_TypographyHandlerAddEncodedText(handler, u16.first, u16.second * sizeof(uint16_t),
+                                                   TEXT_ENCODING_UTF16);
+        AppendUtf16(text_content, u16.first, u16.second);
+        const int units = static_cast<int>(u16.second);
+        span_offsets.emplace_back(span_index, char_offset, char_offset + units);
+        char_offset += units;
+        return;
+    }
+    const std::string text = text_val.toString();
+    OH_Drawing_TypographyHandlerAddText(handler, text.c_str());
+    if (u16.first != nullptr) {
+        AppendUtf16(text_content, u16.first, u16.second);
+        const int units = static_cast<int>(u16.second);
+        span_offsets.emplace_back(span_index, char_offset, char_offset + units);
+        char_offset += units;
+        return;
+    }
+    const std::u16string str16 = kuikly::util::Utf8ToUtf16(text);
+    text_content.append(str16);
+    const int code_point_count = static_cast<int>(str16.size());
+    span_offsets.emplace_back(span_index, char_offset, char_offset + code_point_count);
+    char_offset += code_point_count;
 }
 
 static KRAnyValue GetKRValue(const char16_t *key, const KRRenderValue::Map &map0, const KRRenderValue::Map &map1) {
@@ -452,13 +504,13 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
     int placeholder_count = 0;
     OH_Drawing_TextAlign text_align = TEXT_ALIGN_LEFT;
     int charOffset = 0;
-    std::string text_content;
+    std::u16string text_content;
     for (auto raw_span : spans) {
         const auto span = raw_span.container();
         auto fontSize = (GetKRValue(u"fontSize", span, props_)->toFloat() ?: 15.0) * dpi * fontSizeScale;
-        auto text = GetKRValue(u"value", span)->toString();
-        if (text.length() == 0) {
-            text = GetKRValue(u"text", span)->toString();
+        KRAnyValue text_val = GetKRValue(u"value", span);
+        if (IsEmptyTextBox(text_val)) {
+            text_val = GetKRValue(u"text", span);
         }
         auto fontWeight = kuikly::util::ConvertFontWeight(GetKRValue(u"fontWeight", span, props_)->toInt(), fontWeightScale);
         // 解析基于Span的多个渐变色属性
@@ -650,16 +702,11 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                 image_draw_records_.push_back(std::move(rec));
             }
             placeholder_count++;
+            // Drawing 把 placeholder 计 1 个 unit；选区缓存写入 U+FFFC，下标与正文对齐。
+            text_content.push_back(u'\uFFFC');
             charOffset += 1;
         } else {
-            OH_Drawing_TypographyHandlerAddText(handler, text.c_str());  // 添加文本
-            text_content.append(text);
-
-            std::wstring_convert<deletable_facet<std::codecvt<char16_t, char, std::mbstate_t>>, char16_t> conv16;
-            std::u16string str16 = conv16.from_bytes(text);
-            int codePointCount = str16.size();
-            span_offsets_.emplace_back(std::tuple(spanIndex, charOffset, charOffset + codePointCount));
-            charOffset += codePointCount;
+            AddTypographySpanText(handler, text_val, text_content, charOffset, spanIndex, span_offsets_);
         }
         OH_Drawing_DestroyTextStyle(txtStyle);
         if (textForegroundPen) {
@@ -697,7 +744,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
 #ifndef NDEBUG
     if (ouput_measure_width_ < 0.01) {
         KR_LOG_ERROR << "Measure size:" << ouput_measure_width_ << ", " << ouput_measure_height_
-                     << ", content bytes:" << GetTextContent().size() << ", in shadow view:" << this;
+                     << ", content units:" << GetTextContent().size() << ", in shadow view:" << this;
     }
 #endif
     context_measure_size_ = KRSize(ouput_measure_width_, ouput_measure_height_);

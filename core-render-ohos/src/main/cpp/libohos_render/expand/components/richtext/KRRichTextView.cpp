@@ -52,10 +52,6 @@ extern size_t OH_Drawing_GetEndFromRange(OH_Drawing_Range* range) __attribute__(
 }
 #endif
 
-static std::u16string utf8_to_utf16(const std::string& utf8_string) {
-    return kuikly::util::Utf8ToUtf16(utf8_string);
-}
-
 static const char * kPropNameLineBreakMargin = "lineBreakMargin";
 static const char * kPropNameClick = "click";
 static const char * kPropNameLongPress = "longPress";
@@ -684,8 +680,7 @@ KRParagraphInfo KRRichTextView::GetParagraphInfo() {
     paragraph_info.width_ = frame.width;
     paragraph_info.height_ = frame.height;
 
-    std::string text_content = textShadow->GetTextContent();
-    paragraph_info.text_content_ = text_content;
+    paragraph_info.text_content_ = textShadow->GetTextContent();
     paragraph_info.span_offsets_ = textShadow->span_offsets_;
     size_t lineCount = OH_Drawing_TypographyGetLineCount(textTypo);
     for (size_t i = 0; i < lineCount; ++i) {
@@ -743,22 +738,26 @@ KRParagraphInfo KRRichTextView::GetParagraphInfo() {
 }
 
 std::u16string KRRichTextView::GetSelectedContent(std::u16string &pre, std::u16string &post) {
-    std::u16string str16 = utf8_to_utf16(selection_rects_.text_content);
-
-    if (selection_rects_.start > 0) {
-        pre = str16.substr(0, selection_rects_.start);
+    const std::u16string &str16 = selection_rects_.text_content;
+    const size_t n = str16.size();
+    size_t sel_start = selection_rects_.start > 0 ? static_cast<size_t>(selection_rects_.start) : 0;
+    if (sel_start > n) {
+        sel_start = n;
     }
-    size_t sel_end = static_cast<size_t>(selection_rects_.end);
-    if (sel_end > str16.size()) {
-        sel_end = str16.size();
+    size_t sel_end = selection_rects_.end > 0 ? static_cast<size_t>(selection_rects_.end) : 0;
+    if (sel_end > n) {
+        sel_end = n;
     }
-    std::u16string selected_u16 = str16.substr(selection_rects_.start, sel_end - selection_rects_.start);
-
-    if (sel_end < str16.size()) {
+    if (sel_end < sel_start) {
+        sel_end = sel_start;
+    }
+    if (sel_start > 0) {
+        pre = str16.substr(0, sel_start);
+    }
+    if (sel_end < n) {
         post = str16.substr(sel_end);
     }
-
-    return selected_u16;
+    return str16.substr(sel_start, sel_end - sel_start);
 }
 
 bool KRRichTextView::UpdateSelection(std::shared_ptr<IKRRenderViewExport> ancestor_view, KRPoint ancestor_point1,

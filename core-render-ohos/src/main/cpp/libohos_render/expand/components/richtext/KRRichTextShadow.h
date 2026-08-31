@@ -182,7 +182,7 @@ class KRRichTextShadow : public IKRRenderShadowExport {
         main_thread_text_align_ = TEXT_ALIGN_LEFT;
     }
 
-    std::string GetTextContent() const {
+    const std::u16string &GetTextContent() const {
         return text_content_;
     }
 
@@ -272,7 +272,7 @@ class KRRichTextShadow : public IKRRenderShadowExport {
     // 通知 view markDirty。shadow 销毁时 weak_from_this 自动断链。
     void TriggerImagePrefetchIfNeed();
  private:
-    std::string text_content_;
+    std::u16string text_content_;
     KRRenderValue::Map props_;
     KRRenderValue::Array values_;
     OH_Drawing_Array *text_lines_ = nullptr;

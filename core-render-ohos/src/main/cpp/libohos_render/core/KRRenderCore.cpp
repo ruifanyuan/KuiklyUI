@@ -36,7 +36,7 @@ KRRenderCValue com_tencent_kuikly_CallNative(
     // 但 K/N 会因为观察到 "C++ 已 catch 过" 而不再触发 unhandled-exception hook，
     // 从而丢失 Kotlin 侧真正有价值的 Throwable class / message / Kotlin 栈。
     // 现在完全放弃 C++ 侧的诊断日志（tag/type/what），换取 K/N hook 的正常触发。
-    return IKRRenderNativeContextHandler::DispatchCallNative(KRRenderValue::MakeBorrowed(arg0)->toString(), methodId,
+    return IKRRenderNativeContextHandler::DispatchCallNative(KRRenderValue::MakeBorrowed(arg0)->toAsciiString(), methodId,
             arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
@@ -274,7 +274,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
                                                const KRAnyValue &arg5, bool sync) {
     switch (method) {
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCreateRenderView: {
-        renderLayerHandler_->CreateRenderView(arg1->toInt(), arg2->toString());
+        renderLayerHandler_->CreateRenderView(arg1->toInt(), arg2->toAsciiString());
         break;
     }
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodRemoveRenderView: {
@@ -307,9 +307,9 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
                     }
                 }
             };
-            renderLayerHandler_->SetEvent(arg1->toInt(), arg2->toString(), callback);
+            renderLayerHandler_->SetEvent(arg1->toInt(), arg2->toAsciiString(), callback);
         } else {
-            renderLayerHandler_->SetProp(arg1->toInt(), arg2->toString(), arg3);
+            renderLayerHandler_->SetProp(arg1->toInt(), arg2->toAsciiString(), arg3);
         }
         break;
     }
@@ -341,7 +341,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
         return KRRenderValue::Make(sizeStr);
     }
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCallViewMethod: {
-        auto callbackId = arg4->toString();
+        auto callbackId = arg4->toAsciiString();
         KRRenderCallback callback = nullptr;
         if (!callbackId.empty()) {
             std::weak_ptr<KRRenderCore> weakSelf = shared_from_this();
@@ -357,7 +357,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
                 }
             };
         }
-        renderLayerHandler_->CallViewMethod(arg1->toInt(), arg2->toString(), arg3, callback);
+        renderLayerHandler_->CallViewMethod(arg1->toInt(), arg2->toAsciiString(), arg3, callback);
         break;
     }
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCallModuleMethod: {
@@ -365,7 +365,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
         auto callback_keep_alive = false;
         // 优化：先检查 arg4 是否为 null，避免不必要的 toString() 字符串拷贝
         if (!arg4->isNull()) {
-            auto callbackId = arg4->toString();
+            auto callbackId = arg4->toAsciiString();
             if (!callbackId.empty()) {
                 callback_keep_alive = IsCallbackKeepAlive(arg5);
                 std::weak_ptr<KRRenderCore> weakSelf = shared_from_this();
@@ -382,12 +382,12 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
                 };
             }
         }
-        return renderLayerHandler_->CallModuleMethod(sync, arg1->toString(), arg2->toString(), arg3, callback,
+        return renderLayerHandler_->CallModuleMethod(sync, arg1->toAsciiString(), arg2->toAsciiString(), arg3, callback,
                                                      callback_keep_alive);
     }
 
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCreateShadow: {
-        renderLayerHandler_->CreateShadow(arg1->toInt(), arg2->toString());
+        renderLayerHandler_->CreateShadow(arg1->toInt(), arg2->toAsciiString());
         return defaultNullValue_;
     }
 
@@ -396,7 +396,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
         return defaultNullValue_;
     }
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodSetShadowProp: {
-        renderLayerHandler_->SetShadowProp(arg1->toInt(), arg2->toString(), arg3);
+        renderLayerHandler_->SetShadowProp(arg1->toInt(), arg2->toAsciiString(), arg3);
         return defaultNullValue_;
     }
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodSetShadowForView: {
@@ -431,7 +431,7 @@ KRAnyValue KRRenderCore::PerformNativeCallback(const KuiklyRenderNativeMethod &m
 
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodCallShadowMethod: {
         std::weak_ptr<KRRenderCore> weakSelf = shared_from_this();
-        return renderLayerHandler_->CallShadowMethod(arg1->toInt(), arg2->toString(), arg3->toString());
+        return renderLayerHandler_->CallShadowMethod(arg1->toInt(), arg2->toAsciiString(), arg3->toAsciiString());
     }
 
     case KuiklyRenderNativeMethod::KuiklyRenderNativeMethodFireFatalException: {

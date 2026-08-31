@@ -368,6 +368,8 @@ struct KRTextEditorState {
 
     // 当前已设置到节点的文本（逻辑层缓存，供 SetProp text 幂等判断及过滤使用）
     std::string cached_text_;
+    // Kotlin 下发的 U16 盒。回抛 raw 时若与 cached_text_ 相同则复用，避免 U8→U16。
+    mutable KRUtf16TextCache text_value_cache_;
 
     // ===== Image span 权威映射表（输入框编辑差分回写算法的核心） =====
     //

@@ -38,7 +38,6 @@
 #include "libohos_render/foundation/type/KRRenderCValue.h"
 #include "libohos_render/utils/KRJsUtil.h"
 #include "libohos_render/utils/NAPIUtil.h"
-#include "libohos_render/utils/json/EncodingStats.h"
 #include "libohos_render/utils/json/Reader.h"
 #include "libohos_render/utils/json/Value.h"
 
@@ -255,7 +254,7 @@ class KRRenderValue {
     int64_t toLong() const {
         if (isString()) {
             try {
-                return std::stoll(toString());
+                return std::stoll(toAsciiString());
             } catch (...) {
                 return 0;
             }
@@ -271,7 +270,7 @@ class KRRenderValue {
     double toDouble() const {
         if (isString()) {
             try {
-                const auto str = stringValue();
+                const auto str = toAsciiString();
                 return str.empty() ? 0.0 : std::stod(str);
             } catch (...) {
                 return 0.0;
@@ -297,6 +296,97 @@ class KRRenderValue {
         }
         const std::string utf8 = toString();
         return kuikly::util::json::Utf8ToUtf16(utf8.data(), utf8.size());
+    }
+
+    // Zero-copy view of a U16 string box. {nullptr, 0} if not KRJSON_U16STRING.
+    std::pair<const uint16_t *, size_t> utf16View() const {
+        if (type() != KRJSON_U16STRING) {
+            return {nullptr, 0};
+        }
+        size_t units = 0;
+        const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+        return {utf16, units};
+    }
+
+    // Compare this string box to an ASCII literal without allocating or transcoding.
+    bool equalsAscii(const char *lit) const {
+        if (lit == nullptr || !isString()) {
+            return false;
+        }
+        const size_t lit_len = std::strlen(lit);
+        if (type() == KRJSON_U16STRING) {
+            size_t units = 0;
+            const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+            if (utf16 == nullptr || units != lit_len) {
+                return false;
+            }
+            for (size_t i = 0; i < units; ++i) {
+                if (utf16[i] != static_cast<unsigned char>(lit[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        size_t size = 0;
+        const char *data = kuikly::util::json::GetString(value_, &size);
+        return data != nullptr && size == lit_len && std::memcmp(data, lit, lit_len) == 0;
+    }
+
+    // Compare two string boxes. Same-encoding path is memcmp; mixed encoding falls back.
+    bool stringEquals(const KRRenderValue &other) const {
+        if (!isString() || !other.isString()) {
+            return false;
+        }
+        if (type() == KRJSON_U16STRING && other.type() == KRJSON_U16STRING) {
+            size_t a_n = 0;
+            size_t b_n = 0;
+            const uint16_t *a = kuikly::util::json::GetStringUtf16(value_, &a_n);
+            const uint16_t *b = kuikly::util::json::GetStringUtf16(other.value_, &b_n);
+            if (a_n != b_n) {
+                return false;
+            }
+            return a_n == 0 || (a != nullptr && b != nullptr && std::memcmp(a, b, a_n * sizeof(uint16_t)) == 0);
+        }
+        if (type() == KRJSON_STRING && other.type() == KRJSON_STRING) {
+            size_t a_n = 0;
+            size_t b_n = 0;
+            const char *a = kuikly::util::json::GetString(value_, &a_n);
+            const char *b = kuikly::util::json::GetString(other.value_, &b_n);
+            if (a_n != b_n) {
+                return false;
+            }
+            return a_n == 0 || (a != nullptr && b != nullptr && std::memcmp(a, b, a_n) == 0);
+        }
+        return toString() == other.toString();
+    }
+
+    // Narrow a U16 box that is all < 0x80 without running Utf16ToUtf8.
+    // Non-ASCII U16 falls back to stringValue(); UTF-8 boxes and non-strings
+    // match toString() / stringValue().
+    std::string toAsciiString() const {
+        if (type() == KRJSON_U16STRING) {
+            size_t units = 0;
+            const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+            if (utf16 == nullptr) {
+                return {};
+            }
+            for (size_t i = 0; i < units; ++i) {
+                if (utf16[i] >= 0x80) {
+                    return stringValue();
+                }
+            }
+            std::string out(units, '\0');
+            for (size_t i = 0; i < units; ++i) {
+                out[i] = static_cast<char>(utf16[i]);
+            }
+            return out;
+        }
+        if (type() == KRJSON_STRING) {
+            size_t size = 0;
+            const char *data = kuikly::util::json::GetString(value_, &size);
+            return data == nullptr ? std::string() : std::string(data, size);
+        }
+        return toString();
     }
 
     std::string toString() const {
@@ -608,7 +698,6 @@ class KRRenderValue {
             if (get(stack, kStackUnits, &copied) != ok) {
                 return kuikly::util::json::NewStringUtf16(nullptr, 0);
             }
-            kuikly::util::json::EncodingStatsNoteNapiUtf16();
             return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(stack), copied);
         }
         std::vector<char16_t> heap(units + 1);
@@ -616,7 +705,6 @@ class KRRenderValue {
         if (get(heap.data(), units + 1, &copied) != ok) {
             return kuikly::util::json::NewStringUtf16(nullptr, 0);
         }
-        kuikly::util::json::EncodingStatsNoteNapiUtf16();
         return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(heap.data()), copied);
     }
 
@@ -753,7 +841,8 @@ class KRRenderValue {
         if (type() == KRJSON_U16STRING) {
             size_t units = 0;
             const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
-            return utf16 == nullptr ? std::string() : kuikly::util::json::Utf16ToUtf8(utf16, units);
+            return utf16 == nullptr ? std::string()
+                                    : kuikly::util::json::Utf16ToUtf8(utf16, units);
         }
         size_t size = 0;
         const char *data = kuikly::util::json::GetString(value_, &size);
@@ -811,6 +900,28 @@ class KRRenderValue {
     KRJSONValue value_ = KRJSON_INVALID;
     // TODO: not on the hot path — see class comment. Snapshot callbacks only.
     std::shared_ptr<NapiValue> raw_napi_;
+};
+
+// Reuse a U16 string box across ArkUI UTF-8 get/set. SetFromBox keeps the Kotlin
+// box and does the one U16→U8 needed for ArkUI; BoxForUtf8 returns that box when
+// the UTF-8 content still matches (SetContentText → onTextDidChange).
+struct KRUtf16TextCache {
+    KRRenderValue value;
+    std::string utf8;
+
+    void SetFromBox(const KRRenderValue &box) {
+        value = box;
+        utf8 = box ? box.toString() : std::string();
+    }
+
+    KRRenderValue BoxForUtf8(const std::string &now) {
+        if (value && now == utf8) {
+            return value;
+        }
+        utf8 = now;
+        value = KRRenderValue::Make(kuikly::util::json::Utf8ToUtf16(utf8.data(), utf8.size()));
+        return value;
+    }
 };
 
 template<>

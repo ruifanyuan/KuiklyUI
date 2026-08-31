@@ -324,11 +324,11 @@ void KRView::HandleGetSelection(const KRAnyValue &params, const KRRenderCallback
     bool postContentInserted = false;
 
     if (pre && !pre->GetTextContent().empty()) {
-        preContent.push_back(KRRenderValue::Make(kuikly::util::Utf8ToUtf16(pre->GetTextContent())));
+        preContent.push_back(KRRenderValue::Make(pre->GetTextContent()));
     }
 
     if (post && !post->GetTextContent().empty()) {
-        postContent.push_back(KRRenderValue::Make(kuikly::util::Utf8ToUtf16(post->GetTextContent())));
+        postContent.push_back(KRRenderValue::Make(post->GetTextContent()));
     }
     for (auto item : selected_text_views) {
         std::u16string preText;

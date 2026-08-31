@@ -15,8 +15,6 @@
 
 #include "NAPIUtil.h"
 
-#include "libohos_render/utils/json/EncodingStats.h"
-
 namespace kuikly {
 namespace util {
 
@@ -60,7 +58,6 @@ char *getNApiArgsString(napi_env env, napi_value value) {
         napi_throw_error(env, "-1005", "napi_get_value_string_utf8 error");
         return 0;
     }
-    kuikly::util::json::EncodingStatsNoteNapiUtf8();
     return buffer;
 }
 
@@ -85,8 +82,16 @@ void GetNApiArgsStdString(const napi_env &env, const napi_value &value, std::str
         napi_throw_error(env, "-1005", "napi_get_value_string_utf8 error");
         return;
     }
-    kuikly::util::json::EncodingStatsNoteNapiUtf8();
     result.append(buffer.data());
+}
+
+std::string getNApiArgsAsciiStdString(napi_env env, napi_value value) {
+    const std::u16string u16 = getNApiArgsStdU16String(env, value);
+    std::string out(u16.size(), '\0');
+    for (size_t i = 0; i < u16.size(); ++i) {
+        out[i] = static_cast<char>(u16[i]);
+    }
+    return out;
 }
 
 std::u16string getNApiArgsStdU16String(napi_env env, napi_value value) {
@@ -109,7 +114,6 @@ void GetNApiArgsStdU16String(const napi_env &env, const napi_value &value, std::
         return;
     }
     buffer.resize(copied);
-    kuikly::util::json::EncodingStatsNoteNapiUtf16();
     result.append(buffer);
 }
 }  // namespace util

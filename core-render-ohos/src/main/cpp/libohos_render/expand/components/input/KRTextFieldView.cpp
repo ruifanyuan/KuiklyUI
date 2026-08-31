@@ -180,7 +180,8 @@ std::string KRTextFieldView::GetInputNodeContentText(){
 bool KRTextFieldView::SetProp(const std::string &prop_key, const KRAnyValue &prop_value,
                               const KRRenderCallback event_call_back) {
     if (kuikly::util::isEqual(prop_key, kText)) {  // 占位
-        SetContentText(prop_value->toString());
+        text_value_cache_.SetFromBox(prop_value);
+        SetContentText(text_value_cache_.utf8);
         return true;
     }
     if (kuikly::util::isEqual(prop_key, kPlaceholder)) {  // 占位
@@ -363,7 +364,8 @@ void KRTextFieldView::CallMethod(const std::string &method, const KRAnyValue &pa
     } else if (kuikly::util::isEqual(method, kMethodBlur)) {  // 失焦
         Blur();
     } else if (kuikly::util::isEqual(method, kMethodSetText)) {  // 主动设置文本
-        SetContentText(params->toString());
+        text_value_cache_.SetFromBox(params);
+        SetContentText(text_value_cache_.utf8);
     } else if (kuikly::util::isEqual(method, kMethodGetCursorIndex)) {  // 获取光标位置
         GetCursorIndex(callback);
     } else if (kuikly::util::isEqual(method, kMethodSetCursorIndex)) {  // 设置光标位置
@@ -494,7 +496,7 @@ KRRenderValueMap KRTextFieldView::CreateTextInputStateMap() {
     selection_end = std::max(selection_start, selection_end);
 
     KRRenderValueMap map;
-    map[kKeyText] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
+    map[kKeyText] = text_value_cache_.BoxForUtf8(text);
     map[kKeySelectionStart] = NewKRRenderValue(selection_start);
     map[kKeySelectionEnd] = NewKRRenderValue(selection_end);
     map[kKeyCompositionStart] = NewKRRenderValue(kNoComposition);
@@ -589,7 +591,7 @@ void KRTextFieldView::OnTextDidChanged(ArkUI_NodeEvent *event) {
     if (text_did_change_callback_) {
         auto text = GetContentText();
         KRRenderValueMap map;
-        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
+        map[u"text"] = text_value_cache_.BoxForUtf8(text);
         if (length_limit_type_ != -1) {
             int length = CalculateTextLength(text);
             map[u"length"] = NewKRRenderValue(length);
@@ -608,7 +610,7 @@ void KRTextFieldView::OnTextDidChanged(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputFocus(ArkUI_NodeEvent *event) {
     if (input_focus_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
+        map[u"text"] = text_value_cache_.BoxForUtf8(GetContentText());
         input_focus_callback_(NewKRRenderValue(map));
     }
 }
@@ -618,7 +620,7 @@ void KRTextFieldView::OnInputFocus(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputBlur(ArkUI_NodeEvent *event) {
     if (input_blur_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
+        map[u"text"] = text_value_cache_.BoxForUtf8(GetContentText());
         input_blur_callback_(NewKRRenderValue(map));
     }
 }
@@ -628,7 +630,7 @@ void KRTextFieldView::OnInputBlur(ArkUI_NodeEvent *event) {
 void KRTextFieldView::OnInputReturn(ArkUI_NodeEvent *event) {
     if (input_return_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(GetContentText()));
+        map[u"text"] = text_value_cache_.BoxForUtf8(GetContentText());
         auto returnKeyType = GetInputNodeEnterKeyType();
         map[u"ime_action"] = KRRenderValue::Make(kuikly::util::ConvertEnterKeyTypeToString(returnKeyType));
         input_return_callback_(NewKRRenderValue(map));

@@ -15,7 +15,6 @@
 
 package com.tencent.kuikly.core.nvi.serialization.json
 
-import kotlin.concurrent.AtomicInt
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -31,7 +30,7 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import ohos.KRJSONArrayGet
-import ohos.KRJSONDump
+import ohos.KRJSONDumpUtf16
 import ohos.KRJSONFreeString
 import ohos.KRJSONGetBool
 import ohos.KRJSONGetBytes
@@ -85,51 +84,6 @@ internal const val JSON_NULL_BITS = 0L
  */
 @OptIn(ExperimentalForeignApi::class)
 internal object JsonNative {
-
-    private val asStringUtf8 = AtomicInt(0)
-    private val asStringUtf16 = AtomicInt(0)
-    private val keyUtf8 = AtomicInt(0)
-    private val keyUtf16 = AtomicInt(0)
-    private val lastFlushTotal = AtomicInt(0)
-
-    private fun noteKotlinString(utf16: Boolean) {
-        if (utf16) {
-            asStringUtf16.addAndGet(1)
-        } else {
-            asStringUtf8.addAndGet(1)
-        }
-        flushKotlinStringStats(false)
-    }
-
-    private fun noteKotlinKeyUtf8() {
-        keyUtf8.addAndGet(1)
-        flushKotlinStringStats(false)
-    }
-
-    private fun noteKotlinKeyUtf16() {
-        keyUtf16.addAndGet(1)
-        flushKotlinStringStats(false)
-    }
-
-    private fun flushKotlinStringStats(force: Boolean) {
-        val utf8 = asStringUtf8.value
-        val utf16 = asStringUtf16.value
-        val keys8 = keyUtf8.value
-        val keys16 = keyUtf16.value
-        val total = utf8 + utf16 + keys8 + keys16
-        val last = lastFlushTotal.value
-        if (!force && total - last < 32) {
-            return
-        }
-        if (!lastFlushTotal.compareAndSet(last, total) && !force) {
-            return
-        }
-        val valueTotal = utf8 + utf16
-        val pct = if (valueTotal == 0) 0 else utf16 * 100 / valueTotal
-        println(
-            "[KRJSON_ENC] kotlin_asString utf8=$utf8 utf16=$utf16 ($pct% u16) key_utf8=$keys8 key_utf16=$keys16"
-        )
-    }
 
     fun isInvalid(bits: Long): Boolean = bits.toULong() == KRJSON_INVALID
 
@@ -213,11 +167,9 @@ internal object JsonNative {
                     index.convert<size_t>(),
                     units.ptr,
                 ) ?: return@memScoped null
-                noteKotlinKeyUtf16()
                 stringFromUtf16Chars(ptr, units.value.toInt())
             }
         }
-        noteKotlinKeyUtf8()
         return KRJSONObjectKeyAt(objectBits.toULong(), index.convert<size_t>())?.toKString()
     }
 
@@ -263,12 +215,10 @@ internal object JsonNative {
             when (type(bits)) {
                 JSON_KIND_U16STRING -> {
                     val ptr = KRJSONGetStringUtf16(bits.toULong(), len.ptr) ?: return@memScoped null
-                    noteKotlinString(true)
                     stringFromUtf16Chars(ptr, len.value.toInt())
                 }
                 JSON_KIND_STRING -> {
                     val ptr = KRJSONGetString(bits.toULong(), len.ptr) ?: return@memScoped null
-                    noteKotlinString(false)
                     stringFromUtf8Chars(ptr, len.value.toInt())
                 }
                 else -> null
@@ -359,11 +309,14 @@ internal object JsonNative {
         if (bits == JSON_NULL_BITS || isInvalid(bits)) {
             return null
         }
-        val printed = KRJSONDump(bits.toULong()) ?: return null
-        return try {
-            printed.toKString()
-        } finally {
-            KRJSONFreeString(printed)
+        return memScoped {
+            val units = alloc<size_tVar>()
+            val printed = KRJSONDumpUtf16(bits.toULong(), units.ptr) ?: return@memScoped null
+            try {
+                stringFromUtf16Chars(printed, units.value.toInt())
+            } finally {
+                KRJSONFreeString(printed.reinterpret())
+            }
         }
     }
 }

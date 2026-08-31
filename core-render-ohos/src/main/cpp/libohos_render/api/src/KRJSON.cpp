@@ -82,6 +82,20 @@ char *KRJSONDump(KRJSONValue value) {
     }
     return buf;
 }
+
+uint16_t *KRJSONDumpUtf16(KRJSONValue value, size_t *out_units) {
+    const std::u16string s = kjson::DumpUtf16(value);
+    const size_t n = s.size();
+    if (out_units != nullptr) {
+        *out_units = n;
+    }
+    auto *buf = static_cast<uint16_t *>(std::malloc((n + 1) * sizeof(uint16_t)));
+    if (buf != nullptr) {
+        std::memcpy(buf, s.data(), n * sizeof(uint16_t));
+        buf[n] = 0;
+    }
+    return buf;
+}
 void KRJSONFreeString(char *str) {
     std::free(str);
 }
