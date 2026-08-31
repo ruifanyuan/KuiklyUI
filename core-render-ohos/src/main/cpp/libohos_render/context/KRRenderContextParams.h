@@ -33,7 +33,7 @@ class KRRenderContextParams {
         this->page_name_value_ = page_name;
         this->instance_id_value_ = instance_id;
         this->page_name_ = page_name.toString();
-        this->instance_id_ = instance_id.toString();
+        this->instance_id_ = instance_id.toAsciiString();
         this->page_data_ = page_data;
         this->parsed_page_data_ = this->page_data_.container();
         this->config_ = std::make_shared<KRConfig>(configJson);

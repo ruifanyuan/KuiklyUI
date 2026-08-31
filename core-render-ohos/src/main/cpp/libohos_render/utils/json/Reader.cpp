@@ -16,7 +16,6 @@
 #include "libohos_render/utils/json/Reader.h"
 
 #include "libohos_render/utils/json/DomBuilder.h"
-#include "libohos_render/utils/json/EncodingStats.h"
 #include "libohos_render/utils/json/Value.h"
 #include "rapidjson/encodings.h"
 #include "rapidjson/error/en.h"
@@ -135,24 +134,18 @@ bool Reader::ParseSax(const char *data, size_t length, SaxHandler &handler, std:
 }
 
 KRJSONValue Reader::Parse(const char *data, size_t length, std::string *error) {
-    EncodingStatsNoteParseUtf8();
     DomBuilder builder;
     if (!ParseSax(data, length, builder, error)) {
-        EncodingStatsFlush("parse_utf8_fail");
         return KRJSON_INVALID;
     }
-    KRJSONValue result = builder.TakeResult();
-    EncodingStatsFlush("parse_utf8");
-    return result;
+    return builder.TakeResult();
 }
 
 KRJSONValue Reader::ParseUtf16(const uint16_t *data, size_t units, std::string *error) {
-    EncodingStatsNoteParseUtf16();
     if (data == nullptr) {
         if (error != nullptr) {
             *error = "null input";
         }
-        EncodingStatsFlush("parse_utf16_fail");
         return KRJSON_INVALID;
     }
     using Encoding = rapidjson::UTF16<char16_t>;
@@ -167,12 +160,9 @@ KRJSONValue Reader::ParseUtf16(const uint16_t *data, size_t units, std::string *
             *error = std::string(rapidjson::GetParseError_En(result.Code())) + " (offset " +
                      std::to_string(result.Offset()) + ")";
         }
-        EncodingStatsFlush("parse_utf16_fail");
         return KRJSON_INVALID;
     }
-    KRJSONValue parsed = builder.TakeResult();
-    EncodingStatsFlush("parse_utf16");
-    return parsed;
+    return builder.TakeResult();
 }
 
 }  // namespace json

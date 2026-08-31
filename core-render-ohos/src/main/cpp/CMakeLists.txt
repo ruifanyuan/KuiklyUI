@@ -95,7 +95,6 @@ set(SOURCE_SET
         libohos_render/utils/json/Value.cpp
         libohos_render/utils/json/Reader.cpp
         libohos_render/utils/json/DomBuilder.cpp
-        libohos_render/utils/json/EncodingStats.cpp
         libohos_render/api/src/KRJSON.cpp
         libohos_render/utils/KRStringUtil.cpp
         libohos_render/utils/KRViewUtil.cpp

@@ -259,10 +259,10 @@ void KRImageView::AdapterSetImageCallback(const void* context,
 }
 
 bool KRImageView::SetImageSrc(const KRAnyValue &value) {
-    auto src = value->toString();
-    if (image_src_ == src) {
+    if (image_src_value_ && image_src_value_.stringEquals(value)) {
         return true;
     }
+    auto src = value->toAsciiString();
 
     kuikly::util::ResetArkUIImageSrc(GetNode());
     image_src_ = src;
@@ -339,7 +339,7 @@ bool KRImageView::SetImageParams(const KRAnyValue &value) {
 
 bool KRImageView::SetResizeMode(const KRAnyValue &value) {
     auto resize = ARKUI_OBJECT_FIT_COVER;
-    auto resize_mode = value->toString();
+    auto resize_mode = value->toAsciiString();
     if (kuikly::util::isEqual(resize_mode, kResizeModeCover)) {
         resize = ARKUI_OBJECT_FIT_COVER;
     } else if (kuikly::util::isEqual(resize_mode, kResizeModeContain)) {
@@ -364,7 +364,7 @@ bool KRImageView::SetBlurRadius(const KRAnyValue &value) {
 }
 
 bool KRImageView::SetTintColor(const KRAnyValue &value) {
-    auto valueStr = value->toString();
+    auto valueStr = value->toAsciiString();
     if (valueStr.empty()) {
         kuikly::util::ResetArkUIImageTintColor(GetNode());
     } else {
@@ -375,7 +375,7 @@ bool KRImageView::SetTintColor(const KRAnyValue &value) {
 }
 
 bool KRImageView::SetColorFilter(const KRAnyValue &value) {
-    std::string matrix_str = value->toString();
+    std::string matrix_str = value->toAsciiString();
     if (matrix_str.empty()) {
         kuikly::util::ResetArkUIImageColorFilter(GetNode());
         return true;
@@ -426,7 +426,7 @@ void KRImageView::ResetMaskLinearGradientNode() {
 }
 
 bool KRImageView::SetMaskLinearGradient(const KRAnyValue &value) {
-    auto valueStr = value->toString();
+    auto valueStr = value->toAsciiString();
     if (valueStr.empty()) {
         return true;
     }
@@ -444,7 +444,7 @@ bool KRImageView::SetMaskLinearGradient(const KRAnyValue &value) {
 }
 
 bool KRImageView::SetCapInsets(const KRAnyValue &value) {
-    auto valueStr = value->toString();
+    auto valueStr = value->toAsciiString();
     if (valueStr.empty()) {
         has_cap_insets_ = false;
         cap_insets_top_ = 0.f;
@@ -714,7 +714,11 @@ std::shared_ptr<KRImageLoadOption> KRImageView::ToImageLoadOption(const std::str
 void KRImageView::LoadFromSrc(const std::string image_src) {
     image_option_ = ToImageLoadOption(image_src);
     image_src_ = image_option_->src_;
-    image_src_value_ = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
+    // Keep the Kotlin U16 box when adapter did not rewrite src. Rebuild only if
+    // the final UTF-8 src no longer matches that box (adapter rewrite / new_src).
+    if (!image_src_value_ || image_src_value_.toAsciiString() != image_src_) {
+        image_src_value_ = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
+    }
 
     if (image_option_->src_type_ == KRImageSrcType::kImageSrcTypeBase64) {
         LoadFromBase64(image_option_);

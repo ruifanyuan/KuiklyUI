@@ -23,7 +23,6 @@
 #include "libohos_render/manager/KRRenderManager.h"
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/NAPIUtil.h"
-#include "libohos_render/utils/json/EncodingStats.h"
 #include "napi/native_api.h"
 
 #ifndef NDEBUG
@@ -44,7 +43,7 @@ static napi_value OnLaunchStart(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     KRRenderManager::GetInstance().OnLaunchStart(instance_id);
     return 0;
 }
@@ -55,7 +54,7 @@ static napi_value UpdateConfig(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     auto config_json = KRRenderValue::Make(env, args[1]);
     if (auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id)) {
         if (auto ctx = renderView->GetContext()) {
@@ -84,7 +83,7 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
     double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[3]);
     double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[4]);
     auto config_json = KRRenderValue::Make(env, args[5]);
-    std::string instance_id_utf8 = instance_id.toString();
+    std::string instance_id_utf8 = instance_id.toAsciiString();
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id_utf8);
     if (renderView != nullptr) {
         size_t page_data_units = 0;
@@ -99,7 +98,6 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
             page_Data = KRRenderValue::Make(KRRenderValue::Map{});
         }
         auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json);
-        kuikly::util::json::EncodingStatsFlush(("init " + page_name.toString()).c_str());
         ArkUI_ContextHandle context_handle;
         OH_ArkUI_GetContextFromNapiValue(env, args[6], &context_handle);
         NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[7]);
@@ -122,7 +120,7 @@ static napi_value OnDestroyRenderView(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instanceId = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instanceId = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     KRRenderManager::GetInstance().DestroyRenderView(instanceId);
     return 0;
 }
@@ -137,7 +135,7 @@ static napi_value OnRenderViewSizeChanged(napi_env env, napi_callback_info info)
         return 0;
     }
 
-    std::string instanceId = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instanceId = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     double width = kuikly::util::getNApiArgsDouble(env, args[1]);
     double height = kuikly::util::getNApiArgsDouble(env, args[2]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instanceId);
@@ -173,7 +171,7 @@ static napi_value ArkTSOnSendEvent(napi_env env, napi_callback_info info) {
         return 0;
     }
 
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     auto event = KRRenderValue::Make(env, args[1]);
     // 结构化 napi 值（Record / Array）直接构建 KRJSON，字符串同样兼容
     auto data = KRRenderValue::Make(env, args[2]);
@@ -195,7 +193,7 @@ static napi_value ArkTSOnSendEventSync(napi_env env, napi_callback_info info) {
         return 0;
     }
 
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     auto event = KRRenderValue::Make(env, args[1]);
     auto data = KRRenderValue::Make(env, args[2]);
     bool sync = kuikly::util::getNApiArgsBool(env, args[3]);
@@ -224,7 +222,7 @@ static napi_value isBackPressConsumed(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return result;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
 
     auto render_view = KRRenderManager::GetInstance().GetRenderView(instance_id);
     if (render_view != nullptr) {
@@ -335,6 +333,14 @@ void TestJsonUtf16(KRAnyDataCApiTestResult *r) {
     char *dumped = KRJSONDump(utf16);
     Expect(r, dumped != nullptr && std::strcmp(dumped, "\"hello\"") == 0, "utf16_dump");
     KRJSONFreeString(dumped);
+    size_t dump16_units = 0;
+    uint16_t *dumped16 = KRJSONDumpUtf16(utf16, &dump16_units);
+    const uint16_t hello_json[] = {u'"', u'h', u'e', u'l', u'l', u'o', u'"'};
+    Expect(r,
+           dumped16 != nullptr && dump16_units == 7 &&
+               std::memcmp(dumped16, hello_json, sizeof(hello_json)) == 0,
+           "utf16_dump_utf16");
+    KRJSONFreeString(reinterpret_cast<char *>(dumped16));
 
     KRAnyData any16 = WrapAny(KRRenderValue::MakeBorrowed(utf16));
     KRJSONRelease(utf16);

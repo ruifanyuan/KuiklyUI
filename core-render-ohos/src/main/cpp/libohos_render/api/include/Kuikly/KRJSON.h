@@ -84,9 +84,15 @@ KUIKLY_EXPORT KRJSONValue KRJSONParse(const char *data, size_t len, char **err);
  * `KRJSON_U16STRING`; object keys are UTF-16. Same ownership as KRJSONParse.
  */
 KUIKLY_EXPORT KRJSONValue KRJSONParseUtf16(const uint16_t *data, size_t unit_count, char **err);
-/** Serialize to a malloc'd, NUL-terminated JSON string (free with KRJSONFreeString). */
+/** Serialize to malloc'd, NUL-terminated UTF-8 JSON text (free with KRJSONFreeString). */
 KUIKLY_EXPORT char *KRJSONDump(KRJSONValue value);
-/** Free a string returned by KRJSONDump / KRJSONParse's err. */
+/**
+ * Serialize to malloc'd, NUL-terminated UTF-16 JSON text.
+ * `out_units` is the code-unit count excluding the terminator. Free the buffer
+ * with KRJSONFreeString((char *)ptr). Prefer this on the Kotlin stringify path.
+ */
+KUIKLY_EXPORT uint16_t *KRJSONDumpUtf16(KRJSONValue value, size_t *out_units);
+/** Free a string returned by KRJSONDump / KRJSONDumpUtf16 / KRJSONParse's err. */
 KUIKLY_EXPORT void KRJSONFreeString(char *str);
 
 // ---- type / scalar accessors (by value) ----

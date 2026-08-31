@@ -218,6 +218,8 @@ const uint16_t *ObjectKeyAtUtf16(KRJSONValue object, size_t index, size_t *out_u
 void ObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata);
 
 std::string Dump(KRJSONValue v);
+/** Compact JSON text as UTF-16 units (same contract as Dump: `{"a":1}`). */
+std::u16string DumpUtf16(KRJSONValue v);
 
 }  // namespace json
 }  // namespace util

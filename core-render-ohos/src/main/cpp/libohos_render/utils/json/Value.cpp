@@ -19,8 +19,7 @@
 #include <cstring>
 #include <new>
 
-#include "libohos_render/utils/json/EncodingStats.h"
-
+#include "rapidjson/encodings.h"
 #include "rapidjson/stringbuffer.h"
 #include "rapidjson/writer.h"
 
@@ -63,7 +62,6 @@ void AppendUtf8(std::string &out, uint32_t cp) {
 }  // namespace
 
 std::string Utf16ToUtf8(const uint16_t *s, size_t n) {
-    EncodingStatsNoteConvertUtf16ToUtf8(n);
     std::string out;
     out.reserve(n);
     for (size_t i = 0; i < n;) {
@@ -85,7 +83,6 @@ std::string Utf16ToUtf8(const uint16_t *s, size_t n) {
 }
 
 std::u16string Utf8ToUtf16(const char *s, size_t n) {
-    EncodingStatsNoteConvertUtf8ToUtf16(n);
     std::u16string out;
     if (s == nullptr || n == 0) {
         return out;
@@ -269,11 +266,9 @@ KRJSONValue NewFloat(float f) {
     return EncodePtr(box, kTagFloat);
 }
 KRJSONValue NewString(const char *s, size_t n) {
-    EncodingStatsNoteNewUtf8(n);
     return EncodePtr(StringBox::Create(s, n), kTagString);
 }
 KRJSONValue NewStringUtf16(const uint16_t *s, size_t n) {
-    EncodingStatsNoteNewUtf16(n);
     return EncodePtr(U16StringBox::Create(s, n), kTagU16String);
 }
 KRJSONValue NewBytes(const uint8_t *data, size_t n) {
@@ -445,7 +440,6 @@ double GetDouble(KRJSONValue v, double default_value) {
 }
 const char *GetString(KRJSONValue v, size_t *out_len) {
     if (TagOf(v) == kTagString) {
-        EncodingStatsNoteGetUtf8();
         auto *box = static_cast<StringBox *>(AsBox(v));
         if (out_len != nullptr) {
             *out_len = box->len;
@@ -459,7 +453,6 @@ const char *GetString(KRJSONValue v, size_t *out_len) {
 }
 const uint16_t *GetStringUtf16(KRJSONValue v, size_t *out_units) {
     if (TagOf(v) == kTagU16String) {
-        EncodingStatsNoteGetUtf16();
         auto *box = static_cast<U16StringBox *>(AsBox(v));
         if (out_units != nullptr) {
             *out_units = box->len;
@@ -696,6 +689,81 @@ void WriteTo(KRJSONValue v, rapidjson::Writer<rapidjson::StringBuffer> &w) {
         }
     }
 }
+
+using Utf16Enc = rapidjson::UTF16<char16_t>;
+using Utf16Buffer = rapidjson::GenericStringBuffer<Utf16Enc>;
+using Utf16Writer = rapidjson::Writer<Utf16Buffer, Utf16Enc, Utf16Enc>;
+
+void WriteToUtf16(KRJSONValue v, Utf16Writer &w) {
+    switch (GetType(v)) {
+        case KRJSON_NULL:
+            w.Null();
+            break;
+        case KRJSON_BOOL:
+            w.Bool(GetBool(v, false));
+            break;
+        case KRJSON_INT:
+            w.Int64(GetInt(v, 0));
+            break;
+        case KRJSON_LONG:
+            w.Int64(GetInt(v, 0));
+            break;
+        case KRJSON_UINT:
+            w.Uint64(GetUint(v, 0));
+            break;
+        case KRJSON_DOUBLE:
+            w.Double(GetDouble(v, 0));
+            break;
+        case KRJSON_FLOAT:
+            w.Double(GetDouble(v, 0));
+            break;
+        case KRJSON_STRING: {
+            size_t len = 0;
+            const char *s = GetString(v, &len);
+            const std::u16string u16 = Utf8ToUtf16(s == nullptr ? "" : s, len);
+            w.String(u16.data(), static_cast<rapidjson::SizeType>(u16.size()));
+            break;
+        }
+        case KRJSON_U16STRING: {
+            size_t units = 0;
+            const uint16_t *s = GetStringUtf16(v, &units);
+            static const char16_t kEmpty[] = u"";
+            w.String(s == nullptr ? kEmpty : reinterpret_cast<const char16_t *>(s),
+                     static_cast<rapidjson::SizeType>(s == nullptr ? 0 : units));
+            break;
+        }
+        case KRJSON_BYTES:
+            w.Null();
+            break;
+        case KRJSON_ARRAY: {
+            w.StartArray();
+            auto &items = static_cast<ArrayBox *>(AsBox(v))->items;
+            for (KRJSONValue item : items) {
+                WriteToUtf16(item, w);
+            }
+            w.EndArray();
+            break;
+        }
+        case KRJSON_OBJECT: {
+            w.StartObject();
+            auto *box = static_cast<ObjectBox *>(AsBox(v));
+            if (box->keys_utf16) {
+                for (auto &kv : box->utf16) {
+                    w.Key(kv.first.data(), static_cast<rapidjson::SizeType>(kv.first.size()));
+                    WriteToUtf16(kv.second, w);
+                }
+            } else {
+                for (auto &kv : box->utf8) {
+                    const std::u16string u16 = Utf8ToUtf16(kv.first.data(), kv.first.size());
+                    w.Key(u16.data(), static_cast<rapidjson::SizeType>(u16.size()));
+                    WriteToUtf16(kv.second, w);
+                }
+            }
+            w.EndObject();
+            break;
+        }
+    }
+}
 }  // namespace
 
 std::string Dump(KRJSONValue v) {
@@ -703,6 +771,13 @@ std::string Dump(KRJSONValue v) {
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     WriteTo(v, writer);
     return std::string(buffer.GetString(), buffer.GetSize());
+}
+
+std::u16string DumpUtf16(KRJSONValue v) {
+    Utf16Buffer buffer;
+    Utf16Writer writer(buffer);
+    WriteToUtf16(v, writer);
+    return std::u16string(buffer.GetString(), buffer.GetLength());
 }
 
 }  // namespace json

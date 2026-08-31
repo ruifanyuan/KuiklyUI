@@ -17,7 +17,6 @@
 #include "libohos_render/adapter/KRRenderAdapterManager.h"
 #include "libohos_render/foundation/KRConfig.h"
 #include "libohos_render/utils/KRRenderLoger.h"
-#include "libohos_render/utils/json/EncodingStats.h"
 #include "libohos_render/utils/json/Value.h"
 #include <array>
 #include <codecvt>
@@ -268,7 +267,6 @@ static_assert(ConvertFontWeightCommon(600, 1) == 5);
 static_assert(ConvertFontWeightCommon(600, 1.5) == 8);
 
 std::u16string AsciiToUtf16(const char *s, size_t n) {
-    kuikly::util::json::EncodingStatsNoteAsciiWiden(n);
     std::u16string out;
     if (s == nullptr || n == 0) {
         return out;
