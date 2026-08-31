@@ -15,12 +15,14 @@
 
 #include "libohos_render/view/KRRenderView.h"
 
+#include <cstdio>
 #include <functional>
 #include "libohos_render/context/IKRRenderNativeContextHandler.h"
 #include "libohos_render/manager/KRRenderManager.h"
 #include "libohos_render/scheduler/IKRScheduler.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
 #include "libohos_render/scheduler/KRUIScheduler.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/KRViewUtil.h"
 
@@ -29,10 +31,12 @@ static constexpr char16_t KR_PERFORMANCE_MODULE[] = u"KRPerformanceModule";
 static constexpr char16_t NOTIFY_INIT_STATE[] = u"notifyInitState";
 
 const unsigned int LOG_PRINT_DOMAIN = 0xFF01;
-static std::string GetIncreaseCallbackId() {
+static std::u16string GetIncreaseCallbackId() {
     static int gCallbackId = 0;
     gCallbackId++;
-    return NewKRRenderValue(gCallbackId)->toString();
+    char buf[16];
+    const int n = std::snprintf(buf, sizeof(buf), "%d", gCallbackId);
+    return kuikly::util::AsciiToUtf16(buf, n > 0 ? static_cast<size_t>(n) : 0);
 }
 
 KRRenderView::KRRenderView(ArkUI_NodeContentHandle handle, std::string instance_id) : IKRRenderView(), node_content_handle_((handle)) {
@@ -337,7 +341,7 @@ void KRRenderView::InitRender(float width, float height) {
  * 注册参数Callback
  * @return 该Callback索引ID, 用于GetArgCallback
  */
-std::string KRRenderView::GenerateArgCallbackId(const KRRenderCallback &callback, bool callback_keep_alive,
+std::u16string KRRenderView::GenerateArgCallbackId(const KRRenderCallback &callback, bool callback_keep_alive,
                                                 bool arg_prefer_raw_napi_value) {
     auto callback_id = GetIncreaseCallbackId();
     method_arg_callback_map_[callback_id] =
@@ -348,7 +352,7 @@ std::string KRRenderView::GenerateArgCallbackId(const KRRenderCallback &callback
 /**
  * 根据callbackid获取Callback
  */
-KRRenderCallback KRRenderView::GetArgCallback(std::string callbackId, bool &arg_prefer_raw_napi_value) {
+KRRenderCallback KRRenderView::GetArgCallback(const std::u16string &callbackId, bool &arg_prefer_raw_napi_value) {
     if (method_arg_callback_map_.find(callbackId) != method_arg_callback_map_.end()) {
         auto callback_wrapper = method_arg_callback_map_[callbackId];
         if (!callback_wrapper->IsKeepAlive()) {

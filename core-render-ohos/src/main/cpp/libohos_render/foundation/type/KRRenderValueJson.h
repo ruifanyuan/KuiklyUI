@@ -135,7 +135,7 @@ class KRRenderValue {
         return value;
     }
 
-    /** Box a runtime UTF-8 buffer as UTF-16. C++ literals must use Make(u"..."), not this. */
+    /** Box a C ABI / ArkUI UTF-8 buffer as UTF-16. Prefer a u16string source and Make(). */
     static KRRenderValue MakeUtf16(const std::string &utf8) {
         return MakeOwned(BuildUtf16FromUtf8(utf8.data(), utf8.size()));
     }
@@ -281,6 +281,22 @@ class KRRenderValue {
             return toBool() ? 1.0 : 0.0;
         }
         return kuikly::util::json::GetDouble(value_, 0.0);
+    }
+
+    std::u16string toU16String() const {
+        if (type() == KRJSON_U16STRING) {
+            size_t units = 0;
+            const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(value_, &units);
+            return utf16 == nullptr ? std::u16string()
+                                    : std::u16string(reinterpret_cast<const char16_t *>(utf16), units);
+        }
+        if (type() == KRJSON_STRING) {
+            size_t size = 0;
+            const char *data = kuikly::util::json::GetString(value_, &size);
+            return data == nullptr ? std::u16string() : kuikly::util::json::Utf8ToUtf16(data, size);
+        }
+        const std::string utf8 = toString();
+        return kuikly::util::json::Utf8ToUtf16(utf8.data(), utf8.size());
     }
 
     std::string toString() const {
@@ -666,7 +682,7 @@ class KRRenderValue {
             return result;
         }
 
-        KRJSONValue result = kuikly::util::json::NewObject();
+        KRJSONValue result = kuikly::util::json::NewObjectUtf16();
         napi_value names = nullptr;
         if (napi_get_property_names(env, value, &names) == napi_ok) {
             uint32_t count = 0;
@@ -674,12 +690,13 @@ class KRRenderValue {
             for (uint32_t i = 0; i < count; ++i) {
                 napi_value key_value = nullptr;
                 napi_value property = nullptr;
-                std::string key;
+                std::u16string key;
                 napi_get_element(env, names, i, &key_value);
-                kuikly::util::GetNApiArgsStdString(env, key_value, key);
+                kuikly::util::GetNApiArgsStdU16String(env, key_value, key);
                 napi_get_property(env, value, key_value, &property);
                 KRJSONValue child = FromNapi(env, property);
-                kuikly::util::json::ObjectPut(result, key.data(), key.size(), child);
+                kuikly::util::json::ObjectPutUtf16(result, reinterpret_cast<const uint16_t *>(key.data()), key.size(),
+                                                   child);
                 kuikly::util::json::Release(child);
             }
         }

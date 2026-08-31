@@ -141,6 +141,8 @@ KUIKLY_EXPORT KRJSONValue KRJSONNewStringUtf16(const uint16_t *data, size_t unit
 KUIKLY_EXPORT KRJSONValue KRJSONNewBytes(const uint8_t *data, size_t len);
 KUIKLY_EXPORT KRJSONValue KRJSONNewArray(void);
 KUIKLY_EXPORT KRJSONValue KRJSONNewObject(void);
+/** Empty object whose keys are UTF-16. Use with KRJSONObjectPutUtf16. */
+KUIKLY_EXPORT KRJSONValue KRJSONNewObjectUtf16(void);
 /** Append `child` to array; the array retains it (caller still owns its own ref). */
 KUIKLY_EXPORT void KRJSONArrayAppend(KRJSONValue array, KRJSONValue child);
 /** Put UTF-8 key->child. Debug-asserts (no-op in release) on UTF-16-key objects. */

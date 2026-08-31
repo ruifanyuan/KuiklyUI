@@ -110,7 +110,7 @@ KRAnyValue KRArkTSManager::CallArkTSMethod(const KRAnyValue &instanceId, KRNativ
         if (renderView != nullptr) {
             auto callback_id =
                 renderView->GenerateArgCallbackId(callback, callback_keep_alive, arg_prefers_raw_napi_value);
-            callbackArgs[7] = CToNApiValue(env, NewKRRenderValue(callback_id));
+            callbackArgs[7] = CToNApiValue(env, KRRenderValue::Make(callback_id));
         }
     } else {
         napi_value nullValue;
@@ -158,7 +158,7 @@ void KRArkTSManager::KeyboardHeightChange(napi_env env, napi_value *args, size_t
  */
 void KRArkTSManager::FireCallbackFromArkTS(napi_env env, napi_value *args, size_t arg_size) {
     auto pager_id = KRRenderValue::Make(env, args[0])->toString();
-    auto callback_id = KRRenderValue::Make(env, args[2])->toString();
+    auto callback_id = KRRenderValue::Make(env, args[2])->toU16String();
     auto renderView = KRRenderManager::GetInstance().GetRenderView(pager_id);
     if (renderView != nullptr) {
         bool arg_prefer_raw_napi_value = false;

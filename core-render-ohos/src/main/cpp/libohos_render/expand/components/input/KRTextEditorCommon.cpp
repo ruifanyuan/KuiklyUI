@@ -1111,7 +1111,7 @@ KRRenderValueMap BuildTextInputStatePayload(const KRTextEditorState &state) {
     sel_end = FlatUtf16ToRawUtf16(state.image_spans_, sel_end);
 
     KRRenderValueMap map;
-    map[kKeyText] = NewKRRenderValue(text);
+    map[kKeyText] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
     map[kKeySelectionStart] = NewKRRenderValue(static_cast<int>(sel_start));
     map[kKeySelectionEnd] = NewKRRenderValue(static_cast<int>(sel_end));
     map[kKeyCompositionStart] = NewKRRenderValue(static_cast<int>(kNoComposition));

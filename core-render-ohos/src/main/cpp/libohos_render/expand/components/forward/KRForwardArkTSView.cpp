@@ -15,11 +15,12 @@
 
 #include "libohos_render/expand/components/forward/KRForwardArkTSView.h"
 #include "libohos_render/manager/KRArkTSManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 
 void KRForwardArkTSView::DidInit() {
     KRArkTSManager::GetInstance().CallArkTSMethod(
         GetInstanceIdValue(), KRNativeCallArkTSMethod::CreateView, KRRenderValue::Make(GetViewTag()),
-        KRRenderValue::MakeUtf16(GetViewName()), nullptr, nullptr, nullptr, nullptr);
+        KRRenderValue::Make(kuikly::util::AsciiToUtf16(GetViewName())), nullptr, nullptr, nullptr, nullptr);
     // 设置 ARKUI_HIT_TEST_MODE_TRANSPARENT, ForwardArkTSView 不会遮挡同层级事件
     kuikly::util::UpdateNodeHitTestMode(GetNode(), ARKUI_HIT_TEST_MODE_TRANSPARENT);
 }
@@ -41,7 +42,7 @@ bool KRForwardArkTSView::ToSetBaseProp(const std::string &prop_key, const KRAnyV
         if (prop_key == kBackgroundColor || prop_key == kBackgroundImage) {
             KRArkTSManager::GetInstance().CallArkTSMethod(GetInstanceIdValue(), KRNativeCallArkTSMethod::SetViewProp,
                                                           KRRenderValue::Make(GetViewTag()),
-                                                          KRRenderValue::MakeUtf16(prop_key), prop_value,
+                                                          KRRenderValue::Make(kuikly::util::AsciiToUtf16(prop_key)), prop_value,
                                                           nullptr, nullptr, nullptr);
         }
     }
@@ -55,13 +56,13 @@ bool KRForwardArkTSView::SetProp(const std::string &prop_key, const KRAnyValue &
         // 设置事件
         KRArkTSManager::GetInstance().CallArkTSMethod(GetInstanceIdValue(), KRNativeCallArkTSMethod::SetViewEvent,
                                                       KRRenderValue::Make(GetViewTag()),
-                                                      KRRenderValue::MakeUtf16(prop_key), nullptr, nullptr,
+                                                      KRRenderValue::Make(kuikly::util::AsciiToUtf16(prop_key)), nullptr, nullptr,
                                                       nullptr, nullptr);
     } else {  // is prop
         // 设置属性
         KRArkTSManager::GetInstance().CallArkTSMethod(GetInstanceIdValue(), KRNativeCallArkTSMethod::SetViewProp,
                                                       KRRenderValue::Make(GetViewTag()),
-                                                      KRRenderValue::MakeUtf16(prop_key), prop_value, nullptr,
+                                                      KRRenderValue::Make(kuikly::util::AsciiToUtf16(prop_key)), prop_value, nullptr,
                                                       nullptr, nullptr);
     }
     return true;
@@ -99,7 +100,7 @@ void KRForwardArkTSView::DidMoveToParentView() {
         ArkUI_NodeHandle node = nullptr;
         KRArkTSManager::GetInstance().CallArkTSMethod(GetInstanceIdValue(), KRNativeCallArkTSMethod::CreateArkUINode,
                                                       KRRenderValue::Make(GetViewTag()),
-                                                      KRRenderValue::MakeUtf16(GetNodeId()),
+                                                      KRRenderValue::Make(kuikly::util::AsciiToUtf16(GetNodeId())),
                                                       nullptr, nullptr, nullptr, nullptr, false, &node);
         if (node == nullptr) {
             return;
@@ -125,6 +126,6 @@ void KRForwardArkTSView::CallMethod(const std::string &method, const KRAnyValue 
                                     const KRRenderCallback &callback) {
     KRArkTSManager::GetInstance().CallArkTSMethod(GetInstanceIdValue(), KRNativeCallArkTSMethod::CallViewMethod,
                                                   KRRenderValue::Make(GetViewTag()),
-                                                  KRRenderValue::MakeUtf16(method), params, nullptr, nullptr,
+                                                  KRRenderValue::Make(kuikly::util::AsciiToUtf16(method)), params, nullptr, nullptr,
                                                   callback);
 }

@@ -42,9 +42,9 @@ class KRSnapshotManager {
 
  private:
     struct ResultData {
-        int code;
-        std::string data;
-        std::string message;
+        int code = 0;
+        std::u16string data;
+        std::u16string message;
     };
 
     struct ResultData ProcessSnapshotResultWithDataType(napi_env env, napi_value pixelMap, const std::string &path,
@@ -57,7 +57,7 @@ class KRSnapshotManager {
                                                             ArkUI_DrawableDescriptor *drawableDescriptorPtr,
                                                             std::weak_ptr<IKRRenderViewExport> weak_view);
     struct ResultData ProcessSnapshotResultWithFileType(napi_env env, napi_value pixelMap, const std::string &path,
-                                                        const std::string &pathUri,
+                                                        const std::u16string &pathUri,
                                                         ArkUI_DrawableDescriptor *drawableDescriptorPtr,
                                                         std::weak_ptr<IKRRenderViewExport> weak_view);
 

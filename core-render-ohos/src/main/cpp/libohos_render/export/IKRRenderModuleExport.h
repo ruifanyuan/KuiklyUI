@@ -23,6 +23,7 @@
 #include "libohos_render/foundation/thread/KRMainThread.h"
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/view/IKRRenderView.h"
 
 class IKRRenderModuleExport;
@@ -69,9 +70,20 @@ class IKRRenderModuleExport : public std::enable_shared_from_this<IKRRenderModul
      * @param callback 回调闭包参数
      * @return 返回值
      */
+    KRAnyValue CallArkTSMethod(const std::u16string &method, KRAnyValue params, const KRRenderCallback &callback,
+                               bool callback_keep_alive = false) {
+        return ToCallArkTSMethod(false, kuikly::util::AsciiToUtf16(GetModuleName()), method, params, callback,
+                                 callback_keep_alive);
+    }
+
+    KRAnyValue CallArkTSMethod(const char16_t *method, KRAnyValue params, const KRRenderCallback &callback,
+                               bool callback_keep_alive = false) {
+        return CallArkTSMethod(std::u16string(method == nullptr ? u"" : method), params, callback, callback_keep_alive);
+    }
+
     KRAnyValue CallArkTSMethod(const std::string &method, KRAnyValue params, const KRRenderCallback &callback,
                                bool callback_keep_alive = false) {
-        return ToCallArkTSMethod(false, GetModuleName(), method, params, callback, callback_keep_alive);
+        return CallArkTSMethod(kuikly::util::AsciiToUtf16(method), params, callback, callback_keep_alive);
     }
 
     /**
@@ -82,9 +94,21 @@ class IKRRenderModuleExport : public std::enable_shared_from_this<IKRRenderModul
      * @param callback_keep_alive callback 是否 keep alive
      * @return 返回值
      */
+    KRAnyValue SyncCallArkTSMethod(const std::u16string &method, KRAnyValue params, const KRRenderCallback &callback,
+                                   bool callback_keep_alive = false) {
+        return ToCallArkTSMethod(true, kuikly::util::AsciiToUtf16(GetModuleName()), method, params, callback,
+                                 callback_keep_alive);
+    }
+
+    KRAnyValue SyncCallArkTSMethod(const char16_t *method, KRAnyValue params, const KRRenderCallback &callback,
+                                   bool callback_keep_alive = false) {
+        return SyncCallArkTSMethod(std::u16string(method == nullptr ? u"" : method), params, callback,
+                                   callback_keep_alive);
+    }
+
     KRAnyValue SyncCallArkTSMethod(const std::string &method, KRAnyValue params, const KRRenderCallback &callback,
                                    bool callback_keep_alive = false) {
-        return ToCallArkTSMethod(true, GetModuleName(), method, params, callback, callback_keep_alive);
+        return SyncCallArkTSMethod(kuikly::util::AsciiToUtf16(method), params, callback, callback_keep_alive);
     }
 
     /**
@@ -104,16 +128,16 @@ class IKRRenderModuleExport : public std::enable_shared_from_this<IKRRenderModul
      * @param callback_keep_alive callback 是否 keep alive
      * @return isSync=true 时返回 ArkTS 侧的返回值；isSync=false 时恒为 nullptr
      */
-    KRAnyValue ToCallArkTSMethod(bool isSync, const std::string &module_name, const std::string &method,
-                                 KRAnyValue params, const KRRenderCallback &callback,
-                                 bool callback_keep_alive = false) {
+    KRAnyValue ToCallArkTSMethod(bool isSync, std::u16string module_name, std::u16string method, KRAnyValue params,
+                                 const KRRenderCallback &callback, bool callback_keep_alive = false) {
         auto instance_id = GetInstanceIdValue();
         if (!isSync) {
             // hot path：异步投递，无需回传结果，全部按值捕获，零额外堆分配。
             KRContextScheduler::ScheduleTaskOnMainThread(
-                false, [module_name, method, instance_id, params, callback, callback_keep_alive] {
-                    auto module_name_value = KRRenderValue::MakeUtf16(module_name);
-                    auto method_name = KRRenderValue::MakeUtf16(method);
+                false, [module_name = std::move(module_name), method = std::move(method), instance_id, params, callback,
+                        callback_keep_alive] {
+                    auto module_name_value = KRRenderValue::Make(module_name);
+                    auto method_name = KRRenderValue::Make(method);
                     (void)KRArkTSManager::GetInstance().CallArkTSMethod(
                         instance_id, KRNativeCallArkTSMethod::CallModuleMethod, module_name_value, method_name,
                         params, nullptr, nullptr, callback, callback_keep_alive);
@@ -126,8 +150,8 @@ class IKRRenderModuleExport : public std::enable_shared_from_this<IKRRenderModul
         KRAnyValue result = nullptr;
         KRContextScheduler::ScheduleTaskOnMainThread(
             true, [&result, &module_name, &method, &instance_id, &params, &callback, callback_keep_alive] {
-                auto module_name_value = KRRenderValue::MakeUtf16(module_name);
-                auto method_name = KRRenderValue::MakeUtf16(method);
+                auto module_name_value = KRRenderValue::Make(module_name);
+                auto method_name = KRRenderValue::Make(method);
                 result = KRArkTSManager::GetInstance().CallArkTSMethod(
                     instance_id, KRNativeCallArkTSMethod::CallModuleMethod, module_name_value, method_name, params,
                     nullptr, nullptr, callback, callback_keep_alive);

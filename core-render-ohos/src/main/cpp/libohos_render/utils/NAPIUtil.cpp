@@ -88,5 +88,29 @@ void GetNApiArgsStdString(const napi_env &env, const napi_value &value, std::str
     kuikly::util::json::EncodingStatsNoteNapiUtf8();
     result.append(buffer.data());
 }
+
+std::u16string getNApiArgsStdU16String(napi_env env, napi_value value) {
+    std::u16string result;
+    GetNApiArgsStdU16String(env, value, result);
+    return result;
+}
+
+void GetNApiArgsStdU16String(const napi_env &env, const napi_value &value, std::u16string &result) {
+    size_t units = 0;
+    if (napi_ok != napi_get_value_string_utf16(env, value, nullptr, 0, &units)) {
+        napi_throw_error(env, "-1003", "napi_get_value_string_utf16 error");
+        return;
+    }
+    std::u16string buffer(units + 1, u'\0');
+    size_t copied = 0;
+    if (napi_ok != napi_get_value_string_utf16(env, value, reinterpret_cast<char16_t *>(buffer.data()), units + 1,
+                                               &copied)) {
+        napi_throw_error(env, "-1005", "napi_get_value_string_utf16 error");
+        return;
+    }
+    buffer.resize(copied);
+    kuikly::util::json::EncodingStatsNoteNapiUtf16();
+    result.append(buffer);
+}
 }  // namespace util
 }  // namespace kuikly

@@ -20,6 +20,7 @@
 #include "libohos_render/foundation/KRConfig.h"
 #include "libohos_render/manager/KRSnapshotManager.h"
 #include "libohos_render/manager/KRWeakObjectManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,10 +103,10 @@ void IKRRenderViewExport::CallMethod(const std::string &method, const KRAnyValue
         // announce params 直接透传 kotlin 侧的 message；focus params 覆盖为 nodeId，
         // 让 ArkTS 侧在 view 未注册（CAPI 组件）时也能拿到 customId 走全局兜底。
         auto forwarded_params =
-            (method == "accessibilityFocus") ? KRRenderValue::MakeUtf16(nodeId) : params;
+            (method == "accessibilityFocus") ? KRRenderValue::Make(kuikly::util::AsciiToUtf16(nodeId)) : params;
         KRArkTSManager::GetInstance().CallArkTSMethod(
             GetInstanceIdValue(), KRNativeCallArkTSMethod::CallViewMethod,
-            KRRenderValue::Make(GetViewTag()), KRRenderValue::MakeUtf16(method),
+            KRRenderValue::Make(GetViewTag()), KRRenderValue::Make(kuikly::util::AsciiToUtf16(method)),
             forwarded_params, nullptr, nullptr, callback);
         return;
     }

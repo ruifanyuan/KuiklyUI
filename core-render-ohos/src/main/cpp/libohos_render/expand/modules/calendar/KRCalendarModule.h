@@ -63,7 +63,7 @@ class KRCalendarModule : public IKRRenderModuleExport {
 
     std::string ZeroPadded(int num, int digits);
 
-    std::string Format(const KRAnyValue &params);
+    std::u16string Format(const KRAnyValue &params);
 
     std::u16string Parse(const KRAnyValue &params);
 

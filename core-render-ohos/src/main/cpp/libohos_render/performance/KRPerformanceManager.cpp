@@ -18,6 +18,7 @@
 #include "libohos_render/expand/modules/performance/KRPerformanceModule.h"
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/performance/KRPerformanceData.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/performance/frame/KRFrameMonitor.h"
 #include "libohos_render/performance/memory//KRMemoryMonitor.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
@@ -202,12 +203,7 @@ void KRPerformanceManager::OnResult() {
 }
 
 void KRPerformanceManager::CallArkTsPerformanceModule(const char16_t *method_name, std::string &data) {
-    auto instance_id = instance_id_value_;
-    KRContextScheduler::ScheduleTaskOnMainThread(false, [instance_id, method_name, data] {
-        KRArkTSManager::GetInstance().CallArkTSMethod(instance_id, KRNativeCallArkTSMethod::CallModuleMethod,
-            KRRenderValue::Make(u"KRPerformanceModule"), KRRenderValue::Make(method_name),
-            KRRenderValue::MakeUtf16(data), nullptr, nullptr, nullptr);
-    });
+    CallArkTsPerformanceModule(method_name, kuikly::util::Utf8ToUtf16(data));
 }
 
 void KRPerformanceManager::CallArkTsPerformanceModule(const char16_t *method_name, const std::u16string &data) {

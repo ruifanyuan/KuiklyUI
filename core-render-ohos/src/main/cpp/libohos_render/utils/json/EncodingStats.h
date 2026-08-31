@@ -31,6 +31,9 @@ void EncodingStatsNoteParseUtf8();
 void EncodingStatsNoteParseUtf16();
 void EncodingStatsNoteNapiUtf8();
 void EncodingStatsNoteNapiUtf16();
+void EncodingStatsNoteConvertUtf8ToUtf16(size_t bytes);
+void EncodingStatsNoteConvertUtf16ToUtf8(size_t units);
+void EncodingStatsNoteAsciiWiden(size_t bytes);
 void EncodingStatsFlush(const char *reason);
 #else
 inline void EncodingStatsNoteNewUtf8(size_t) {}
@@ -41,6 +44,9 @@ inline void EncodingStatsNoteParseUtf8() {}
 inline void EncodingStatsNoteParseUtf16() {}
 inline void EncodingStatsNoteNapiUtf8() {}
 inline void EncodingStatsNoteNapiUtf16() {}
+inline void EncodingStatsNoteConvertUtf8ToUtf16(size_t) {}
+inline void EncodingStatsNoteConvertUtf16ToUtf8(size_t) {}
+inline void EncodingStatsNoteAsciiWiden(size_t) {}
 inline void EncodingStatsFlush(const char *) {}
 #endif
 

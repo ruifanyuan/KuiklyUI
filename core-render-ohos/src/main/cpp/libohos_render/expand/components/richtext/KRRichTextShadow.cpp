@@ -96,7 +96,7 @@ void KRRichTextShadow::SetProp(const std::string &prop_key, const KRAnyValue &pr
         values_ = prop_value->toArray();
         return;
     }
-    props_[kuikly::util::json::Utf8ToUtf16(prop_key.data(), prop_key.size())] = prop_value;
+    props_[kuikly::util::AsciiToUtf16(prop_key)] = prop_value;
 }
 
 /**
@@ -404,8 +404,8 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                 for (const auto &seg : segs) {
                     auto new_map = span.toMap();
                     if (seg.type == kuikly::text::KRTextPostProcessSpan::Type::kText) {
-                        new_map[u"value"] = NewKRRenderValue(seg.text_or_src);
-                        new_map[u"text"] = NewKRRenderValue(seg.text_or_src);
+                        new_map[u"value"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(seg.text_or_src));
+                        new_map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(seg.text_or_src));
                         new_map.erase(u"placeholderWidth");
                         new_map.erase(u"placeholderHeight");
                         new_map.erase(kuikly::richtext::kInternalImageSrcKey);
@@ -424,11 +424,11 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
                             w = fs_vp;
                             h = fs_vp;
                         }
-                        new_map[u"value"] = NewKRRenderValue(std::string(""));
-                        new_map[u"text"] = NewKRRenderValue(std::string(""));
+                        new_map[u"value"] = KRRenderValue::Make(u"");
+                        new_map[u"text"] = KRRenderValue::Make(u"");
                         new_map[u"placeholderWidth"] = NewKRRenderValue(static_cast<double>(w));
                         new_map[u"placeholderHeight"] = NewKRRenderValue(static_cast<double>(h));
-                        new_map[kuikly::richtext::kInternalImageSrcKey] = NewKRRenderValue(seg.text_or_src);
+                        new_map[kuikly::richtext::kInternalImageSrcKey] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(seg.text_or_src));
                     }
                     expanded.push_back(KRRenderValue::Make(new_map));
                 }

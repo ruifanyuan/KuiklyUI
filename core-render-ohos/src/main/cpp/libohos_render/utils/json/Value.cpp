@@ -63,6 +63,7 @@ void AppendUtf8(std::string &out, uint32_t cp) {
 }  // namespace
 
 std::string Utf16ToUtf8(const uint16_t *s, size_t n) {
+    EncodingStatsNoteConvertUtf16ToUtf8(n);
     std::string out;
     out.reserve(n);
     for (size_t i = 0; i < n;) {
@@ -84,6 +85,7 @@ std::string Utf16ToUtf8(const uint16_t *s, size_t n) {
 }
 
 std::u16string Utf8ToUtf16(const char *s, size_t n) {
+    EncodingStatsNoteConvertUtf8ToUtf16(n);
     std::u16string out;
     if (s == nullptr || n == 0) {
         return out;

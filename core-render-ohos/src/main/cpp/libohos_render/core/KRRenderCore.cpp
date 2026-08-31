@@ -22,6 +22,7 @@
 #include "libohos_render/layer/KRRenderLayerHandler.h"
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/view/KRRenderView.h"
 #include "libohos_render/manager/KRRenderManager.h"
@@ -135,7 +136,7 @@ void KRRenderCore::SendEvent(std::string event_name, const std::string &json_dat
     // 历史字符串接口保持字符串下发：这里若解析成 Map 再建 KRJSON，key 顺序会变成
     // unordered_map 的顺序，Kotlin 侧拿到的 JSONObject 顺序与原始文本不再一致。
     // Kotlin 的 PagerManager 同时接受 JSON 字符串与结构化 JSONObject。
-    SendEvent(std::move(event_name), KRRenderValue::MakeUtf16(json_data), need_sync);
+    SendEvent(std::move(event_name), KRRenderValue::Make(kuikly::util::Utf8ToUtf16(json_data)), need_sync);
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
@@ -147,7 +148,7 @@ void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data) {
 }
 
 void KRRenderCore::SendEvent(std::string event_name, const KRAnyValue &data, bool need_sync) {
-    SendEvent(KRRenderValue::MakeUtf16(event_name), data, need_sync);
+    SendEvent(KRRenderValue::Make(kuikly::util::AsciiToUtf16(event_name)), data, need_sync);
 }
 
 void KRRenderCore::SendEvent(const KRAnyValue &event, const KRAnyValue &data) {

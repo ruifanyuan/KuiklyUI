@@ -25,6 +25,7 @@
 #include "libohos_render/foundation/KRConfig.h"
 #include "libohos_render/manager/KRRenderManager.h"
 #include "libohos_render/manager/KRSnapshotManager.h"
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRThreadChecker.h"
 #include "libohos_render/utils/KRURIHelper.h"
 #include "libohos_render/utils/KRStringUtil.h"
@@ -164,6 +165,7 @@ bool KRImageView::ResetProp(const std::string &prop_key) {
     auto didHanded = false;
     if (kuikly::util::isEqual(prop_key, kPropNameSrc)) {
         image_src_ = "";
+        image_src_value_ = KRRenderValue::Make(u"");
         has_loaded_image_ = false;
         loaded_image_size_ = {};
         // src 复位：清空原图尺寸缓存与 source size 幂等门闸，让下一次 src
@@ -264,6 +266,7 @@ bool KRImageView::SetImageSrc(const KRAnyValue &value) {
 
     kuikly::util::ResetArkUIImageSrc(GetNode());
     image_src_ = src;
+    image_src_value_ = value;
     has_loaded_image_ = false;
     loaded_image_size_ = {};
     // src 换了：原图快照失效，source size 幂等门闸放开，让新 src 加载完成
@@ -597,7 +600,7 @@ bool KRImageView::RegisterLoadSuccessCallback(const KRRenderCallback &event_call
     EnsureLoadCompleteEventRegistered();
     if (load_success_callback_ && has_loaded_image_) {
         KRRenderValueMap map;
-        map[u"src"] = NewKRRenderValue(image_src_);
+        map[u"src"] = image_src_value_ ? image_src_value_ : KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
         load_success_callback_(NewKRRenderValue(map));
     }
     return true;
@@ -628,7 +631,7 @@ void KRImageView::FireOnImageErrorEvent(ArkUI_NodeEvent *event) {
     if (load_failure_callback_) {
         int32_t code = kuikly::util::GetImageLoadSuccessStatusCode(event);
         KRRenderValueMap map;
-        map[u"src"] = NewKRRenderValue(image_src_);
+        map[u"src"] = image_src_value_ ? image_src_value_ : KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
         map[kEventNameLoadErrorCode] = NewKRRenderValue(code);
         load_failure_callback_(NewKRRenderValue(map));
     }
@@ -672,7 +675,7 @@ void KRImageView::FireOnImageCompleteEvent(ArkUI_NodeEvent *event) {
 
     if (load_success_callback_) {
         KRRenderValueMap map;
-        map[u"src"] = NewKRRenderValue(image_src_);
+        map[u"src"] = image_src_value_ ? image_src_value_ : KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
         load_success_callback_(NewKRRenderValue(map));
     }
 
@@ -711,6 +714,7 @@ std::shared_ptr<KRImageLoadOption> KRImageView::ToImageLoadOption(const std::str
 void KRImageView::LoadFromSrc(const std::string image_src) {
     image_option_ = ToImageLoadOption(image_src);
     image_src_ = image_option_->src_;
+    image_src_value_ = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(image_src_));
 
     if (image_option_->src_type_ == KRImageSrcType::kImageSrcTypeBase64) {
         LoadFromBase64(image_option_);

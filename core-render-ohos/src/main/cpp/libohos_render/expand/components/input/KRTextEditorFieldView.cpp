@@ -584,7 +584,7 @@ void KRTextEditorFieldView::OnTextDidChanged(ArkUI_NodeEvent *event) {
         state_.text_did_change_callback_ || state_.text_input_state_change_callback_;
     if (state_.text_did_change_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(text);
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(text));
         if (state_.length_limit_type_ != -1) {
             int length = kuikly::text_editor::CalculateRenderedTextLength(state_, text);
             map[u"length"] = NewKRRenderValue(length);
@@ -612,7 +612,7 @@ void KRTextEditorFieldView::OnInputFocus(ArkUI_NodeEvent *event) {
     if (state_.input_focus_callback_) {
         KRRenderValueMap map;
         // 上抛 raw 而非 flat（与 textDidChange 一致），避免业务拿到带占位空格的字符串。
-        map[u"text"] = NewKRRenderValue(state_.cached_text_);
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(state_.cached_text_));
         state_.input_focus_callback_(NewKRRenderValue(map));
     }
 }
@@ -621,7 +621,7 @@ void KRTextEditorFieldView::OnInputBlur(ArkUI_NodeEvent *event) {
     (void)event;
     if (state_.input_blur_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(state_.cached_text_);
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(state_.cached_text_));
         state_.input_blur_callback_(NewKRRenderValue(map));
     }
 }
@@ -630,9 +630,9 @@ void KRTextEditorFieldView::OnInputReturn(ArkUI_NodeEvent *event) {
     (void)event;
     if (state_.input_return_callback_) {
         KRRenderValueMap map;
-        map[u"text"] = NewKRRenderValue(state_.cached_text_);
+        map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(state_.cached_text_));
         map[u"ime_action"] =
-            NewKRRenderValue(kuikly::util::ConvertEnterKeyTypeToString(state_.enter_key_type_));
+            KRRenderValue::Make(kuikly::util::ConvertEnterKeyTypeToString(state_.enter_key_type_));
         state_.input_return_callback_(NewKRRenderValue(map));
         if (state_.auto_hide_KeyBoard_on_ImeAction_) {
             Blur();
@@ -839,7 +839,7 @@ void KRTextEditorFieldView::OnWillChangeText(ArkUI_NodeEvent *event) {
                         strongSelf->state_.is_setting_text_input_state_ = false;
                         if (strongSelf->state_.text_did_change_callback_) {
                             KRRenderValueMap map;
-                            map[u"text"] = NewKRRenderValue(candidate_raw);
+                            map[u"text"] = KRRenderValue::Make(kuikly::util::Utf8ToUtf16(candidate_raw));
                             if (strongSelf->state_.length_limit_type_ != -1) {
                                 int length = kuikly::text_editor::CalculateRenderedTextLength(
                                     strongSelf->state_, candidate_raw);

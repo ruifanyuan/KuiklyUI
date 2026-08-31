@@ -22,6 +22,7 @@
 #include <string>
 #include <thread>
 
+#include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRJSONObject.h"
 
 namespace kuikly {
@@ -97,7 +98,7 @@ void KRFileModule::WriteFile(const KRAnyValue &params, const KRRenderCallback &c
         }
         fwrite(content.c_str(), 1, content.size(), fp);
         fclose(fp);
-        if (callback) callback(MakeResult(u"path", KRRenderValue::MakeUtf16(filePath)));
+        if (callback) callback(MakeResult(u"path", KRRenderValue::Make(kuikly::util::Utf8ToUtf16(filePath))));
     }).detach();
 }
 
@@ -132,7 +133,7 @@ void KRFileModule::AppendFile(const KRAnyValue &params, const KRRenderCallback &
         fwrite(content.c_str(), 1, content.size(), fp);
         fwrite("\n", 1, 1, fp);
         fclose(fp);
-        if (callback) callback(MakeResult(u"path", KRRenderValue::MakeUtf16(filePath)));
+        if (callback) callback(MakeResult(u"path", KRRenderValue::Make(kuikly::util::Utf8ToUtf16(filePath))));
     }).detach();
 }
 
@@ -145,7 +146,7 @@ void KRFileModule::GetFilesDir(const KRRenderCallback &callback) {
     if (dir.empty()) {
         callback(MakeResult(u"error", KRRenderValue::Make(u"context unavailable")));
     } else {
-        callback(MakeResult(u"path", KRRenderValue::MakeUtf16(dir)));
+        callback(MakeResult(u"path", KRRenderValue::Make(kuikly::util::Utf8ToUtf16(dir))));
     }
 }
 

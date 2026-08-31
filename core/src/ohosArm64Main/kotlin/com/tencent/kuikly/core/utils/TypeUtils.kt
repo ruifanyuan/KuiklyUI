@@ -47,7 +47,7 @@ import ohos.KRJSONNewLong
 import ohos.KRJSONNewNull
 import ohos.KRJSONNewStringUtf16
 import ohos.KRJSONRelease
-import ohos.KRJSONObjectPut
+import ohos.KRJSONObjectPutUtf16
 import ohos.KRRenderCValue
 import platform.posix.size_t
 
@@ -102,16 +102,22 @@ private fun toNativeArray(values: List<*>): KRRenderCValue {
 
 @OptIn(ExperimentalForeignApi::class)
 private fun toNativeObject(values: Map<*, *>): KRRenderCValue {
-    val objectValue = ohos.KRJSONNewObject()
+    val objectValue = ohos.KRJSONNewObjectUtf16()
     values.forEach { (rawKey, rawValue) ->
         val key = rawKey as? String ?: return@forEach
         val child = rawValue.toKRRenderCValue()
-        KRJSONObjectPut(
-            objectValue,
-            key,
-            key.encodeToByteArray().size.convert<size_t>(),
-            child,
-        )
+        if (key.isEmpty()) {
+            KRJSONObjectPutUtf16(objectValue, null, 0.convert<size_t>(), child)
+        } else {
+            key.toCharArray().usePinned { pinned ->
+                KRJSONObjectPutUtf16(
+                    objectValue,
+                    pinned.addressOf(0).reinterpret(),
+                    key.length.convert<size_t>(),
+                    child,
+                )
+            }
+        }
         KRJSONRelease(child)
     }
     return objectValue

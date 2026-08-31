@@ -18,7 +18,7 @@
 
 - `KRJSONValue` 是 POD `uint64_t`：**按值拷贝不改变引用计数**。共享所有权必须显式 `KRJSONRetain`，释放用 `KRJSONRelease`。
 - 立即值（标量）无堆分配，`Retain`/`Release` 为 **no-op**；堆对象带原子 `rc`（`std::atomic<int32_t>`，初值 1）。
-- 访问器：标量按值返回；`KRJSONGetString` 只对 `kTagString`（UTF-8）返回借用的 NUL 结尾 `const char*`。`kTagU16String` 必须走 `KRJSONGetStringUtf16`（借用 `const uint16_t*`）。Dump / C++ `stringValue()` 若需要 UTF-8 文本，在调用方把 UTF-16 转成 UTF-8，不写回盒子。ArkTS stringify 的 JSON 文本用 `ParseUtf16` / `KRJSONParseUtf16` 解析：叶子字符串是 `kTagU16String`，object key 仍是 UTF-8。`KRJSONParse` / `Make(std::string)` 保持 UTF-8 盒，不做 utf8→utf16。
+- 访问器：标量按值返回；`KRJSONGetString` 只对 `kTagString`（UTF-8）返回借用的 NUL 结尾 `const char*`。`kTagU16String` 必须走 `KRJSONGetStringUtf16`（借用 `const uint16_t*`）。Dump / C++ `stringValue()` 若需要 UTF-8 文本，在调用方把 UTF-16 转成 UTF-8，不写回盒子。ArkTS stringify 的 JSON 文本用 `ParseUtf16` / `KRJSONParseUtf16` 解析：叶子字符串是 `kTagU16String`，object key 与 parse 编码一致（UTF-16）。Kotlin `toNativeObject` / NAPI `FromNapi` 对象用 `NewObjectUtf16`。`KRJSONParse` / `Make(std::string)` 保持 UTF-8 盒；二进制 `rectData` 也走 UTF-8。`MakeUtf16` 仅用于 C ABI `const char*`（`KRAnyDataCreateString`、native module `char*` 回调）。其余链路在源头产出 `u16string` 再 `Make()`。不做隐藏的 utf8→utf16 存回。
 - 容器访问（`KRJSONArrayGet`/`KRJSONObjectGet`）返回 **borrowed** 值；如需延长寿命，调用方自行 `KRJSONRetain`。
 - 堆对象析构需**手动**递归 `Release` 子 cell（`vector<KRJSONValue>` / map value 是 POD，不会自动释放）。
 

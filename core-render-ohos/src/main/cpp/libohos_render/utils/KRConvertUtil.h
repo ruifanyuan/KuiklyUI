@@ -29,7 +29,7 @@ namespace util {
 
 ArkUI_EnterKeyType ConvertToEnterKeyType(const std::string &enter_key_type);
 
-const std::string ConvertEnterKeyTypeToString(ArkUI_EnterKeyType enter_key_type);
+const std::u16string ConvertEnterKeyTypeToString(ArkUI_EnterKeyType enter_key_type);
 
 ArkUI_TextInputType ConvertToInputType(const std::string &input_type);
 
@@ -65,6 +65,10 @@ ArkUI_FontWeight ConvertArkUIFontWeight(int fontWeight, float scale);
 
 std::u16string AsciiToUtf16(const char *s, size_t n);
 std::u16string AsciiToUtf16(const std::string &s);
+
+std::u16string Utf8ToUtf16(const std::string &s);
+std::u16string Utf8ToUtf16(const char *s, size_t n);
+std::string Utf16ToUtf8(const std::u16string &s);
 
 std::u16string ConvertSizeToString(const KRSize &size);
 
