@@ -49,7 +49,7 @@ enum : uint8_t {
     kTagNull = 0,   // immediate
     kTagBool = 1,   // immediate, payload bit 8 = 0/1
     kTagInt = 2,    // immediate, 56-bit signed int in bits[8..63]
-    kTagDouble = 3,   // heap NumberBox (double bits)
+    kTagDouble = 3,   // heap NumberBox (double bits that are not lossless float)
     kTagInt64 = 4,    // heap NumberBox (int64 out of 56-bit range)
     kTagUint64 = 5,   // heap NumberBox (uint64 > int64 max)
     kTagString = 6,   // heap StringBox (UTF-8)
@@ -57,9 +57,10 @@ enum : uint8_t {
     kTagObject = 8,   // heap ObjectBox
     kTagBytes = 9,    // heap BytesBox (bridge-only, not valid JSON text)
     kTagInt32 = 10,   // immediate bridge Int (preserves Kotlin/C++ type)
-    kTagFloat = 11,   // heap NumberBox (preserves Kotlin/C++ type)
+    kTagFloat = 11,   // immediate, 32-bit IEEE bits in [8..39]; GetType = KRJSON_FLOAT
     kTagLong = 12,    // heap NumberBox (preserves Kotlin/C++ type)
     kTagU16String = 13,  // heap U16StringBox (UTF-16; GetType = KRJSON_U16STRING = 13)
+    kTagDoubleF32 = 14,  // immediate float bits; GetType = KRJSON_DOUBLE (lossless)
     kFirstHeapTag = kTagDouble,
     kTagInvalid = 0xFF,
 };
@@ -150,7 +151,7 @@ static_assert(KRJSON_U16STRING == kTagU16String);
 inline bool IsHeapTag(uint8_t t) {
     return t == kTagDouble || t == kTagInt64 || t == kTagUint64 || t == kTagString ||
            t == kTagArray || t == kTagObject || t == kTagBytes ||
-           t == kTagFloat || t == kTagLong || t == kTagU16String;
+           t == kTagLong || t == kTagU16String;
 }
 inline HeapBox *AsBox(KRJSONValue v) {
     return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;

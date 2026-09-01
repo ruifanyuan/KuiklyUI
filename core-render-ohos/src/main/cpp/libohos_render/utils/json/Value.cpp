@@ -15,8 +15,10 @@
 
 #include "libohos_render/utils/json/Value.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <new>
 
 #include "rapidjson/encodings.h"
@@ -40,6 +42,26 @@ uint64_t DoubleToBits(double d) {
     uint64_t bits;
     std::memcpy(&bits, &d, sizeof(bits));
     return bits;
+}
+uint32_t FloatToBits(float f) {
+    uint32_t bits;
+    std::memcpy(&bits, &f, sizeof(bits));
+    return bits;
+}
+float BitsToFloat(uint32_t bits) {
+    float f;
+    std::memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+float DecodeImmFloat(KRJSONValue v) {
+    return BitsToFloat(static_cast<uint32_t>(v >> 8));
+}
+KRJSONValue EncodeImmFloat(float f, uint8_t tag) {
+    return (static_cast<uint64_t>(FloatToBits(f)) << 8) | tag;
+}
+bool IsDoubleLosslessToFloat(double d) {
+    const float f = static_cast<float>(d);
+    return std::isfinite(d) && static_cast<double>(f) == d;
 }
 
 void AppendUtf8(std::string &out, uint32_t cp) {
@@ -117,6 +139,114 @@ std::u16string Utf8ToUtf16(const char *s, size_t n) {
     return out;
 }
 
+// U16 slab: JsonPlatform p50=10 p80=14 p90=20 p95=20 p99=46. 16-unit slots
+// miss p90 (hit~80%); 32 covers p90/p95. Longer strings stay one-shot malloc.
+constexpr size_t kU16SlabUnits = 32;
+constexpr size_t kU16SlabPayload =
+    sizeof(U16StringBox) + (kU16SlabUnits + 1) * sizeof(uint16_t);
+constexpr size_t kU16SlabSlot = (kU16SlabPayload + 15u) & ~size_t{15};
+constexpr int kU16SlabChunkSlots = 256;
+static_assert(kU16SlabSlot >= kU16SlabPayload);
+static_assert(kU16SlabSlot % alignof(U16StringBox) == 0);
+
+struct U16SlabChunk {
+    U16SlabChunk *next = nullptr;
+    alignas(U16StringBox) char slots[kU16SlabChunkSlots][kU16SlabSlot];
+};
+struct U16FreeNode {
+    U16FreeNode *next;
+};
+
+std::mutex g_u16_slab_mu;
+U16SlabChunk *g_u16_chunks = nullptr;
+U16FreeNode *g_u16_free = nullptr;
+
+constexpr int kU16TlsBatch = 32;
+constexpr int kU16TlsMax = 64;
+
+struct U16TlsCache {
+    U16FreeNode *head = nullptr;
+    int count = 0;
+
+    // Thread exit: return every idle slot so they are not stranded in dead TLS.
+    ~U16TlsCache() { FlushAll(); }
+
+    void FlushAll() {
+        if (head == nullptr) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(g_u16_slab_mu);
+        while (head != nullptr) {
+            U16FreeNode *node = head;
+            head = node->next;
+            node->next = g_u16_free;
+            g_u16_free = node;
+        }
+        count = 0;
+    }
+};
+thread_local U16TlsCache t_u16_cache;
+
+void U16SlabGrow() {
+    auto *chunk = new U16SlabChunk();
+    chunk->next = g_u16_chunks;
+    g_u16_chunks = chunk;
+    for (int i = 0; i < kU16SlabChunkSlots; ++i) {
+        auto *node = reinterpret_cast<U16FreeNode *>(&chunk->slots[i][0]);
+        node->next = g_u16_free;
+        g_u16_free = node;
+    }
+}
+
+void U16RefillTls() {
+    std::lock_guard<std::mutex> lock(g_u16_slab_mu);
+    if (g_u16_free == nullptr) {
+        U16SlabGrow();
+    }
+    int n = 0;
+    while (g_u16_free != nullptr && n < kU16TlsBatch) {
+        U16FreeNode *node = g_u16_free;
+        g_u16_free = node->next;
+        node->next = t_u16_cache.head;
+        t_u16_cache.head = node;
+        ++t_u16_cache.count;
+        ++n;
+    }
+}
+
+void U16SpillTls() {
+    std::lock_guard<std::mutex> lock(g_u16_slab_mu);
+    int n = 0;
+    while (t_u16_cache.head != nullptr && n < kU16TlsBatch) {
+        U16FreeNode *node = t_u16_cache.head;
+        t_u16_cache.head = node->next;
+        --t_u16_cache.count;
+        node->next = g_u16_free;
+        g_u16_free = node;
+        ++n;
+    }
+}
+
+void *U16SlabAlloc() {
+    if (t_u16_cache.head == nullptr) {
+        U16RefillTls();
+    }
+    U16FreeNode *node = t_u16_cache.head;
+    t_u16_cache.head = node->next;
+    --t_u16_cache.count;
+    return node;
+}
+
+void U16SlabFree(void *p) {
+    auto *node = static_cast<U16FreeNode *>(p);
+    node->next = t_u16_cache.head;
+    t_u16_cache.head = node;
+    ++t_u16_cache.count;
+    if (t_u16_cache.count > kU16TlsMax) {
+        U16SpillTls();
+    }
+}
+
 // ---- StringBox / U16StringBox: single tail allocation ----
 StringBox *StringBox::Create(const char *s, size_t n) {
     // Guard against uint32 len truncation and size_t overflow in the allocation
@@ -146,7 +276,9 @@ U16StringBox *U16StringBox::Create(const uint16_t *s, size_t n) {
         n = 0;
         s = nullptr;
     }
-    void *mem = ::operator new(sizeof(U16StringBox) + (n + 1) * sizeof(uint16_t));
+    const bool slab = n <= kU16SlabUnits;
+    const size_t bytes = slab ? kU16SlabSlot : sizeof(U16StringBox) + (n + 1) * sizeof(uint16_t);
+    void *mem = slab ? U16SlabAlloc() : ::operator new(bytes);
     auto *box = new (mem) U16StringBox();
     box->len = static_cast<uint32_t>(n);
     uint16_t *dst = box->data();
@@ -157,8 +289,13 @@ U16StringBox *U16StringBox::Create(const uint16_t *s, size_t n) {
     return box;
 }
 void U16StringBox::Free(U16StringBox *b) {
+    const bool slab = b->len <= kU16SlabUnits;
     b->~U16StringBox();
-    ::operator delete(static_cast<void *>(b));
+    if (slab) {
+        U16SlabFree(b);
+    } else {
+        ::operator delete(static_cast<void *>(b));
+    }
 }
 
 BytesBox *BytesBox::Create(const uint8_t *s, size_t n) {
@@ -214,9 +351,14 @@ void Release(KRJSONValue v) {
     if (b->rc.fetch_sub(1, std::memory_order_acq_rel) == 1) {
         switch (TagOf(v)) {
             case kTagDouble:
+                delete static_cast<NumberBox *>(b);
+                break;
             case kTagInt64:
+                delete static_cast<NumberBox *>(b);
+                break;
             case kTagUint64:
-            case kTagFloat:
+                delete static_cast<NumberBox *>(b);
+                break;
             case kTagLong:
                 delete static_cast<NumberBox *>(b);
                 break;
@@ -273,15 +415,15 @@ KRJSONValue NewUint(uint64_t x) {
     return EncodePtr(box, x <= static_cast<uint64_t>(INT64_MAX) ? kTagInt64 : kTagUint64);
 }
 KRJSONValue NewDouble(double d) {
+    if (IsDoubleLosslessToFloat(d)) {
+        return EncodeImmFloat(static_cast<float>(d), kTagDoubleF32);
+    }
     auto *box = new NumberBox();
     box->bits = DoubleToBits(d);
     return EncodePtr(box, kTagDouble);
 }
 KRJSONValue NewFloat(float f) {
-    auto *box = new NumberBox();
-    double d = static_cast<double>(f);
-    box->bits = DoubleToBits(d);
-    return EncodePtr(box, kTagFloat);
+    return EncodeImmFloat(f, kTagFloat);
 }
 KRJSONValue NewString(const char *s, size_t n) {
     return EncodePtr(StringBox::Create(s, n), kTagString);
@@ -379,6 +521,7 @@ KRJSONType GetType(KRJSONValue v) {
         case kTagUint64:
             return KRJSON_UINT;
         case kTagDouble:
+        case kTagDoubleF32:
             return KRJSON_DOUBLE;
         case kTagFloat:
             return KRJSON_FLOAT;
@@ -411,8 +554,10 @@ int64_t GetInt(KRJSONValue v, int64_t default_value) {
         case kTagLong:
             return static_cast<int64_t>(static_cast<NumberBox *>(AsBox(v))->bits);
         case kTagDouble:
-        case kTagFloat:
             return static_cast<int64_t>(BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits));
+        case kTagFloat:
+        case kTagDoubleF32:
+            return static_cast<int64_t>(DecodeImmFloat(v));
         default:
             return default_value;
     }
@@ -428,8 +573,10 @@ uint64_t GetUint(KRJSONValue v, uint64_t default_value) {
         case kTagLong:
             return static_cast<NumberBox *>(AsBox(v))->bits;
         case kTagDouble:
-        case kTagFloat:
             return static_cast<uint64_t>(BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits));
+        case kTagFloat:
+        case kTagDoubleF32:
+            return static_cast<uint64_t>(DecodeImmFloat(v));
         default:
             return default_value;
     }
@@ -437,8 +584,10 @@ uint64_t GetUint(KRJSONValue v, uint64_t default_value) {
 double GetDouble(KRJSONValue v, double default_value) {
     switch (TagOf(v)) {
         case kTagDouble:
-        case kTagFloat:
             return BitsToDouble(static_cast<NumberBox *>(AsBox(v))->bits);
+        case kTagFloat:
+        case kTagDoubleF32:
+            return static_cast<double>(DecodeImmFloat(v));
         case kTagInt:
             return static_cast<double>(DecodeInt56(v));
         case kTagInt32:
