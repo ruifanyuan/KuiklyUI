@@ -35,6 +35,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.set
 import kotlinx.cinterop.usePinned
 import ohos.KRJSONArrayAppend
 import ohos.KRJSONNewArray
@@ -45,6 +46,7 @@ import ohos.KRJSONNewFloat
 import ohos.KRJSONNewInt32
 import ohos.KRJSONNewLong
 import ohos.KRJSONNewNull
+import ohos.KRJSONGetStringUtf16
 import ohos.KRJSONNewStringUtf16
 import ohos.KRJSONRelease
 import ohos.KRJSONObjectPutUtf16
@@ -64,16 +66,7 @@ fun Any?.toKRRenderCValue(): KRRenderCValue {
         is Long -> KRJSONNewLong(this)
         is Float -> KRJSONNewFloat(this)
         is Double -> KRJSONNewDouble(this)
-        is String -> if (isEmpty()) {
-            KRJSONNewStringUtf16(null, 0.convert<size_t>())
-        } else {
-            toCharArray().usePinned { pinned ->
-                KRJSONNewStringUtf16(
-                    pinned.addressOf(0).reinterpret(),
-                    length.convert<size_t>(),
-                )
-            }
-        }
+        is String -> toUtf16Json()
         is ByteArray -> usePinned {
             KRJSONNewBytes(
                 if (isEmpty()) null else it.addressOf(0).reinterpret(),
@@ -87,6 +80,20 @@ fun Any?.toKRRenderCValue(): KRRenderCValue {
         is JSONArray -> toNativeArray(values)
         else -> KRJSONNewNull()
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun String.toUtf16Json(): KRRenderCValue {
+    val n = length
+    val owned = KRJSONNewStringUtf16(null, n.convert<size_t>())
+    if (n == 0) {
+        return owned
+    }
+    val dst = KRJSONGetStringUtf16(owned, null) ?: return owned
+    for (i in 0 until n) {
+        dst[i] = this[i].code.toUShort()
+    }
+    return owned
 }
 
 @OptIn(ExperimentalForeignApi::class)

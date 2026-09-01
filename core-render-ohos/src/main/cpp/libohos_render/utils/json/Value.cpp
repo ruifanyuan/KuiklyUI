@@ -161,6 +161,24 @@ void U16StringBox::Free(U16StringBox *b) {
     ::operator delete(static_cast<void *>(b));
 }
 
+BytesBox *BytesBox::Create(const uint8_t *s, size_t n) {
+    if (s == nullptr || n == 0 || n > UINT32_MAX || n > SIZE_MAX - sizeof(BytesBox)) {
+        n = 0;
+        s = nullptr;
+    }
+    void *mem = ::operator new(sizeof(BytesBox) + n);
+    auto *box = new (mem) BytesBox();
+    box->len = static_cast<uint32_t>(n);
+    if (n > 0 && s != nullptr) {
+        std::memcpy(box->data(), s, n);
+    }
+    return box;
+}
+void BytesBox::Free(BytesBox *b) {
+    b->~BytesBox();
+    ::operator delete(static_cast<void *>(b));
+}
+
 // ---- container destructors: release children (POD words don't auto-release) ----
 ArrayBox::~ArrayBox() {
     for (KRJSONValue item : items) {
@@ -215,7 +233,7 @@ void Release(KRJSONValue v) {
                 delete static_cast<ObjectBox *>(b);
                 break;
             case kTagBytes:
-                delete static_cast<BytesBox *>(b);
+                BytesBox::Free(static_cast<BytesBox *>(b));
                 break;
             default:
                 break;
@@ -272,11 +290,7 @@ KRJSONValue NewStringUtf16(const uint16_t *s, size_t n) {
     return EncodePtr(U16StringBox::Create(s, n), kTagU16String);
 }
 KRJSONValue NewBytes(const uint8_t *data, size_t n) {
-    auto *box = new BytesBox();
-    if (data != nullptr && n > 0) {
-        box->data.assign(data, data + n);
-    }
-    return EncodePtr(box, kTagBytes);
+    return EncodePtr(BytesBox::Create(data, n), kTagBytes);
 }
 KRJSONValue NewArray() {
     return EncodePtr(new ArrayBox(), kTagArray);
@@ -466,11 +480,11 @@ const uint16_t *GetStringUtf16(KRJSONValue v, size_t *out_units) {
 }
 const uint8_t *GetBytes(KRJSONValue v, size_t *out_len) {
     if (TagOf(v) == kTagBytes) {
-        const auto &data = static_cast<BytesBox *>(AsBox(v))->data;
+        auto *box = static_cast<BytesBox *>(AsBox(v));
         if (out_len != nullptr) {
-            *out_len = data.size();
+            *out_len = box->len;
         }
-        return data.empty() ? nullptr : data.data();
+        return box->len == 0 ? nullptr : box->data();
     }
     if (out_len != nullptr) {
         *out_len = 0;
@@ -486,7 +500,7 @@ size_t GetSize(KRJSONValue v) {
             return box->keys_utf16 ? box->utf16.size() : box->utf8.size();
         }
         case kTagBytes:
-            return static_cast<BytesBox *>(AsBox(v))->data.size();
+            return static_cast<BytesBox *>(AsBox(v))->len;
         default:
             return 0;
     }

@@ -42,7 +42,7 @@ bits[8..63]  = 立即值 payload  或  48 位指针（堆类型：ptr = v >> 8�
 | kTagString(6) | string | 堆 `StringBox`：UTF-8 `[rc][len bytes][bytes][NUL]`；`GetType` = `KRJSON_STRING`(6) |
 | kTagArray(7)  | array | 堆 `ArrayBox { rc; vector<KRJSONValue> }` |
 | kTagObject(8) | object | 堆 `ObjectBox { rc; vector<pair<string,KRJSONValue>> }`（保序，线性查找；对小对象比 hash map 更快、更省分配） |
-| kTagBytes(9)  | bytes | 堆 `BytesBox`（桥接扩展） |
+| kTagBytes(9)  | bytes | 堆 `BytesBox`（一次尾部分配，`[rc][len][bytes]`，不可变） |
 | kTagInt32(10) | 整数 | 立即值；`GetType` 折叠为 `KRJSON_INT`(2) |
 | kTagFloat(11) | float | 堆 `NumberBox`；`GetType` = `KRJSON_FLOAT`(11) |
 | kTagLong(12)  | long | 堆 `NumberBox`；`GetType` = `KRJSON_LONG`(12) |

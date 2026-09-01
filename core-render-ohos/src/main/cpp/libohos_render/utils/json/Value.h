@@ -94,8 +94,13 @@ struct U16StringBox : HeapBox {
 static_assert(sizeof(U16StringBox) % alignof(uint16_t) == 0,
               "UTF-16 payload follows U16StringBox and must be 2-byte aligned");
 
+// Immutable bytes: [HeapBox rc][uint32 len][bytes]. One allocation; no vector.
 struct BytesBox : HeapBox {
-    std::vector<uint8_t> data;
+    uint32_t len = 0;
+    const uint8_t *data() const { return reinterpret_cast<const uint8_t *>(this + 1); }
+    uint8_t *data() { return reinterpret_cast<uint8_t *>(this + 1); }
+    static BytesBox *Create(const uint8_t *s, size_t n);
+    static void Free(BytesBox *b);
 };
 
 // Array box: children stored by value as KRJSONValue words (each retained).
