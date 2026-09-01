@@ -65,8 +65,6 @@ struct KRGestureEventData {
     KRPoint gesture_event_window_point_;
     ArkUI_GestureEventActionType action_type_ = GESTURE_EVENT_ACTION_CANCEL;
     float scale_ = 1.0f;
-    // 原始事件指针仅保留作兼容；不得在回调返回后（尤其是延迟任务中）解引用。
-    ArkUI_GestureEvent *gesture_event_ = nullptr;
 };
 
 using KRGestureEventCallback = std::function<void(const ArkUI_NodeHandle node_handle,
