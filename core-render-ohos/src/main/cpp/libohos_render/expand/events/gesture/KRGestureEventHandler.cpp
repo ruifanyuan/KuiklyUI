@@ -173,7 +173,10 @@ void KRTapGestureEventHandler::OnGestureEvent(ArkUI_GestureEvent *event) {
                 auto weak_self = weak_from_this();
                 KRMainThread::RunOnMainThread(
                     [weak_self] {
-                        auto self = weak_self.lock();
+                        // weak_from_this() 返回基类 weak_ptr，需 downcast 到派生类才能访问
+                        // current_tap_count_ / tap_event_data_ / Reset() 及 protected 成员 node_ / gesture_callback_；
+                        // 此处 lambda 位于 KRTapGestureEventHandler 成员函数作用域内，对派生类对象拥有访问权限。
+                        auto self = std::dynamic_pointer_cast<KRTapGestureEventHandler>(weak_self.lock());
                         if (!self) {
                             return;
                         }
