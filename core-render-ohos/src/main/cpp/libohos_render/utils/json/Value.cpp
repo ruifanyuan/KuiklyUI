@@ -391,6 +391,9 @@ void Release(KRJSONValue v) {
             case kTagBytes:
                 BytesBox::Free(static_cast<BytesBox *>(b));
                 break;
+            case kTagNapi:
+                delete static_cast<OpaqueBox *>(b);
+                break;
             default:
                 break;
         }
@@ -465,6 +468,25 @@ KRJSONValue NewObject() {
 }
 KRJSONValue NewObjectUtf16() {
     return EncodePtr(new ObjectBox(ObjectBox::Utf16Keys{}), kTagObject);
+}
+KRJSONValue NewOpaque(const void *a, const void *b) {
+    auto *box = new OpaqueBox();
+    box->a = a;
+    box->b = b;
+    return EncodePtr(box, kTagNapi);
+}
+bool GetOpaque(KRJSONValue v, const void **a, const void **b) {
+    if (TagOf(v) != kTagNapi) {
+        return false;
+    }
+    auto *box = static_cast<OpaqueBox *>(AsBox(v));
+    if (a != nullptr) {
+        *a = box->a;
+    }
+    if (b != nullptr) {
+        *b = box->b;
+    }
+    return true;
 }
 
 void ArrayAppend(KRJSONValue array, KRJSONValue child) {

@@ -45,6 +45,21 @@ namespace json {
 static_assert(sizeof(void *) == 8, "KRJSONValue tagging assumes 64-bit pointers");
 
 // Storage tags stored in the low byte of a KRJSONValue.
+//
+// Two families share this space: "immediate" tags (the value is encoded inline
+// in the high 56 bits) and "heap" tags (the high bits are a pointer to a
+// reference-counted HeapBox). They are INTERLEAVED, not two contiguous ranges
+// (e.g. kTagInt32/kTagFloat/kTagDoubleF32 are immediates sitting between heap
+// tags), so heap-ness is decided by the explicit set in IsHeapTag() — never by
+// a `t < N` range check.
+//
+// ⚠️ When you ADD, REMOVE, or CHANGE the heap-ness of a tag, you MUST keep these
+// in sync, or values will leak / be double-freed / be mis-decoded as pointers:
+//   1. IsHeapTag()'s kHeapTagMask (below) — the single source of truth for
+//      "is this a heap tag". AsBox()/Retain()/Release() all rely on it.
+//   2. The Release() switch in Value.cpp — how each heap tag frees its box.
+//   3. GetType() in Value.cpp — the tag -> public KRJSONType mapping.
+//   4. The mask is uint32 + a `t < 32` guard, so tag values MUST stay < 32.
 enum : uint8_t {
     kTagNull = 0,   // immediate
     kTagBool = 1,   // immediate, payload bit 8 = 0/1
@@ -61,6 +76,8 @@ enum : uint8_t {
     kTagLong = 12,    // heap NumberBox (preserves Kotlin/C++ type)
     kTagU16String = 13,  // heap U16StringBox (UTF-16; GetType = KRJSON_U16STRING = 13)
     kTagDoubleF32 = 14,  // immediate float bits; GetType = KRJSON_DOUBLE (lossless)
+    kTagNapi = 15,   // heap OpaqueBox: two opaque pointers (render-layer NAPI
+                     // handle side-channel). GetType = KRJSON_NULL (not real JSON).
     kFirstHeapTag = kTagDouble,
     kTagInvalid = 0xFF,
 };
@@ -131,6 +148,15 @@ struct ObjectBox : HeapBox {
     ~ObjectBox();  // releases every value, destroys the active union member
 };
 
+// Two opaque pointers behind one refcounted heap word. The JSON layer stays
+// NAPI-agnostic (plain void*); the render layer (KRRenderValue) uses this to
+// carry a {napi_env, napi_value} handle without a separate shared_ptr member on
+// every value. Never appears in parsed JSON; GetType reports KRJSON_NULL.
+struct OpaqueBox : HeapBox {
+    const void *a = nullptr;
+    const void *b = nullptr;
+};
+
 // ---- tag / encode / decode helpers ----
 inline uint8_t TagOf(KRJSONValue v) {
     return static_cast<uint8_t>(v & 0xFFu);
@@ -149,16 +175,28 @@ static_assert(KRJSON_LONG == kTagLong);
 static_assert(KRJSON_U16STRING == kTagU16String);
 
 inline bool IsHeapTag(uint8_t t) {
-    // Branch-free membership test. This is on the hottest path in the render
-    // layer (AsBox → every Retain/Release/GetType/accessor calls it); a real
-    // profile showed the old 9-way `||` chain costing ~6% of the bridge thread.
-    // The mask is built from the tag enum, so it can't drift out of sync.
-    // kTagInvalid (0xFF) and any out-of-range byte fall out via the `t < 32`
-    // guard, keeping the shift well-defined.
+    // Set-membership test "is tag t a heap-backed type?", encoded as a bitmask:
+    // bit t of kHeapTagMask is 1 iff tag t is a heap tag. The heap tags are not a
+    // contiguous range (immediate tags interleave), so this cannot be a `t >= N`
+    // range check — a bitmask captures the arbitrary set in one word.
+    //
+    //   (kHeapTagMask >> t) & 1   shifts bit t down to bit 0, then reads it;
+    //                             equivalent to (kHeapTagMask & (1u << t)) != 0.
+    //   t < 32u                   is REQUIRED: (a) shifting a uint32 by >= 32 is
+    //                             UB, and t comes from `v & 0xFF` so it can be up
+    //                             to 255 (kTagInvalid = 0xFF, or a corrupt byte);
+    //                             (b) any tag >= 16 is not a heap tag -> false.
+    //
+    // This is the hottest predicate in the render layer (AsBox -> every
+    // Retain/Release/GetType/accessor calls it); a profile showed the earlier
+    // 9-way `||` chain costing ~6% of the bridge thread. The mask is built from
+    // the tag enum (not a magic literal) so it can't silently drift — but adding
+    // a heap tag still requires adding its `(1u << kTagX)` term here (see the
+    // sync checklist on the tag enum above).
     constexpr uint32_t kHeapTagMask =
         (1u << kTagDouble) | (1u << kTagInt64) | (1u << kTagUint64) | (1u << kTagString) |
         (1u << kTagArray) | (1u << kTagObject) | (1u << kTagBytes) |
-        (1u << kTagLong) | (1u << kTagU16String);
+        (1u << kTagLong) | (1u << kTagU16String) | (1u << kTagNapi);
     return t < 32u && ((kHeapTagMask >> t) & 1u) != 0u;
 }
 inline HeapBox *AsBox(KRJSONValue v) {
@@ -211,6 +249,10 @@ KRJSONValue NewBytes(const uint8_t *data, size_t n);
 KRJSONValue NewArray();
 KRJSONValue NewObject();
 KRJSONValue NewObjectUtf16();
+/** Box two opaque pointers (render-layer NAPI handle side-channel). Owned. */
+KRJSONValue NewOpaque(const void *a, const void *b);
+/** Read back the two pointers from a kTagNapi word. false (and untouched) otherwise. */
+bool GetOpaque(KRJSONValue v, const void **a, const void **b);
 void ArrayAppend(KRJSONValue array, KRJSONValue child);
 void ArraySet(KRJSONValue array, size_t index, KRJSONValue child);
 void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);

@@ -61,14 +61,13 @@ using KRRenderValueArray = std::vector<KRRenderValue>;
 /**
  * Compatibility façade over the unified KRJSONValue storage.
  *
- * Every ordinary bridge value is represented by one tagged KRJSONValue word.
- * This façade is an RAII value type: copy retains, move transfers and destruction
- * releases the word. Raw NAPI handles are an ArkTS-only side channel (snapshot
- * PixelMap/drawableDescriptor) and must never cross the Kotlin ABI.
- *
- * TODO: drop `raw_napi_` from the hot object. `shared_ptr` dominates the size of
- * this type versus the 8-byte KRJSONValue; move raw NAPI onto a dedicated callback
- * payload so ordinary values stay a tagged word (+ empty sentinel).
+ * Every value — including the ArkTS-only raw NAPI handle side channel (snapshot
+ * PixelMap/drawableDescriptor, which must never cross the Kotlin ABI) — is
+ * exactly one 8-byte tagged KRJSONValue word: NAPI handles live in a kTagNapi
+ * OpaqueBox. This façade is therefore a trivially-small RAII value type — copy
+ * retains the word, move transfers it, destruction releases it — with no
+ * per-value shared_ptr. (Retain/Release are no-ops for immediates and one atomic
+ * for heap-backed words.)
  */
 class KRRenderValue {
  public:
@@ -82,26 +81,24 @@ class KRRenderValue {
     KRRenderValue(std::nullptr_t) {}
 
     KRRenderValue(const KRRenderValue &other)
-        : value_(kuikly::util::json::Retain(other.value_)), raw_napi_(other.raw_napi_) {}
+        : value_(kuikly::util::json::Retain(other.value_)) {}
 
     KRRenderValue &operator=(const KRRenderValue &other) {
         if (this != &other) {
             const KRJSONValue retained = kuikly::util::json::Retain(other.value_);
             kuikly::util::json::Release(value_);
             value_ = retained;
-            raw_napi_ = other.raw_napi_;
         }
         return *this;
     }
 
     KRRenderValue(KRRenderValue &&other) noexcept
-        : value_(std::exchange(other.value_, KRJSON_INVALID)), raw_napi_(std::move(other.raw_napi_)) {}
+        : value_(std::exchange(other.value_, KRJSON_INVALID)) {}
 
     KRRenderValue &operator=(KRRenderValue &&other) noexcept {
         if (this != &other) {
             kuikly::util::json::Release(value_);
             value_ = std::exchange(other.value_, KRJSON_INVALID);
-            raw_napi_ = std::move(other.raw_napi_);
         }
         return *this;
     }
@@ -109,7 +106,6 @@ class KRRenderValue {
     KRRenderValue &operator=(std::nullptr_t) {
         kuikly::util::json::Release(value_);
         value_ = KRJSON_INVALID;
-        raw_napi_.reset();
         return *this;
     }
 
@@ -118,7 +114,7 @@ class KRRenderValue {
     }
 
     explicit operator bool() const {
-        return value_ != KRJSON_INVALID || raw_napi_ != nullptr;
+        return value_ != KRJSON_INVALID;
     }
     bool operator==(std::nullptr_t) const { return !static_cast<bool>(*this); }
     bool operator!=(std::nullptr_t) const { return static_cast<bool>(*this); }
@@ -155,14 +151,14 @@ class KRRenderValue {
     }
 
     static KRRenderValue Make(NapiValue value) {
-        return MakeOwned(Build(), std::make_shared<NapiValue>(value));
+        return MakeOwned(kuikly::util::json::NewOpaque(value.env, value.value));
     }
 
     KRJSONValue jsonValue() const {
         return value_;
     }
 
-    bool isNull() const { return !raw_napi_ && type() == KRJSON_NULL; }
+    bool isNull() const { return type() == KRJSON_NULL && !isNapiValue(); }
     bool isBool() const { return type() == KRJSON_BOOL; }
     bool isInt() const { return kuikly::util::json::TagOf(value_) == kuikly::util::json::kTagInt32; }
     bool isLong() const { return kuikly::util::json::TagOf(value_) == kuikly::util::json::kTagLong; }
@@ -172,7 +168,9 @@ class KRRenderValue {
     bool isMap() const { return type() == KRJSON_OBJECT; }
     bool isArray() const { return type() == KRJSON_ARRAY; }
     bool isByteArray() const { return type() == KRJSON_BYTES; }
-    bool isNapiValue() const { return raw_napi_ != nullptr; }
+    bool isNapiValue() const {
+        return kuikly::util::json::TagOf(value_) == kuikly::util::json::kTagNapi;
+    }
 
     // toMap()/toArray() parse a JSON *string* payload transparently. Point
     // queries keep that conversion explicit and single-shot: bridge payloads
@@ -246,7 +244,13 @@ class KRRenderValue {
     static KRRenderValue Parse(const std::string &json) { return MakeParsed(json); }
 
     NapiValue toNapiValue() const {
-        return raw_napi_ ? *raw_napi_ : NapiValue(nullptr, nullptr);
+        const void *env = nullptr;
+        const void *handle = nullptr;
+        if (!kuikly::util::json::GetOpaque(value_, &env, &handle)) {
+            return NapiValue(nullptr, nullptr);
+        }
+        return NapiValue(static_cast<napi_env>(const_cast<void *>(env)),
+                         static_cast<napi_value>(const_cast<void *>(handle)));
     }
 
     bool toBool() const {
@@ -496,7 +500,7 @@ class KRRenderValue {
     }
 
     KRJSONValue toCValue() const {
-        return !static_cast<bool>(*this) || raw_napi_ ? kuikly::util::json::NewNull() : value_;
+        return !static_cast<bool>(*this) || isNapiValue() ? kuikly::util::json::NewNull() : value_;
     }
 
     // Bridge conversions live in KRRenderValue.cpp so this header stays free of
@@ -506,12 +510,10 @@ class KRRenderValue {
     void ToJsVmValue(JSVM_Env env, JSVM_Value *result, JSVM_Status &status) const;
 
  private:
-    explicit KRRenderValue(KRJSONValue value, std::shared_ptr<NapiValue> raw_napi = nullptr)
-        : value_(value), raw_napi_(std::move(raw_napi)) {}
+    explicit KRRenderValue(KRJSONValue value) : value_(value) {}
 
-    static KRRenderValue MakeOwned(
-        KRJSONValue value, std::shared_ptr<NapiValue> raw_napi = nullptr) {
-        return KRRenderValue(value, std::move(raw_napi));
+    static KRRenderValue MakeOwned(KRJSONValue value) {
+        return KRRenderValue(value);
     }
 
     static KRJSONValue Build() { return kuikly::util::json::NewNull(); }
@@ -628,12 +630,10 @@ class KRRenderValue {
     JSVM_Status ToJsVmBytes(JSVM_Env env, JSVM_Value *result) const;
 
     KRJSONType type() const {
-        return raw_napi_ ? KRJSON_NULL : kuikly::util::json::GetType(value_);
+        return kuikly::util::json::GetType(value_);
     }
 
     KRJSONValue value_ = KRJSON_INVALID;
-    // TODO: not on the hot path — see class comment. Snapshot callbacks only.
-    std::shared_ptr<NapiValue> raw_napi_;
 };
 
 // Reuse a U16 string box across ArkUI UTF-8 get/set. SetFromBox keeps the Kotlin

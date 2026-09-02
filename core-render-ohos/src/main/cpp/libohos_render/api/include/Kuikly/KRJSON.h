@@ -44,8 +44,13 @@ typedef uint64_t KRJSONValue;
 #define KRJSON_INVALID ((KRJSONValue)0xFFu)
 
 /**
- * Public type equals the storage `kTag*` value, except `kTagInt32` / `kTagInt64`
- * which still report `KRJSON_INT`. Holes 4 and 10 are those collapsed tags.
+ * Public type equals the storage `kTag*` value, except for tags that collapse
+ * onto another public type, which leaves holes in this enum:
+ *   - 4  (kTagInt64)     -> KRJSON_INT
+ *   - 10 (kTagInt32)     -> KRJSON_INT
+ *   - 14 (kTagDoubleF32) -> KRJSON_DOUBLE (lossless float-inlined double)
+ *   - 15 (kTagNapi)      -> KRJSON_NULL   (render-internal raw NAPI handle; never
+ *                                          crosses this ABI, so it has no public type)
  */
 typedef enum {
     KRJSON_NULL = 0,        /* kTagNull */

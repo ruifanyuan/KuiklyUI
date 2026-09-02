@@ -207,8 +207,8 @@ KRJSONValue KRRenderValue::FromJsVm(JSVM_Env env, JSVM_Value value, int depth) {
 }
 
 void KRRenderValue::ToNapiValue(const napi_env &env, napi_value *result, napi_status &status) const {
-    if (raw_napi_) {
-        *result = raw_napi_->value;
+    if (isNapiValue()) {
+        *result = toNapiValue().value;
         status = napi_ok;
         return;
     }
