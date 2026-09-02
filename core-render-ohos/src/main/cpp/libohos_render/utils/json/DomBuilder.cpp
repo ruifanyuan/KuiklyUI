@@ -50,11 +50,11 @@ bool DomBuilder::AddValue(KRJSONValue owned) {
             return false;  // value without a preceding key
         }
         if (top.key_is_utf16) {
-            ObjectPutUtf16(top.container, reinterpret_cast<const uint16_t *>(top.key16.data()),
-                           top.key16.size(), owned);
+            ObjectAppendUtf16NoDedup(top.container, reinterpret_cast<const uint16_t *>(top.key16.data()),
+                                     top.key16.size(), owned);
             top.key16.clear();
         } else {
-            ObjectPut(top.container, top.key.data(), top.key.size(), owned);
+            ObjectAppendNoDedup(top.container, top.key.data(), top.key.size(), owned);
             top.key.clear();
         }
         Release(owned);
@@ -124,6 +124,11 @@ bool DomBuilder::OnKeyUtf16(const uint16_t *data, size_t units) {
     return true;
 }
 bool DomBuilder::OnEndObject(size_t /*member_count*/) {
+    // Members were appended without dedup for O(n) build; collapse any duplicate
+    // keys once here (last value wins) before the object is placed in its parent.
+    if (!stack_.empty()) {
+        ObjectDedupLast(stack_.back().container);
+    }
     return CloseContainer();
 }
 

@@ -119,6 +119,13 @@ bool Reader::ParseSax(const char *data, size_t length, SaxHandler &handler, std:
     }
     // MemoryStream reads exactly `length` bytes and yields '\0' past the end,
     // so a non-NUL-terminated caller buffer is never over-read.
+    //
+    // Deliberate: no kParseFullPrecisionFlag. Default (normal) precision uses
+    // RapidJSON's fast strtod, which can differ from the correctly-rounded
+    // double by up to 1 ULP on rare hard decimal inputs. This is a speed/size
+    // tradeoff for this perf-sensitive render path; the structure and all
+    // exactly-representable numbers still round-trip. Flip the flag here (and in
+    // ParseUtf16) if a caller ever needs guaranteed correct rounding.
     rapidjson::Reader reader;
     rapidjson::MemoryStream stream(data, length);
     SaxAdapter adapter(handler);
@@ -149,6 +156,7 @@ KRJSONValue Reader::ParseUtf16(const uint16_t *data, size_t units, std::string *
         return KRJSON_INVALID;
     }
     using Encoding = rapidjson::UTF16<char16_t>;
+    // Default (normal) precision on purpose — see the note in ParseSax.
     rapidjson::GenericReader<Encoding, Encoding> reader;
     Utf16MemoryStream stream(data, units);
     DomBuilder builder;

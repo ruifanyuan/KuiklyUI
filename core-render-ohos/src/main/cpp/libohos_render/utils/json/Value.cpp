@@ -16,10 +16,13 @@
 #include "libohos_render/utils/json/Value.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <new>
+#include <string_view>
+#include <unordered_map>
 
 #include "rapidjson/encodings.h"
 #include "rapidjson/stringbuffer.h"
@@ -28,6 +31,17 @@
 namespace kuikly {
 namespace util {
 namespace json {
+
+// Never-returns: the Scheme A tagging invariant (heap pointer fits in 56 bits)
+// has been violated, which means every subsequent AsBox() would decode a
+// corrupted address. Fail loudly and immediately instead of corrupting memory.
+[[noreturn]] void CrashOnPointerTagViolation(uintptr_t p) {
+    std::fprintf(stderr,
+                 "[KRJSON] fatal: heap pointer %p exceeds 56-bit VA; Scheme A "
+                 "tagging assumption broken (TBI/MTE or >56-bit address?)\n",
+                 reinterpret_cast<void *>(p));
+    std::abort();
+}
 
 namespace {
 constexpr int64_t kInt56Min = -(int64_t{1} << 55);
@@ -415,6 +429,12 @@ KRJSONValue NewUint(uint64_t x) {
     return EncodePtr(box, x <= static_cast<uint64_t>(INT64_MAX) ? kTagInt64 : kTagUint64);
 }
 KRJSONValue NewDouble(double d) {
+    if (!std::isfinite(d)) {
+        // JSON has no NaN/Infinity. Match JSON.stringify semantics (→ null)
+        // rather than letting RapidJSON's writer silently abort on NaN/Inf and
+        // emit a truncated document.
+        return NewNull();
+    }
     if (IsDoubleLosslessToFloat(d)) {
         return EncodeImmFloat(static_cast<float>(d), kTagDoubleF32);
     }
@@ -423,6 +443,9 @@ KRJSONValue NewDouble(double d) {
     return EncodePtr(box, kTagDouble);
 }
 KRJSONValue NewFloat(float f) {
+    if (!std::isfinite(f)) {
+        return NewNull();  // see NewDouble
+    }
     return EncodeImmFloat(f, kTagFloat);
 }
 KRJSONValue NewString(const char *s, size_t n) {
@@ -504,6 +527,81 @@ void ObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSO
         units == 0 ? std::u16string()
                    : std::u16string(reinterpret_cast<const char16_t *>(key), units),
         Retain(child));
+}
+
+void ObjectAppendNoDedup(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child) {
+    if (TagOf(object) != kTagObject || key == nullptr) {
+        return;
+    }
+    auto *box = static_cast<ObjectBox *>(AsBox(object));
+    if (box->keys_utf16) {
+        assert(false && "ObjectAppendNoDedup: UTF-8 key on UTF-16-key object");
+        return;
+    }
+    box->utf8.emplace_back(std::string(key, key_len), Retain(child));
+}
+
+void ObjectAppendUtf16NoDedup(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child) {
+    if (TagOf(object) != kTagObject || (key == nullptr && units != 0)) {
+        return;
+    }
+    auto *box = static_cast<ObjectBox *>(AsBox(object));
+    if (!box->keys_utf16) {
+        assert(false && "ObjectAppendUtf16NoDedup: UTF-16 key on UTF-8-key object");
+        return;
+    }
+    box->utf16.emplace_back(
+        units == 0 ? std::u16string()
+                   : std::u16string(reinterpret_cast<const char16_t *>(key), units),
+        Retain(child));
+}
+
+namespace {
+// Collapse duplicate keys in place: last value wins, kept at the first key's
+// slot; other slots dropped. Only rewrites the vector when a duplicate exists.
+template <typename Members, typename View>
+void DedupLastImpl(Members &members) {
+    std::unordered_map<View, size_t> first_index;
+    first_index.reserve(members.size());
+    bool has_dup = false;
+    for (size_t i = 0; i < members.size(); ++i) {
+        View key(members[i].first.data(), members[i].first.size());
+        auto result = first_index.emplace(key, i);
+        if (!result.second) {
+            // Duplicate: later value wins at the earlier slot. Only POD
+            // KRJSONValue words move here — no strings are relocated yet, so the
+            // views stored in first_index stay valid for the rest of this pass.
+            Release(members[result.first->second].second);
+            members[result.first->second].second = members[i].second;
+            members[i].second = KRJSON_INVALID;  // moved out; slot will be dropped
+            has_dup = true;
+        }
+    }
+    if (!has_dup) {
+        return;
+    }
+    Members compact;
+    compact.reserve(first_index.size());
+    for (size_t i = 0; i < members.size(); ++i) {
+        View key(members[i].first.data(), members[i].first.size());
+        if (first_index[key] == i) {
+            compact.push_back(std::move(members[i]));
+        }
+    }
+    members.swap(compact);
+}
+}  // namespace
+
+void ObjectDedupLast(KRJSONValue object) {
+    if (TagOf(object) != kTagObject) {
+        return;
+    }
+    auto *box = static_cast<ObjectBox *>(AsBox(object));
+    if (box->keys_utf16) {
+        DedupLastImpl<ObjectBox::Utf16Members, std::u16string_view>(box->utf16);
+    } else {
+        DedupLastImpl<ObjectBox::Utf8Members, std::string_view>(box->utf8);
+    }
 }
 
 // ---- accessors ----

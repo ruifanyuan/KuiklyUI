@@ -149,9 +149,17 @@ static_assert(KRJSON_LONG == kTagLong);
 static_assert(KRJSON_U16STRING == kTagU16String);
 
 inline bool IsHeapTag(uint8_t t) {
-    return t == kTagDouble || t == kTagInt64 || t == kTagUint64 || t == kTagString ||
-           t == kTagArray || t == kTagObject || t == kTagBytes ||
-           t == kTagLong || t == kTagU16String;
+    // Branch-free membership test. This is on the hottest path in the render
+    // layer (AsBox → every Retain/Release/GetType/accessor calls it); a real
+    // profile showed the old 9-way `||` chain costing ~6% of the bridge thread.
+    // The mask is built from the tag enum, so it can't drift out of sync.
+    // kTagInvalid (0xFF) and any out-of-range byte fall out via the `t < 32`
+    // guard, keeping the shift well-defined.
+    constexpr uint32_t kHeapTagMask =
+        (1u << kTagDouble) | (1u << kTagInt64) | (1u << kTagUint64) | (1u << kTagString) |
+        (1u << kTagArray) | (1u << kTagObject) | (1u << kTagBytes) |
+        (1u << kTagLong) | (1u << kTagU16String);
+    return t < 32u && ((kHeapTagMask >> t) & 1u) != 0u;
 }
 inline HeapBox *AsBox(KRJSONValue v) {
     return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;
@@ -160,12 +168,21 @@ inline bool IsUnique(KRJSONValue v) {
     HeapBox *box = AsBox(v);
     return box != nullptr && box->rc.load(std::memory_order_acquire) == 1;
 }
+// Cold, never-returns handler for the (should-be-impossible) case where a heap
+// pointer does not fit in 56 bits. Defined in Value.cpp; see EncodePtr.
+[[noreturn]] void CrashOnPointerTagViolation(uintptr_t p);
+
 inline KRJSONValue EncodePtr(const void *p, uint8_t tag) {
     const uintptr_t u = reinterpret_cast<uintptr_t>(p);
     // Scheme A stores the pointer in bits[8..63]; it must fit in 56 bits.
-    // aarch64/OHOS user VA is <= 48 bits today; a >56-bit or tag/MTE pointer
-    // would corrupt the round-trip. Guarded in debug builds.
-    assert((u >> 56) == 0 && "pointer exceeds 56-bit VA (Scheme A tag assumption)");
+    // aarch64/OHOS user VA is <= 48 bits today, but a top-byte-tagged (TBI/MTE)
+    // or >56-bit pointer would silently lose its high byte here and be restored
+    // as the wrong address by AsBox. This is a hard invariant of the whole
+    // scheme, so the guard is ALWAYS on (not a debug-only assert): the branch is
+    // one predictable, never-taken compare on the hot path.
+    if (__builtin_expect((u >> 56) != 0, 0)) {
+        CrashOnPointerTagViolation(u);
+    }
     return (static_cast<uint64_t>(u) << 8) | tag;
 }
 inline KRJSONValue EncodeInt56(int64_t x) {
@@ -198,6 +215,16 @@ void ArrayAppend(KRJSONValue array, KRJSONValue child);
 void ArraySet(KRJSONValue array, size_t index, KRJSONValue child);
 void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
 void ObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
+// Parser fast path: append a member WITHOUT the O(n) dedup scan ObjectPut does,
+// so building an N-key object from a trusted parser is O(n) instead of O(n^2).
+// Duplicate keys are collapsed once at the end via ObjectDedupLast. The public
+// ObjectPut* keep their overwrite-in-place semantics for API callers.
+void ObjectAppendNoDedup(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
+void ObjectAppendUtf16NoDedup(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
+// Collapse duplicate keys keeping the LAST value at the FIRST key's position
+// (matching the old dedup-on-insert behaviour and the JS `{a:1,a:2}`->`{a:2}`
+// convention). No-op when there are no duplicates (the common case).
+void ObjectDedupLast(KRJSONValue object);
 
 KRJSONType GetType(KRJSONValue v);
 bool GetBool(KRJSONValue v, bool default_value);
