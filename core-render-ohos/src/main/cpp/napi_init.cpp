@@ -14,6 +14,7 @@
  */
 #include <ark_runtime/jsvm.h>
 #include <arkui/native_node_napi.h>
+#include <chrono>
 #include <cstdint>
 #include "libohos_render/expand/modules/back_press/KRBackPressModule.h"
 #include "libohos_render/foundation/KRCommon.h"
@@ -79,7 +80,11 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
     }
     auto instance_id = KRRenderValue::Make(env, args[0]);
     auto page_name = KRRenderValue::Make(env, args[1]);
+    const auto from_napi_t0 = std::chrono::steady_clock::now();
     auto page_Data = KRRenderValue::Make(env, args[2]);
+    const auto from_napi_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now() - from_napi_t0)
+                                  .count();
     double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[3]);
     double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[4]);
     auto config_json = KRRenderValue::Make(env, args[5]);
@@ -97,7 +102,14 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
         if (!page_Data.isMap() && !page_Data.isArray() && (!page_Data.isString() || page_data_units == 0)) {
             page_Data = KRRenderValue::Make(KRRenderValue::Map{});
         }
+        const auto context_t0 = std::chrono::steady_clock::now();
         auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json);
+        const auto context_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - context_t0)
+                                    .count();
+        KR_LOG_INFO_WITH_TAG("RouterPerf") << "stage=cpp_onInitRenderView_input, pageName="
+                                            << page_name.toAsciiString() << ", fromNapiMs=" << from_napi_ms
+                                            << ", contextParseMs=" << context_ms;
         ArkUI_ContextHandle context_handle;
         OH_ArkUI_GetContextFromNapiValue(env, args[6], &context_handle);
         NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[7]);
@@ -239,6 +251,27 @@ static napi_value isBackPressConsumed(napi_env env, napi_callback_info info) {
         }
     }
     return result;
+}
+
+static napi_value IsKRJsonValue(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok) {
+        return nullptr;
+    }
+    KRJSONValue value = KRJSON_INVALID;
+    napi_value result = nullptr;
+    napi_get_boolean(env, argc == 1 && KRRenderValue::TryUnwrapKRJSON(env, args[0], &value), &result);
+    return result;
+}
+
+static napi_value TakeKRJsonRoutePayload(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+    return KRRenderValue::TakeKRJSONRoutePayload(env, args[0]);
 }
 
 #ifndef NDEBUG
@@ -670,6 +703,8 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"OnLaunchStart", nullptr, OnLaunchStart, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"createNativeRoot", nullptr, CreateNativeRoot, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isBackPressConsumed", nullptr, isBackPressConsumed, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"isKRJsonValue", nullptr, IsKRJsonValue, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"takeKRJsonRoutePayload", nullptr, TakeKRJsonRoutePayload, nullptr, nullptr, nullptr, napi_default, nullptr},
 #if defined(KUIKLY_OHOS_NAPI_RECORD_BENCH) && (KUIKLY_OHOS_NAPI_RECORD_BENCH == 1)
         {"benchNapiRecordConvert", nullptr, BenchNapiRecordConvert, nullptr, nullptr, nullptr, napi_default, nullptr},
 #endif

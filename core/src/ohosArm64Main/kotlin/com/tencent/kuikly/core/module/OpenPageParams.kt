@@ -1,8 +1,8 @@
 /*
  * Tencent is pleased to support the open source community by making KuiklyUI
  * available.
- * Copyright (C) 2025 Tencent. All rights reserved.
- * Licensed under the License of KuiklyUI;
+ * Copyright (C) 2026 Tencent. All rights reserved.
+ * Licensed under the License of the KuiklyUI;
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  * https://github.com/Tencent-TDS/KuiklyUI/blob/main/LICENSE
@@ -15,21 +15,16 @@
 
 package com.tencent.kuikly.core.module
 
-actual fun Any.toPlatformObject(): Any {
-    if (this is List<*>) {
-        return this.toTypedArray()
-    }
-    return this
-}
-
-actual fun Any.toKotlinObject(): Any {
-    return this
-}
+import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 internal actual fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
     routeStartTimestampMs: Long,
 ): Any {
-    return stringifyOpenPageParams(pageName, pageData)
+    return JSONObject().apply {
+        put("pageName", pageName)
+        pageData?.let { put("pageData", it) }
+        put("__kuiklyRouteStartTimestampMs", routeStartTimestampMs)
+    }
 }

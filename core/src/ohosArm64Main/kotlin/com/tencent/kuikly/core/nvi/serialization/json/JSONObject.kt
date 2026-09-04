@@ -31,6 +31,14 @@ actual class JSONObject internal actual constructor(
     @Throws(JSONException::class)
     actual constructor(jsonTokener: JSONTokener) : this(requireJSONObjectPairs(jsonTokener.nextValue()))
 
+    actual override fun keyAt(index: Int): String? {
+        return (nameValuePairs as? LazyJsonMap)?.keyAt(index) ?: super.keyAt(index)
+    }
+
+    actual override fun opt(index: Int): Any? {
+        return (nameValuePairs as? LazyJsonMap)?.valueAt(index) ?: super.opt(index)
+    }
+
     actual companion object {
         actual fun quote(data: String?): String = quoteJSONString(data)
 
@@ -45,4 +53,9 @@ actual class JSONObject internal actual constructor(
          */
         internal fun fromJsonOwnerAny(ownerPtr: Long): Any? = LazyJsonMap.fromOwnerAny(ownerPtr)
     }
+}
+
+/** Returns an owned KRJSON word when this object is still lazy-native-backed. */
+internal fun JSONObject.retainNativeBitsOrNull(): Long? {
+    return (nameValuePairs as? LazyJsonMap)?.retainNativeOrNull()
 }

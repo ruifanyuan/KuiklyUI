@@ -23,7 +23,6 @@
 #include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/view/KRRenderView.h"
 
-
 napi_value CToNApiValue(napi_env env, const KRAnyValue &value) {
     napi_value arg0Value;
     napi_status status;

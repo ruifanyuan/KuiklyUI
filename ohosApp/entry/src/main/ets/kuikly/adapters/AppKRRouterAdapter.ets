@@ -13,9 +13,10 @@
  * limitations under the License.
  */
 
-import { IKRRouterAdapter, KRRecord } from '@kuikly-open/render';
+import { IKRRouterAdapter, KRJsonValue, KRRecord } from '@kuikly-open/render';
 import router from '@ohos.router';
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import kuiklyEntry from 'libkuikly_entry.so';
 
 export class AppKRRouterAdapter implements IKRRouterAdapter {
@@ -44,11 +45,41 @@ export class AppKRRouterAdapter implements IKRRouterAdapter {
     } else {
       url = 'pages/Index';
     }
+    const pushStartTs = Date.now();
     router.pushUrl({
       url,
       params: {
         pageName,
         pageData
+      }
+    });
+    hilog.info(0x0000, 'RouterPerf',
+      `stage=adapter_pushUrl_return, pageName=${pageName}, ` +
+        `pushUrlMs=${Date.now() - pushStartTs}`);
+  }
+
+  openPageWithKRJson(
+    context: common.UIAbilityContext,
+    pageName: string,
+    pageData: KRJsonValue,
+  ): void {
+    let url: string;
+    if (pageName.startsWith('OverNativeClickDemo')) {
+      url = 'pages/GestureThrough';
+    } else if (pageName === 'NativeAppWaterfall') {
+      url = 'pages/NativeAppWaterfall';
+    } else if (pageName === 'KuiklyInList') {
+      url = 'pages/KuiklyInList';
+    } else {
+      url = 'pages/Index';
+    }
+    router.pushUrl({
+      url,
+      params: {
+        pageName,
+        // KRJsonValue.toJSON() produces a small router-safe token and keeps
+        // the native payload in the N-API registry automatically.
+        pageData,
       }
     });
   }

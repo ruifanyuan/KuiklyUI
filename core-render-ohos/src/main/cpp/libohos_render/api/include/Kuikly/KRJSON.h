@@ -160,6 +160,12 @@ KUIKLY_EXPORT void KRJSONArrayAppend(KRJSONValue array, KRJSONValue child);
 KUIKLY_EXPORT void KRJSONObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
 /** Put UTF-16 key->child. Debug-asserts (no-op in release) on UTF-8-key objects. */
 KUIKLY_EXPORT void KRJSONObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
+/**
+ * Append a UTF-16 key without scanning existing members. Callers must
+ * guarantee unique keys; Kotlin Map conversion satisfies that contract.
+ */
+KUIKLY_EXPORT void KRJSONObjectAppendUtf16NoDedup(
+    KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
 
 #ifdef __cplusplus
 }

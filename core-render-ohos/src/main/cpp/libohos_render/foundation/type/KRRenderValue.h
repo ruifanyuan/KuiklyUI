@@ -507,6 +507,10 @@ class KRRenderValue {
     // the ArkVM/NAPI function headers. See the container-mapping contract notes
     // on the ARRAY/OBJECT cases there.
     void ToNapiValue(const napi_env &env, napi_value *result, napi_status &status) const;
+    static napi_value WrapKRJSON(napi_env env, KRJSONValue value);
+    static bool TryUnwrapKRJSON(napi_env env, napi_value value, KRJSONValue *out);
+    /** Consumes one route token produced by KRJsonValue.toJSON(). */
+    static napi_value TakeKRJSONRoutePayload(napi_env env, napi_value token);
     void ToJsVmValue(JSVM_Env env, JSVM_Value *result, JSVM_Status &status) const;
 
  private:
@@ -626,7 +630,6 @@ class KRRenderValue {
     }
 
     napi_status ToNapiBytes(napi_env env, napi_value *result) const;
-    napi_status ToNapiArray(napi_env env, napi_value *result) const;
     JSVM_Status ToJsVmBytes(JSVM_Env env, JSVM_Value *result) const;
 
     KRJSONType type() const {

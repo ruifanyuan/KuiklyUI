@@ -18,6 +18,7 @@ export { KRNative } from './src/main/ets/KRNative';
 export { KRNative as KTNative } from './src/main/ets/KRNative';
 
 export * from './src/main/ets/utils/KRDataTypes';
+export { KRRouterParams } from './src/main/ets/utils/KRRouterParams';
 
 // 兼容旧版本
 export {

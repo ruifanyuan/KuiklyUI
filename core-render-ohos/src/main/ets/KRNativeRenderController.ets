@@ -15,7 +15,7 @@
 
 import { KRExceptionCallback } from './manager/KRNativeInstance';
 import render from 'libkuikly.so';
-import { AvoidAreaChangeParams, Insets, KRAny, KRRecord, KRValue } from './utils/KRDataTypes';
+import { AvoidAreaChangeParams, Insets, KRAny, KRJsonValue, KRPageData, KRRecord, KRValue } from './utils/KRDataTypes';
 import { KRNativeManager } from './manager/KRNativeManager';
 import { KRConvertUtil } from './utils/KRConvertUtil';
 import { common, EnvironmentCallback } from '@kit.AbilityKit';
@@ -127,7 +127,7 @@ export class KRNativeRenderController {
   /**
    * 透传给KR侧的页面数据
    */
-  pageParams: KRRecord = {};
+  pageParams: KRPageData = {};
   /**
    * 鸿蒙侧，向用户提供新旧两种KRSharedPreferencesMoudle使用的控制开关（变量）
    */
@@ -213,7 +213,7 @@ export class KRNativeRenderController {
     uiAbilityContext: common.UIAbilityContext,
     executeMode: KRRenderExecuteModeBase,
     pageName: string,
-    pageParams: KRRecord,
+    pageParams: KRPageData,
     contextCode: string,
     imeMode: boolean,
     assetsDir: string,
@@ -615,12 +615,23 @@ export class KRNativeRenderController {
       return;
     }
     this.didInit = true;
+    const initStartTs = Date.now();
     let pageData = this.createPageParams(this.pageParams, this.viewRect.width, this.viewRect.height);
+    const paramsCreatedTs = Date.now();
     let configJson = this.createConfigJson(new KRSize(this.viewRect.width, this.viewRect.height));
-
+    const configCreatedTs = Date.now();
+    KRRenderLog.i('RouterPerf',
+      `stage=arkts_create_page_params, pageName=${this.pageName}, ` +
+        `createParamsMs=${paramsCreatedTs - initStartTs}, ` +
+        `createConfigMs=${configCreatedTs - paramsCreatedTs}`);
+    const napiStartTs = Date.now();
     render.onInitRenderView(this.instanceId, this.pageName, pageData, this.viewRect.width, this.viewRect.height,
       configJson
       , this.uiContext, this.uiContext?.getHostContext()?.resourceManager);
+    KRRenderLog.i('RouterPerf',
+      `stage=arkts_onInitRenderView_return, pageName=${this.pageName}, ` +
+        `onInitMs=${Date.now() - napiStartTs}, ` +
+        `totalMs=${Date.now() - initStartTs}`);
     this.runLazyTasksOnce();
   }
 
@@ -678,10 +689,16 @@ export class KRNativeRenderController {
     });
   }
 
-  private createPageParams(params: KRRecord, viewWidth: number, viewHeight: number): string {
+  private createPageParams(params: KRPageData, viewWidth: number, viewHeight: number): KRRecord {
     let screenSize = KRConvertUtil.screenSize();
-    let pageData: Record<string, string | number | KRRecord> = {};
-    params[KRSystemLanguageKey] = i18n.System.getSystemLanguages()[0];
+    let pageData: Record<string, string | number | KRPageData> = {};
+    // Preserve the historical native-payload behavior: a KRJsonValue can be
+    // shared by the source page, the route store, and the destination page,
+    // so framework setup must not mutate it in place. Kotlin-backed records
+    // retain the legacy sysLang injection behavior.
+    if (!render.isKRJsonValue(params)) {
+      (params as KRRecord)[KRSystemLanguageKey] = i18n.System.getSystemLanguages()[0];
+    }
     pageData[KRParamKey] = params;
     pageData[KRRootViewWidthKey] = viewWidth;
     pageData[KRRootViewHeightKey] = viewHeight;
@@ -718,7 +735,7 @@ export class KRNativeRenderController {
     pageData[KRFeature] = {
       "box_shadow_fill" : 1
     };
-    return JSON.stringify(pageData);
+    return pageData;
   }
 
   private createConfigJson(screenSize: KRSize): string {

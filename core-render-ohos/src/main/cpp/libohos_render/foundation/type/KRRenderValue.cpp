@@ -28,7 +28,12 @@
 
 #include "libohos_render/foundation/ark_ts.h"
 #include "libohos_render/utils/KRJsUtil.h"
+#include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/NAPIUtil.h"
+
+#include <chrono>
+#include <mutex>
+#include <unordered_map>
 
 namespace {
 // Materialize a JS string into a UTF-16 KRJSONValue box using the engine's
@@ -71,9 +76,302 @@ KRJSONValue KRRenderValue::Build(const JSVM_Env &env, const JSVM_Value &value) {
     return FromJsVm(env, value);
 }
 
+namespace {
+constexpr uint32_t kKRJSONWrapMagic = 0x4B524A53u;  // 'KRJS'
+constexpr char kKRJSONRoutePayloadTokenKey[] = "__kuiklyKRJsonPayloadId";
+constexpr auto kKRJSONRoutePayloadMaxAge = std::chrono::minutes(1);
+const napi_type_tag kKRJSONTypeTag = {
+    0x4B75696B6C794A53ULL,
+    0x4F4E577261704B52ULL,
+};
+
+struct KRJSONWrap {
+    uint32_t magic;
+    KRJSONValue value;
+};
+
+struct KRJSONRoutePayloadEntry {
+    KRJSONValue value;
+    std::chrono::steady_clock::time_point expires_at;
+};
+
+std::mutex g_krjson_route_payload_mutex;
+std::unordered_map<std::string, KRJSONRoutePayloadEntry> g_krjson_route_payloads;
+uint64_t g_krjson_route_payload_next_id = 1;
+
+void PruneExpiredKRJSONRoutePayloadsLocked(std::chrono::steady_clock::time_point now) {
+    for (auto it = g_krjson_route_payloads.begin(); it != g_krjson_route_payloads.end();) {
+        if (it->second.expires_at < now) {
+            kuikly::util::json::Release(it->second.value);
+            it = g_krjson_route_payloads.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+std::string RegisterKRJSONRoutePayload(KRJSONValue value) {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_krjson_route_payload_mutex);
+    PruneExpiredKRJSONRoutePayloadsLocked(now);
+    const std::string token = std::to_string(
+        std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()) +
+        "-" + std::to_string(g_krjson_route_payload_next_id++);
+    g_krjson_route_payloads.emplace(
+        token,
+        KRJSONRoutePayloadEntry{
+            kuikly::util::json::Retain(value),
+            now + kKRJSONRoutePayloadMaxAge,
+        });
+    return token;
+}
+
+KRJSONValue TakeKRJSONRoutePayload(const std::string &token) {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(g_krjson_route_payload_mutex);
+    PruneExpiredKRJSONRoutePayloadsLocked(now);
+    const auto it = g_krjson_route_payloads.find(token);
+    if (it == g_krjson_route_payloads.end()) {
+        return KRJSON_INVALID;
+    }
+    const KRJSONValue value = it->second.value;
+    g_krjson_route_payloads.erase(it);
+    return value;
+}
+
+void FinalizeKRJSONWrap(napi_env, void *data, void *) {
+    auto *wrap = static_cast<KRJSONWrap *>(data);
+    if (wrap == nullptr) {
+        return;
+    }
+    if (wrap->magic == kKRJSONWrapMagic) {
+        wrap->magic = 0;
+        kuikly::util::json::Release(wrap->value);
+    }
+    delete wrap;
+}
+
+KRJSONWrap *UnwrapKRJSON(napi_env env, napi_callback_info info, size_t argc, napi_value *args) {
+    napi_value self = nullptr;
+    if (napi_get_cb_info(env, info, &argc, args, &self, nullptr) != napi_ok || self == nullptr) {
+        return nullptr;
+    }
+    bool matches = false;
+    if (napi_check_object_type_tag(env, self, &kKRJSONTypeTag, &matches) != napi_ok || !matches) {
+        return nullptr;
+    }
+    void *raw = nullptr;
+    if (napi_unwrap(env, self, &raw) != napi_ok || raw == nullptr) {
+        return nullptr;
+    }
+    auto *wrap = static_cast<KRJSONWrap *>(raw);
+    return wrap->magic == kKRJSONWrapMagic ? wrap : nullptr;
+}
+
+napi_value MakeNapiFromKRJSON(napi_env env, KRJSONValue value) {
+    if (value == KRJSON_INVALID) {
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        return undefined;
+    }
+    auto render_value = KRRenderValue::MakeBorrowed(value);
+    if (render_value.isMap() || render_value.isArray()) {
+        return KRRenderValue::WrapKRJSON(env, value);
+    }
+    napi_value result = nullptr;
+    napi_status status = napi_ok;
+    render_value.ToNapiValue(env, &result, status);
+    return status == napi_ok ? result : nullptr;
+}
+
+bool ReadUtf16Key(napi_env env, napi_value value, std::u16string *out) {
+    if (out == nullptr || value == nullptr) {
+        return false;
+    }
+    napi_valuetype type = napi_undefined;
+    if (napi_typeof(env, value, &type) != napi_ok || type != napi_string) {
+        return false;
+    }
+    kuikly::util::GetNApiArgsStdU16String(env, value, *out);
+    return true;
+}
+
+KRJSONValue GetObjectChild(KRJSONValue object, const std::u16string &key) {
+    if (kuikly::util::json::ObjectKeysAreUtf16(object)) {
+        return kuikly::util::json::ObjectGetUtf16(
+            object, reinterpret_cast<const uint16_t *>(key.data()), key.size());
+    }
+    const std::string utf8 = kuikly::util::json::Utf16ToUtf8(
+        reinterpret_cast<const uint16_t *>(key.data()), key.size());
+    return kuikly::util::json::ObjectGet(object, utf8.data(), utf8.size());
+}
+
+napi_value KRJsonGet(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 1, args);
+    std::u16string key;
+    if (wrap == nullptr || args[0] == nullptr || !ReadUtf16Key(env, args[0], &key) ||
+        kuikly::util::json::GetType(wrap->value) != KRJSON_OBJECT) {
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        return undefined;
+    }
+    return MakeNapiFromKRJSON(env, GetObjectChild(wrap->value, key));
+}
+
+napi_value KRJsonHas(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 1, args);
+    std::u16string key;
+    bool has = wrap != nullptr && args[0] != nullptr && ReadUtf16Key(env, args[0], &key) &&
+               kuikly::util::json::GetType(wrap->value) == KRJSON_OBJECT &&
+               GetObjectChild(wrap->value, key) != KRJSON_INVALID;
+    napi_value result = nullptr;
+    napi_get_boolean(env, has, &result);
+    return result;
+}
+
+napi_value KRJsonAt(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 1, args);
+    int32_t index = -1;
+    if (wrap == nullptr || args[0] == nullptr ||
+        napi_get_value_int32(env, args[0], &index) != napi_ok || index < 0 ||
+        kuikly::util::json::GetType(wrap->value) != KRJSON_ARRAY) {
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        return undefined;
+    }
+    return MakeNapiFromKRJSON(env, kuikly::util::json::ArrayGet(wrap->value, index));
+}
+
+napi_value KRJsonToJSONString(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 0, args);
+    const std::string json = wrap == nullptr ? std::string() : kuikly::util::json::Dump(wrap->value);
+    napi_value result = nullptr;
+    napi_create_string_utf8(env, json.data(), json.size(), &result);
+    return result;
+}
+
+napi_value KRJsonToJSON(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 0, args);
+    napi_value result = nullptr;
+    if (wrap == nullptr || napi_create_object(env, &result) != napi_ok) {
+        return nullptr;
+    }
+    const std::string token = RegisterKRJSONRoutePayload(wrap->value);
+    napi_value token_value = nullptr;
+    if (napi_create_string_utf8(env, token.data(), token.size(), &token_value) != napi_ok ||
+        napi_set_named_property(env, result, kKRJSONRoutePayloadTokenKey, token_value) != napi_ok) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value KRJsonGetType(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 0, args);
+    napi_value result = nullptr;
+    napi_create_int32(env, wrap == nullptr ? KRJSON_NULL : kuikly::util::json::GetType(wrap->value), &result);
+    return result;
+}
+
+napi_value KRJsonGetSize(napi_env env, napi_callback_info info) {
+    napi_value args[1] = {nullptr};
+    auto *wrap = UnwrapKRJSON(env, info, 0, args);
+    napi_value result = nullptr;
+    napi_create_double(env, wrap == nullptr ? 0 : static_cast<double>(kuikly::util::json::GetSize(wrap->value)),
+                       &result);
+    return result;
+}
+}  // namespace
+
+napi_value KRRenderValue::WrapKRJSON(napi_env env, KRJSONValue value) {
+    KR_LOG_INFO_WITH_TAG("KRJsonNative") << "stage=wrap_enter, type=" << kuikly::util::json::GetType(value)
+                                         << ", size=" << kuikly::util::json::GetSize(value);
+    napi_value result = nullptr;
+    if (env == nullptr || napi_create_object(env, &result) != napi_ok) {
+        KR_LOG_ERROR_WITH_TAG("KRJsonNative") << "stage=wrap_create_object_failed";
+        return nullptr;
+    }
+    auto *wrap = new KRJSONWrap{kKRJSONWrapMagic, kuikly::util::json::Retain(value)};
+    if (napi_wrap(env, result, wrap, FinalizeKRJSONWrap, nullptr, nullptr) != napi_ok) {
+        KR_LOG_ERROR_WITH_TAG("KRJsonNative") << "stage=wrap_napi_wrap_failed";
+        FinalizeKRJSONWrap(env, wrap, nullptr);
+        return nullptr;
+    }
+    (void)napi_type_tag_object(env, result, &kKRJSONTypeTag);
+    napi_property_descriptor descriptors[] = {
+        {"get", nullptr, KRJsonGet, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"has", nullptr, KRJsonHas, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"at", nullptr, KRJsonAt, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"toJSONString", nullptr, KRJsonToJSONString, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"toJSON", nullptr, KRJsonToJSON, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"type", nullptr, nullptr, KRJsonGetType, nullptr, nullptr, napi_default, nullptr},
+        {"size", nullptr, nullptr, KRJsonGetSize, nullptr, nullptr, napi_default, nullptr},
+    };
+    if (napi_define_properties(env, result, sizeof(descriptors) / sizeof(descriptors[0]), descriptors) != napi_ok) {
+        KR_LOG_ERROR_WITH_TAG("KRJsonNative") << "stage=wrap_define_properties_failed";
+        return nullptr;
+    }
+    KR_LOG_INFO_WITH_TAG("KRJsonNative") << "stage=wrap_ready";
+    return result;
+}
+
+bool KRRenderValue::TryUnwrapKRJSON(napi_env env, napi_value value, KRJSONValue *out) {
+    if (env == nullptr || value == nullptr || out == nullptr) {
+        return false;
+    }
+    napi_valuetype type = napi_undefined;
+    if (napi_typeof(env, value, &type) != napi_ok || type != napi_object) {
+        return false;
+    }
+    bool matches = false;
+    if (napi_check_object_type_tag(env, value, &kKRJSONTypeTag, &matches) != napi_ok || !matches) {
+        return false;
+    }
+    void *raw = nullptr;
+    if (napi_unwrap(env, value, &raw) != napi_ok || raw == nullptr) {
+        return false;
+    }
+    auto *wrap = static_cast<KRJSONWrap *>(raw);
+    if (wrap->magic != kKRJSONWrapMagic) {
+        return false;
+    }
+    *out = wrap->value;
+    return true;
+}
+
+napi_value KRRenderValue::TakeKRJSONRoutePayload(napi_env env, napi_value token) {
+    std::string token_string;
+    napi_valuetype type = napi_undefined;
+    if (env == nullptr || token == nullptr ||
+        napi_typeof(env, token, &type) != napi_ok || type != napi_string) {
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        return undefined;
+    }
+    kuikly::util::GetNApiArgsStdString(env, token, token_string);
+    const KRJSONValue value = ::TakeKRJSONRoutePayload(token_string);
+    if (value == KRJSON_INVALID) {
+        napi_value undefined = nullptr;
+        napi_get_undefined(env, &undefined);
+        return undefined;
+    }
+    napi_value result = WrapKRJSON(env, value);
+    kuikly::util::json::Release(value);
+    return result;
+}
+
 KRJSONValue KRRenderValue::FromNapi(napi_env env, napi_value value, int depth) {
     if (depth > kMaxBridgeDepth) {
         return Build();  // too deep; drop to null rather than overflow the stack
+    }
+    KRJSONValue wrapped = KRJSON_INVALID;
+    if (TryUnwrapKRJSON(env, value, &wrapped)) {
+        return kuikly::util::json::Retain(wrapped);
     }
     napi_valuetype value_type = napi_undefined;
     napi_typeof(env, value, &value_type);
@@ -244,22 +542,13 @@ void KRRenderValue::ToNapiValue(const napi_env &env, napi_value *result, napi_st
             status = ToNapiBytes(env, result);
             break;
         case KRJSON_ARRAY:
-            // Bridge contract: arrays cross to ArkTS as real JS arrays (the
-            // ArkTS side indexes them directly), so materialize element by
-            // element rather than stringifying.
-            status = ToNapiArray(env, result);
+        case KRJSON_OBJECT:
+            // Internal C++ → ArkTS container transport keeps the original
+            // KRJSON tree alive. ArkTS consumers read the wrapper directly
+            // and only dump/materialize at an explicit legacy boundary.
+            *result = WrapKRJSON(env, value_);
+            status = *result == nullptr ? napi_generic_failure : napi_ok;
             break;
-        case KRJSON_OBJECT: {
-            // Bridge contract: objects/maps cross to ArkTS as a JSON *string*
-            // (the ArkTS side JSON.parse's them). This is intentionally
-            // asymmetric with arrays above and with FromNapi (which parses
-            // ArkTS objects into real KRJSON objects), so Napi->KR->Napi is
-            // NOT identity for objects. Do not "fix" without changing the
-            // ArkTS-side contract.
-            const auto json = kuikly::util::json::Dump(value_);
-            status = napi_create_string_utf8(env, json.data(), json.size(), result);
-            break;
-        }
         default:
             status = napi_get_null(env, result);
             break;
@@ -326,20 +615,6 @@ napi_status KRRenderValue::ToNapiBytes(napi_env env, napi_value *result) const {
     }
     if (status == napi_ok) {
         status = napi_create_typedarray(env, napi_int8_array, size, array_buffer, 0, result);
-    }
-    return status;
-}
-
-napi_status KRRenderValue::ToNapiArray(napi_env env, napi_value *result) const {
-    const size_t count = kuikly::util::json::GetSize(value_);
-    napi_status status = napi_create_array_with_length(env, count, result);
-    for (size_t i = 0; status == napi_ok && i < count; ++i) {
-        auto child = MakeBorrowed(kuikly::util::json::ArrayGet(value_, i));
-        napi_value element = nullptr;
-        child->ToNapiValue(env, &element, status);
-        if (status == napi_ok) {
-            status = napi_set_element(env, *result, i, element);
-        }
     }
     return status;
 }

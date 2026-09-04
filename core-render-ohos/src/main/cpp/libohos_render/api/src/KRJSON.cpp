@@ -204,5 +204,8 @@ void KRJSONObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSON
 void KRJSONObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child) {
     kjson::ObjectPutUtf16(object, key, units, child);
 }
+void KRJSONObjectAppendUtf16NoDedup(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child) {
+    kjson::ObjectAppendUtf16NoDedup(object, key, units, child);
+}
 
 }  // extern "C"

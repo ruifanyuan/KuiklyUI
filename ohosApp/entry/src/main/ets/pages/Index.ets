@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { KRNativeRenderController, KRRecord, Kuikly, runNapiRecordConvertBench, KUIKLY_OHOS_NAPI_RECORD_BENCH } from '@kuikly-open/render';
+import { KRJsonValue, KRNativeRenderController, KRRecord, KRRouterParams, Kuikly, runNapiRecordConvertBench, KUIKLY_OHOS_NAPI_RECORD_BENCH } from '@kuikly-open/render';
 import globalNativeManager from '../kuikly/MyNativeManager';
 import { KuiklyViewDelegate } from '../kuikly/KuiklyViewDelegate';
 import pasteboard from '@ohos.pasteboard';
@@ -30,7 +30,7 @@ struct Index {
   private kuiklyViewDelegate = new KuiklyViewDelegate();
   private kuiklyController: KRNativeRenderController | null = null;
   private pageName: string | null = null;
-  private pageData?: KRRecord;
+  private pageData?: KRRecord | KRJsonValue;
   private contextCode: string = '';
   private contextCodeHandler: ContextCodeHandler = new ContextCodeHandler();
   private useDefaultBackPress = false;
@@ -49,10 +49,15 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    const appearStartTs = Date.now();
     AppKRRenderManager.getInstance().initIfNeed();
-    const params = router.getParams() as Record<string, Object>;
+    const routerParams = router.getParams() as Record<string, Object> | null;
+    const params = routerParams ?? ({} as Record<string, Object>);
     this.pageName = (params?.pageName as string) || LaunchParams.pageName || null;
-    this.pageData = (params?.pageData as KRRecord | null) ?? ({} as KRRecord);
+    this.pageData = KRRouterParams.resolvePageData(params);
+    hilog.info(0x0000, 'RouterPerf',
+      `stage=index_aboutToAppear, pageName=${this.pageName}, ` +
+        `setupMs=${Date.now() - appearStartTs}`);
     if (KUIKLY_OHOS_NAPI_RECORD_BENCH === 1 && this.pageName === 'NapiRecordBench') {
       runNapiRecordConvertBench();
     }

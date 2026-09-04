@@ -17,6 +17,7 @@ package com.tencent.kuikly.core.utils
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
+import com.tencent.kuikly.core.nvi.serialization.json.retainNativeBitsOrNull
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_ARRAY
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_BOOL
 import com.tencent.kuikly.core.nvi.serialization.json.JSON_KIND_BYTES
@@ -49,7 +50,7 @@ import ohos.KRJSONNewNull
 import ohos.KRJSONGetStringUtf16
 import ohos.KRJSONNewStringUtf16
 import ohos.KRJSONRelease
-import ohos.KRJSONObjectPutUtf16
+import ohos.KRJSONObjectAppendUtf16NoDedup
 import ohos.KRRenderCValue
 import platform.posix.size_t
 
@@ -76,7 +77,10 @@ fun Any?.toKRRenderCValue(): KRRenderCValue {
         is Array<*> -> toNativeArray(asList())
         is List<*> -> toNativeArray(this)
         is Map<*, *> -> toNativeObject(this)
-        is JSONObject -> toNativeObject(nameValuePairs)
+        is JSONObject -> {
+            val nativeBits = retainNativeBitsOrNull()
+            if (nativeBits != null) nativeBits.toULong() else toNativeObject(nameValuePairs)
+        }
         is JSONArray -> toNativeArray(values)
         else -> KRJSONNewNull()
     }
@@ -113,11 +117,13 @@ private fun toNativeObject(values: Map<*, *>): KRRenderCValue {
     values.forEach { (rawKey, rawValue) ->
         val key = rawKey as? String ?: return@forEach
         val child = rawValue.toKRRenderCValue()
+        // Kotlin Map keys are unique. Avoid ObjectPutUtf16's linear overwrite
+        // scan so RouterModule's Kotlin-backed payload build remains O(n).
         if (key.isEmpty()) {
-            KRJSONObjectPutUtf16(objectValue, null, 0.convert<size_t>(), child)
+            KRJSONObjectAppendUtf16NoDedup(objectValue, null, 0.convert<size_t>(), child)
         } else {
             key.toCharArray().usePinned { pinned ->
-                KRJSONObjectPutUtf16(
+                KRJSONObjectAppendUtf16NoDedup(
                     objectValue,
                     pinned.addressOf(0).reinterpret(),
                     key.length.convert<size_t>(),

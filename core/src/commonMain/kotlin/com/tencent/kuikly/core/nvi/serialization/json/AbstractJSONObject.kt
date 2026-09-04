@@ -35,6 +35,17 @@ abstract class AbstractJSONObject internal constructor(nameValuePairs: MutableMa
         return nameValuePairs.size
     }
 
+    /**
+     * Default Kotlin-Map implementation. Platform lazy containers may override
+     * this to access a native insertion-indexed key directly.
+     */
+    open fun keyAt(index: Int): String? {
+        if (index < 0 || index >= nameValuePairs.size) {
+            return null
+        }
+        return nameValuePairs.keys.elementAt(index)
+    }
+
     fun put(name: String, value: Boolean): JSONObject {
         nameValuePairs[name] = value
         return self()
@@ -66,6 +77,17 @@ abstract class AbstractJSONObject internal constructor(nameValuePairs: MutableMa
 
     fun opt(name: String): Any? {
         return nameValuePairs[name]
+    }
+
+    /**
+     * Default Kotlin-Map implementation. Platform lazy containers may override
+     * this to access a native insertion-indexed value directly.
+     */
+    open fun opt(index: Int): Any? {
+        if (index < 0 || index >= nameValuePairs.size) {
+            return null
+        }
+        return nameValuePairs.values.elementAt(index)
     }
 
     fun optBoolean(name: String): Boolean {

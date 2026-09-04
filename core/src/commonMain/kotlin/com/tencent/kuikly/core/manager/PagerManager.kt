@@ -80,10 +80,11 @@ object PagerManager {
         pageTrace.onNewPageEnd()
 
         if (pager != null) {
+            val bridgePageData = asBridgeJSONObject(pagerData) ?: JSONObject()
             pagerMap[pagerId] = pager
             pager.pageName = pagerName
             pager.setPageTrace(pageTrace)
-            pager.onCreatePager(pagerId, asBridgeJSONObject(pagerData) ?: JSONObject())
+            pager.onCreatePager(pagerId, bridgePageData)
         } else {
             reactiveObserverMap.remove(pagerId)
             throw PagerNotFoundException("[createPager]: pager 未注册. pagerName: $pagerName")

@@ -114,7 +114,12 @@ internal class LazyJsonMap private constructor(
 
     override fun containsKey(key: String): Boolean {
         materialized?.let { return it.containsKey(key) }
-        return ensureKeyIndex().containsKey(key)
+        // A page normally reads only a handful of launch parameters. Building
+        // a Kotlin HashMap for every key in a multi-megabyte payload before
+        // the first read makes that cheap path O(all fields). Keep native
+        // lookup lazy; keys()/entries() still build the index when traversal
+        // actually requires it.
+        return !JsonNative.isInvalid(JsonNative.objectGet(native, key))
     }
 
     override fun containsValue(value: Any?): Boolean {
@@ -148,6 +153,42 @@ internal class LazyJsonMap private constructor(
         orderedKeys?.let { return it }
         ensureKeyIndex()
         return orderedKeys ?: emptyList()
+    }
+
+    /**
+     * Reads a key by native insertion index without building [keyIndex].
+     * This is intended for one-pass scans of a large lazy KRJSON object.
+     */
+    internal fun keyAt(index: Int): String? {
+        materialized?.let {
+            if (index < 0 || index >= it.size) {
+                return null
+            }
+            return it.keys.elementAt(index)
+        }
+        if (index < 0 || native == 0L) {
+            return null
+        }
+        return JsonNative.objectKeyAt(native, index)
+    }
+
+    /**
+     * Reads a value by native insertion index without a secondary ObjectGet
+     * lookup or [keyIndex] construction.
+     */
+    internal fun valueAt(index: Int): Any? {
+        materialized?.let {
+            if (index < 0 || index >= it.size) {
+                return null
+            }
+            return it.values.elementAt(index)
+        }
+        if (index < 0 || native == 0L) {
+            return null
+        }
+        val key = JsonNative.objectKeyAt(native, index) ?: return null
+        val child = JsonNative.objectValueAt(native, index)
+        return convertChild(key, child)
     }
 
     override fun put(key: String, value: Any?): Any? {
@@ -190,13 +231,32 @@ internal class LazyJsonMap private constructor(
         token?.releaseOnce()
     }
 
+    /**
+     * Returns one additional owning reference while this map still directly
+     * represents a KRJSON tree. Once a write materializes the Kotlin map,
+     * callers must rebuild a native tree from Map entries instead.
+     */
+    internal fun retainNativeOrNull(): Long? {
+        if (materialized != null || native == 0L) {
+            return null
+        }
+        return JsonNative.retain(native)
+    }
+
     private fun optFromNative(name: String): Any? {
         containerCache?.let {
             if (it.containsKey(name)) {
                 return it[name]
             }
         }
-        val child = ensureKeyIndex()[name] ?: return null
+        // Do not eagerly allocate keyIndex here. KRJSON object lookup is
+        // native and allocation-free, whereas eagerly copying hundreds of
+        // thousands of keys into Kotlin defeats the lazy bridge exactly when
+        // a destination Pager only reads a few pageData fields.
+        val child = JsonNative.objectGet(native, name)
+        if (JsonNative.isInvalid(child)) {
+            return null
+        }
         return convertChild(name, child)
     }
 

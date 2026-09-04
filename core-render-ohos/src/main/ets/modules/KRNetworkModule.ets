@@ -21,6 +21,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import Url from '@ohos.url';
 import buffer from '@ohos.buffer';
 import { KRRenderLog } from '../adapter/KRRenderLog';
+import { KRJsonParam } from '../utils/KRJsonParam';
 
 interface ParamsObject {
   url: string;
@@ -53,7 +54,7 @@ export class KRNetworkModule extends KuiklyRenderBaseModule {
       case KRNetworkModule.METHOD_HTTP_REQUEST:
         return this.httpRequest(params, null, callback);
       case KRNetworkModule.METHOD_HTTP_REQUEST_BINARY:
-        const args = params as Array<KRAny>;
+        const args = KRJsonParam.asArray(params);
         return this.httpRequest(args[0], args[1] as Int8Array, callback);
       default:
         return null;
@@ -66,7 +67,7 @@ export class KRNetworkModule extends KuiklyRenderBaseModule {
   private httpRequest(params: KRAny, bytes: Int8Array | null, callback: KuiklyRenderCallback | null): KRAny {
     const binaryMode = bytes != null;
     try {
-      let paramsObj: ParamsObject = JSON.parse(params as string);
+      let paramsObj = this.parseRequestParams(params);
 
       let urlOptions = this.createURLAndOptions(paramsObj, bytes);
       if (urlOptions == null) {
@@ -131,6 +132,18 @@ export class KRNetworkModule extends KuiklyRenderBaseModule {
       }
     }
     return null;
+  }
+
+  private parseRequestParams(params: KRAny): ParamsObject {
+    const source = KRJsonParam.asRecord(params);
+    return {
+      url: source['url'] as string,
+      method: source['method'] as string,
+      param: (source['param'] as KRAny | undefined) ?? null,
+      headers: (source['headers'] as KRAny | undefined) ?? null,
+      cookie: (source['cookie'] as string | undefined) ?? null,
+      timeout: source['timeout'] as number,
+    };
   }
 
   createURLAndOptions(params: ParamsObject, bytes: Int8Array | null): [Url.URL, http.HttpRequestOptions] | null {

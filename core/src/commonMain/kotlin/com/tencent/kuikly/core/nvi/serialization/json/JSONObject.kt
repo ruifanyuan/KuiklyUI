@@ -22,6 +22,9 @@ expect class JSONObject {
 
     fun length(): Int
 
+    /** Returns the top-level key at insertion index, or null when out of range. */
+    fun keyAt(index: Int): String?
+
     fun put(name: String, value: Boolean): JSONObject
 
     fun put(name: String, value: Int): JSONObject
@@ -35,6 +38,9 @@ expect class JSONObject {
     fun has(name: String): Boolean
 
     fun opt(name: String): Any?
+
+    /** Returns the top-level value at insertion index, or null when out of range. */
+    fun opt(index: Int): Any?
 
     fun optBoolean(name: String): Boolean
 
