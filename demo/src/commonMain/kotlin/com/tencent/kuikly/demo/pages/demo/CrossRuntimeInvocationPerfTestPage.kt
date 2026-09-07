@@ -36,17 +36,33 @@ import com.tencent.kuikly.demo.pages.demo.base.NavBar
 @Page("CrossRuntimeInvocationPerfTestPage")
 internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
 
-    private var status by observable("waiting")
-    private var measureLine by observable("measure: —")
-    private var smallStringLine by observable("small string: —")
-    private var medianStringLine by observable("median string: —")
-    private var longStringLine by observable("long string: —")
-    private var smallJsonLine by observable("small json: —")
-    private var medianJsonLine by observable("median json: —")
-    private var largeJsonLine by observable("large json: —")
+    private var status by observable("准备中：正在注册 ArkTS → Kotlin 回调")
+    private var isTesting by observable(false)
+    private var measureLine by observable(
+        "Kotlin → ArkTS 同步文本测量｜10,000 次：未执行"
+    )
+    private var smallStringLine by observable(
+        "ArkTS → Kotlin｜字符串｜1 KB × 50 次：未执行"
+    )
+    private var medianStringLine by observable(
+        "ArkTS → Kotlin｜字符串｜30 KB × 50 次：未执行"
+    )
+    private var longStringLine by observable(
+        "ArkTS → Kotlin｜字符串｜300 KB × 50 次：未执行"
+    )
+    private var smallJsonLine by observable(
+        "ArkTS → Kotlin｜JSON 文本｜1 KB × 50 次：未执行"
+    )
+    private var medianJsonLine by observable(
+        "ArkTS → Kotlin｜JSON 文本｜30 KB × 50 次：未执行"
+    )
+    private var largeJsonLine by observable(
+        "ArkTS → Kotlin｜JSON 文本｜3 MB × 3 次：未执行"
+    )
 
     private var registered = false
-    private var payloadSink = 0
+    private var payloadCallbackCount = 0
+    private var completedCaseCount = 0
 
     override fun createExternalModules(): Map<String, Module>? {
         val modules = super.createExternalModules()?.toMutableMap() ?: hashMapOf()
@@ -79,6 +95,44 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
                     flex(1f)
                     padding(16f)
                 }
+                Text {
+                    attr {
+                        text(
+                            "ArkTS 通过 keep-alive callback 将 payload 传到 Kotlin。" +
+                                "payload 会在计时前预生成；累计耗时包含桥接、参数转换和 Kotlin 侧消费。"
+                        )
+                        fontSize(13f)
+                        color(Color(0xFF666666L))
+                        marginBottom(12f)
+                    }
+                }
+                Button {
+                    attr {
+                        height(60f)
+                        marginBottom(16f)
+                        borderRadius(6f)
+                        backgroundColor(
+                            if (ctx.isTesting) Color(0xFFB8B8B8L) else Color(0xFF1677FFL)
+                        )
+                        if (!ctx.isTesting) {
+                            highlightBackgroundColor(Color(0x33111111))
+                        }
+                        alignSelfStretch()
+                        testTag("run_all")
+                        titleAttr {
+                            text(if (ctx.isTesting) "Testing…" else "Run Tests")
+                            fontSize(16f)
+                            color(Color.WHITE)
+                        }
+                    }
+                    event {
+                        click {
+                            if (!ctx.isTesting) {
+                                ctx.runAllBenches()
+                            }
+                        }
+                    }
+                }
                 ResultLine("perf_status") { ctx.status }
                 ResultLine("perf_measure") { ctx.measureLine }
                 ResultLine("perf_small_string") { ctx.smallStringLine }
@@ -87,27 +141,6 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
                 ResultLine("perf_small_json") { ctx.smallJsonLine }
                 ResultLine("perf_median_json") { ctx.medianJsonLine }
                 ResultLine("perf_large_json") { ctx.largeJsonLine }
-                Button {
-                    attr {
-                        height(40f)
-                        padding(left = 16f, right = 16f)
-                        borderRadius(6f)
-                        backgroundColor(Color(0xFF1677FFL))
-                        highlightBackgroundColor(Color(0x33111111))
-                        alignSelfFlexStart()
-                        testTag("run_all")
-                        titleAttr {
-                            text("Run all")
-                            fontSize(14f)
-                            color(Color.WHITE)
-                        }
-                    }
-                    event {
-                        click {
-                            ctx.runAllBenches()
-                        }
-                    }
-                }
             }
         }
     }
@@ -127,8 +160,10 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
         }
         shadow.removeFromParentComponent()
         val cost = DateTime.currentTimestamp() - start
-        measureLine = "measure: count=$MEASURE_COUNT cost_ms=$cost w=$lastWidth h=$lastHeight"
-        status = "measure done"
+        measureLine =
+            "Kotlin → ArkTS 同步文本测量｜$MEASURE_COUNT 次\n" +
+                "累计耗时：$cost ms｜平均：${formatAverageMs(cost, MEASURE_COUNT)} ms/次"
+        status = "文本测量完成，继续执行 ArkTS → Kotlin callback 测试"
         KLog.i(TAG, measureLine)
     }
 
@@ -140,7 +175,8 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
             applyNativeStats(data)
         }
         val sink: (JSONObject?) -> Unit = { data ->
-            payloadSink += data?.length() ?: 0
+            payloadCallbackCount++
+            data?.length()
         }
         module.setCallbackWithSmallString(sink)
         module.setCallbackWithMedianString(sink)
@@ -148,13 +184,15 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
         module.setCallbackWithSmallJSON(sink)
         module.setCallbackWithMedianJSON(sink)
         module.setCallbackWithLargeJSON(sink)
-        status = "callbacks registered"
+        status = "就绪：payload 会在首次执行时预生成；点击 Run all 开始测试"
         KLog.i(TAG, status)
     }
 
     private fun runAllBenches() {
-        payloadSink = 0
-        status = "running"
+        isTesting = true
+        payloadCallbackCount = 0
+        completedCaseCount = 0
+        status = "执行中：依次测试文本测量、字符串回调和 JSON 文本回调"
         runMeasureBench()
         val module = acquireModule<CrossRuntimeInvocationPerfTestModule>(
             CrossRuntimeInvocationPerfTestModule.MODULE_NAME
@@ -165,8 +203,6 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
         module.runSmallJSON(SMALL_JSON_COUNT)
         module.runMedianJSON(MEDIAN_JSON_COUNT)
         module.runLargeJSON(LARGE_JSON_COUNT)
-        status = "all done sink=$payloadSink"
-        KLog.i(TAG, status)
     }
 
     private fun applyNativeStats(data: JSONObject?) {
@@ -174,7 +210,11 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
             return
         }
         val caseName = data.optString("case", "")
-        val line = "$caseName: count=${data.optInt("count")} cost_ms=${data.optLong("cost_ms")} bytes=${data.optLong("bytes")}"
+        val count = data.optInt("count")
+        val costMs = data.optLong("cost_ms")
+        val line =
+            "${caseDescription(caseName)}\n" +
+                "次数：$count｜累计耗时：$costMs ms｜平均：${formatAverageMs(costMs, count)} ms/次"
         when (caseName) {
             "small_string" -> smallStringLine = line
             "median_string" -> medianStringLine = line
@@ -183,7 +223,27 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
             "median_json" -> medianJsonLine = line
             "large_json" -> largeJsonLine = line
         }
+        completedCaseCount++
+        if (completedCaseCount == CALLBACK_CASE_COUNT) {
+            isTesting = false
+            status = "全部完成：已收到 $payloadCallbackCount / $EXPECTED_CALLBACK_COUNT 次 payload 回调"
+        }
         KLog.i(TAG, line)
+    }
+
+    private fun caseDescription(caseName: String): String = when (caseName) {
+        "small_string" -> "ArkTS → Kotlin｜字符串｜1 KB"
+        "median_string" -> "ArkTS → Kotlin｜字符串｜30 KB"
+        "long_string" -> "ArkTS → Kotlin｜字符串｜300 KB"
+        "small_json" -> "ArkTS → Kotlin｜JSON 文本｜1 KB"
+        "median_json" -> "ArkTS → Kotlin｜JSON 文本｜30 KB"
+        "large_json" -> "ArkTS → Kotlin｜JSON 文本｜3 MB"
+        else -> "ArkTS → Kotlin｜未知 case=$caseName"
+    }
+
+    private fun formatAverageMs(totalMs: Long, count: Int): String {
+        val hundredths = (totalMs * 100 + count.coerceAtLeast(1) / 2) / count.coerceAtLeast(1)
+        return "${hundredths / 100}.${(hundredths % 100).toString().padStart(2, '0')}"
     }
 
     companion object {
@@ -192,12 +252,16 @@ internal class CrossRuntimeInvocationPerfTestPage : BasePager() {
         private const val MEASURE_FONT_SIZE = 16f
         private const val MEASURE_MAX_WIDTH = 320f
         private const val MEASURE_MAX_HEIGHT = 100000f
-        private const val SMALL_STRING_COUNT = 2000
-        private const val MEDIAN_STRING_COUNT = 200
+        private const val SMALL_STRING_COUNT = 50
+        private const val MEDIAN_STRING_COUNT = 50
         private const val LONG_STRING_COUNT = 50
-        private const val SMALL_JSON_COUNT = 2000
-        private const val MEDIAN_JSON_COUNT = 200
-        private const val LARGE_JSON_COUNT = 10
+        private const val SMALL_JSON_COUNT = 50
+        private const val MEDIAN_JSON_COUNT = 50
+        private const val LARGE_JSON_COUNT = 3
+        private const val CALLBACK_CASE_COUNT = 6
+        private const val EXPECTED_CALLBACK_COUNT =
+            SMALL_STRING_COUNT + MEDIAN_STRING_COUNT + LONG_STRING_COUNT +
+                SMALL_JSON_COUNT + MEDIAN_JSON_COUNT + LARGE_JSON_COUNT
     }
 }
 
