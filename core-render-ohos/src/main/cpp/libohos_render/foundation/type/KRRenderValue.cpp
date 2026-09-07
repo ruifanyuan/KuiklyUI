@@ -36,35 +36,35 @@
 #include <unordered_map>
 
 namespace {
-// Materialize a JS string into a UTF-16 KRJSONValue box using the engine's
-// two-call length-probe idiom. `get(buf, bufsize, out_count)` must match the
+// Materialize a JS string into a UTF-16 KRJSONValue box with exactly one copy:
+// probe the full unit count, allocate the destination box, then let the engine
+// write directly into that box. `get(buf, bufsize, out_count)` must match the
 // napi_get_value_string_utf16 / OH_JSVM_GetValueStringUtf16 contract, returning
-// `ok` on success. Free function (not a member): it only needs the public JSON
-// constructor, so it stays with its two callers here.
+// `ok` on success.
 template <typename Get, typename Status>
 KRJSONValue NewStringFromUtf16Get(Get &&get, Status ok) {
-    // Probe with buf == nullptr: `*result` is the full unit count. A filled
-    // stack buffer reports at most bufsize-1, so it cannot tell a 255-unit
-    // string from a longer one.
+    // Probe with buf == nullptr: `*result` is the full unit count.
     size_t units = 0;
     if (get(nullptr, 0, &units) != ok) {
         return kuikly::util::json::NewStringUtf16(nullptr, 0);
     }
-    constexpr size_t kStackUnits = 256;
-    if (units < kStackUnits) {
-        char16_t stack[kStackUnits];
-        size_t copied = 0;
-        if (get(stack, kStackUnits, &copied) != ok) {
-            return kuikly::util::json::NewStringUtf16(nullptr, 0);
-        }
-        return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(stack), copied);
-    }
-    std::vector<char16_t> heap(units + 1);
-    size_t copied = 0;
-    if (get(heap.data(), units + 1, &copied) != ok) {
+    if (units == 0) {
         return kuikly::util::json::NewStringUtf16(nullptr, 0);
     }
-    return kuikly::util::json::NewStringUtf16(reinterpret_cast<const uint16_t *>(heap.data()), copied);
+
+    KRJSONValue owned = kuikly::util::json::NewStringUtf16(nullptr, units);
+    const uint16_t *utf16 = kuikly::util::json::GetStringUtf16(owned, nullptr);
+    if (utf16 == nullptr) {
+        kuikly::util::json::Release(owned);
+        return kuikly::util::json::NewStringUtf16(nullptr, 0);
+    }
+    char16_t *dst = reinterpret_cast<char16_t *>(const_cast<uint16_t *>(utf16));
+    size_t copied = 0;
+    if (get(dst, units + 1, &copied) != ok) {
+        kuikly::util::json::Release(owned);
+        return kuikly::util::json::NewStringUtf16(nullptr, 0);
+    }
+    return owned;
 }
 }  // namespace
 

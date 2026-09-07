@@ -13,30 +13,37 @@
  * limitations under the License.
  */
 
-import { KRAny, KuiklyRenderBaseModule, KuiklyRenderCallback } from '@kuikly-open/render';
+import {
+  KRAny,
+  KRJsonValue,
+  KuiklyRenderBaseModule,
+  KuiklyRenderCallback
+} from '@kuikly-open/render';
 
-const SIZE_1K = 1024;
-const SIZE_30K = 30 * 1024;
-const SIZE_300K = 300 * 1024;
-const SIZE_3M = 3 * 1024 * 1024;
+const DEFAULT_PAYLOAD_CHARS = 128 * 1024;
+const DEFAULT_COUNT = 50;
+
+interface PerfConfig {
+  caseName: string;
+  count: number;
+  payloadChars: number;
+}
+
+interface PerfRecord {
+  kind: string;
+  i: number;
+  v: string;
+}
 
 export class KRCrossRuntimeInvocationPerfTestModule extends KuiklyRenderBaseModule {
   static readonly MODULE_NAME = 'KRCrossRuntimeInvocationPerfTestModule';
 
   private statsCallback: KuiklyRenderCallback | null = null;
-  private smallStringCallback: KuiklyRenderCallback | null = null;
-  private medianStringCallback: KuiklyRenderCallback | null = null;
-  private longStringCallback: KuiklyRenderCallback | null = null;
-  private smallJsonCallback: KuiklyRenderCallback | null = null;
-  private medianJsonCallback: KuiklyRenderCallback | null = null;
-  private largeJsonCallback: KuiklyRenderCallback | null = null;
-
-  private smallStringPayloads: string[] = [];
-  private medianStringPayloads: string[] = [];
-  private longStringPayloads: string[] = [];
-  private smallJsonPayloads: string[] = [];
-  private medianJsonPayloads: string[] = [];
-  private largeJsonPayloads: string[] = [];
+  private plainStringCallbacks = new Map<string, KuiklyRenderCallback | null>();
+  private jsonCallbacks = new Map<string, KuiklyRenderCallback | null>();
+  private plainStringPayloadCaches = new Map<string, string[]>();
+  private jsonStringPayloadCaches = new Map<string, string[]>();
+  private krRecordPayloadCaches = new Map<string, PerfRecord[]>();
 
   syncMode(): boolean {
     return true;
@@ -47,125 +54,202 @@ export class KRCrossRuntimeInvocationPerfTestModule extends KuiklyRenderBaseModu
       case 'SetStatsCallback':
         this.statsCallback = callback;
         return null;
-      case 'SetCallbackWithSmallString':
-        this.smallStringCallback = callback;
+      case 'SetCallbackWithPlainString':
+        this.plainStringCallbacks.set(params as string, callback);
         return null;
-      case 'SetCallbackWithMedianString':
-        this.medianStringCallback = callback;
+      case 'SetCallbackWithJson':
+        this.jsonCallbacks.set(params as string, callback);
         return null;
-      case 'SetCallbackWithLongString':
-        this.longStringCallback = callback;
+      case 'RunPlainString': {
+        const config = this.parseConfig(params);
+        const cached = this.plainStringPayloadCaches.get(config.caseName);
+        const payloads = this.preparePlainStringPayloads(
+          cached ?? [], config.count, config.payloadChars
+        );
+        this.plainStringPayloadCaches.set(config.caseName, payloads);
+        this.runPreparedStrings(
+          config.caseName, payloads, this.plainStringCallbacks.get(config.caseName) ?? null
+        );
         return null;
-      case 'SetCallbackWithSmallJSON':
-        this.smallJsonCallback = callback;
+      }
+      case 'RunJsonString': {
+        const config = this.parseConfig(params);
+        const cached = this.jsonStringPayloadCaches.get(config.caseName);
+        const payloads = this.prepareJsonStringPayloads(
+          cached ?? [], config.count, config.payloadChars
+        );
+        this.jsonStringPayloadCaches.set(config.caseName, payloads);
+        this.runPreparedStrings(
+          config.caseName, payloads, this.jsonCallbacks.get(config.caseName) ?? null
+        );
         return null;
-      case 'SetCallbackWithMedianJSON':
-        this.medianJsonCallback = callback;
+      }
+      case 'RunKRRecord': {
+        const config = this.parseConfig(params);
+        const cached = this.krRecordPayloadCaches.get(config.caseName);
+        const payloads = this.prepareKRRecordPayloads(
+          cached ?? [], config.count, config.payloadChars
+        );
+        this.krRecordPayloadCaches.set(config.caseName, payloads);
+        this.runPreparedRecords(
+          config.caseName, payloads, this.jsonCallbacks.get(config.caseName) ?? null
+        );
         return null;
-      case 'SetCallbackWithLargeJSON':
-        this.largeJsonCallback = callback;
+      }
+      case 'RunKRJsonValue': {
+        const request = params as KRJsonValue;
+        const caseName = request.get('case') as string;
+        const count = request.get('count') as number;
+        const payload = request.get('payload') as KRJsonValue;
+        this.runPreparedKRJsonValue(
+          caseName, count, payload, this.jsonCallbacks.get(caseName) ?? null
+        );
         return null;
-      case 'RunSmallString':
-        this.smallStringPayloads =
-          this.preparePayloads(this.smallStringPayloads, params, 1000, SIZE_1K, false);
-        this.runPrepared('small_string', this.smallStringPayloads, this.smallStringCallback);
-        return null;
-      case 'RunMedianString':
-        this.medianStringPayloads =
-          this.preparePayloads(this.medianStringPayloads, params, 200, SIZE_30K, false);
-        this.runPrepared('median_string', this.medianStringPayloads, this.medianStringCallback);
-        return null;
-      case 'RunLongString':
-        this.longStringPayloads =
-          this.preparePayloads(this.longStringPayloads, params, 50, SIZE_300K, false);
-        this.runPrepared('long_string', this.longStringPayloads, this.longStringCallback);
-        return null;
-      case 'RunSmallJSON':
-        this.smallJsonPayloads =
-          this.preparePayloads(this.smallJsonPayloads, params, 1000, SIZE_1K, true);
-        this.runPrepared('small_json', this.smallJsonPayloads, this.smallJsonCallback);
-        return null;
-      case 'RunMedianJSON':
-        this.medianJsonPayloads =
-          this.preparePayloads(this.medianJsonPayloads, params, 200, SIZE_30K, true);
-        this.runPrepared('median_json', this.medianJsonPayloads, this.medianJsonCallback);
-        return null;
-      case 'RunLargeJSON':
-        this.largeJsonPayloads =
-          this.preparePayloads(this.largeJsonPayloads, params, 10, SIZE_3M, true);
-        this.runPrepared('large_json', this.largeJsonPayloads, this.largeJsonCallback);
-        return null;
+      }
       default:
         return null;
     }
   }
 
-  private parseCount(params: KRAny, fallback: number): number {
-    if (typeof params !== 'string' || params.length === 0) {
-      return fallback;
+  private parseConfig(params: KRAny): PerfConfig {
+    let caseName = '';
+    let count = DEFAULT_COUNT;
+    let payloadChars = DEFAULT_PAYLOAD_CHARS;
+    if (typeof params === 'string' && params.length > 0) {
+      const caseMatch = /"case":\s*"([^"]+)"/.exec(params);
+      if (caseMatch !== null) {
+        caseName = caseMatch[1];
+      }
+      const countMatch = /"count":\s*(\d+)/.exec(params);
+      if (countMatch !== null) {
+        count = parseInt(countMatch[1], 10);
+      }
+      const charsMatch = /"payloadChars":\s*(\d+)/.exec(params);
+      if (charsMatch !== null) {
+        payloadChars = parseInt(charsMatch[1], 10);
+      }
     }
-    const key = '"count":';
-    const idx = params.indexOf(key);
-    if (idx < 0) {
-      return fallback;
-    }
-    const n = parseInt(params.substring(idx + key.length), 10);
-    if (n > 0) {
-      return n;
-    }
-    return fallback;
+    return { caseName, count, payloadChars };
   }
 
-  private makePayload(i: number, targetLen: number, asJson: boolean): string {
-    const header = asJson ? ('{"i":' + i + ',"v":"') : ('{"s":"');
-    const tail = '"}';
-    const padLen = targetLen - header.length - tail.length;
-    if (padLen <= 0) {
-      return (header + tail).substring(0, targetLen);
-    }
-    const token = (i * 31 + 7).toString(16) + '测Abc';
-    const pad = token.repeat(Math.ceil(padLen / token.length)).substring(0, padLen);
-    return header + pad + tail;
+  private makePad(targetLen: number): string {
+    const token = '0123456789abcdef测Abc';
+    const repeat = Math.ceil(targetLen / token.length);
+    return token.repeat(repeat).substring(0, targetLen);
   }
 
-  private preparePayloads(
+  private makeJsonString(i: number, targetLen: number): string {
+    const record: PerfRecord = { kind: 'json_string', i: i, v: '' };
+    const padLen = Math.max(0, targetLen - JSON.stringify(record).length);
+    record.v = this.makePad(padLen);
+    return JSON.stringify(record);
+  }
+
+  private makeKRRecord(i: number, targetLen: number): PerfRecord {
+    const record: PerfRecord = { kind: 'kr_record', i: i, v: '' };
+    const padLen = Math.max(0, targetLen - JSON.stringify(record).length);
+    record.v = this.makePad(padLen);
+    return record;
+  }
+
+  private preparePlainStringPayloads(
     cached: string[],
-    params: KRAny,
-    fallbackCount: number,
-    size: number,
-    asJson: boolean
+    count: number,
+    payloadChars: number
   ): string[] {
-    const count = this.parseCount(params, fallbackCount);
     if (cached.length === count) {
       return cached;
     }
     const out: string[] = [];
     for (let i = 0; i < count; i++) {
-      out.push(this.makePayload(i, size, asJson));
+      out.push(this.makePad(payloadChars));
     }
     return out;
   }
 
-  private runPrepared(
+  private prepareJsonStringPayloads(
+    cached: string[],
+    count: number,
+    payloadChars: number
+  ): string[] {
+    if (cached.length === count) {
+      return cached;
+    }
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) {
+      out.push(this.makeJsonString(i, payloadChars));
+    }
+    return out;
+  }
+
+  private prepareKRRecordPayloads(
+    cached: PerfRecord[],
+    count: number,
+    payloadChars: number
+  ): PerfRecord[] {
+    if (cached.length === count) {
+      return cached;
+    }
+    const out: PerfRecord[] = [];
+    for (let i = 0; i < count; i++) {
+      out.push(this.makeKRRecord(i, payloadChars));
+    }
+    return out;
+  }
+
+  private runPreparedStrings(
     caseName: string,
     payloads: string[],
     callback: KuiklyRenderCallback | null
   ): void {
     const count = payloads.length;
     let bytes = 0;
+    for (const payload of payloads) {
+      bytes += payload.length;
+    }
     const start = Date.now();
     for (let i = 0; i < count; i++) {
-      const payload = payloads[i];
-      bytes += payload.length;
+      callback?.(payloads[i]);
+    }
+    this.report(caseName, count, Date.now() - start, bytes);
+  }
+
+  private runPreparedRecords(
+    caseName: string,
+    payloads: PerfRecord[],
+    callback: KuiklyRenderCallback | null
+  ): void {
+    const count = payloads.length;
+    let bytes = 0;
+    for (const payload of payloads) {
+      bytes += JSON.stringify(payload).length;
+    }
+    const start = Date.now();
+    for (let i = 0; i < count; i++) {
+      callback?.(payloads[i]);
+    }
+    this.report(caseName, count, Date.now() - start, bytes);
+  }
+
+  private runPreparedKRJsonValue(
+    caseName: string,
+    count: number,
+    payload: KRJsonValue,
+    callback: KuiklyRenderCallback | null
+  ): void {
+    const bytes = payload.toJSONString().length * count;
+    const start = Date.now();
+    for (let i = 0; i < count; i++) {
       callback?.(payload);
     }
     this.report(caseName, count, Date.now() - start, bytes);
   }
 
   private report(caseName: string, count: number, costMs: number, bytes: number): void {
-    const line =
-      `{"case":"${caseName}","count":${count},"cost_ms":${costMs},"bytes":${bytes}}`;
-    console.info(`[CrossRuntimeInvocationPerf] ${caseName} count=${count} cost_ms=${costMs} bytes=${bytes}`);
+    const line = `{"case":"${caseName}","count":${count},"cost_ms":${costMs},"bytes":${bytes}}`;
+    console.info(
+      `[CrossRuntimeInvocationPerf] ${caseName} count=${count} cost_ms=${costMs} bytes=${bytes}`
+    );
     this.statsCallback?.(line);
   }
 }

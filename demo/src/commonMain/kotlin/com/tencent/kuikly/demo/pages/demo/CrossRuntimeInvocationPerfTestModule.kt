@@ -15,14 +15,18 @@
 
 package com.tencent.kuikly.demo.pages.demo
 
+import com.tencent.kuikly.core.module.AnyCallbackFn
 import com.tencent.kuikly.core.module.CallbackFn
 import com.tencent.kuikly.core.module.Module
+import com.tencent.kuikly.core.global.GlobalFunctions
+import com.tencent.kuikly.core.manager.BridgeManager
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 /**
- * Keep-alive sync callbacks for string / JSON payload benches.
- * [setCallbackWith*] only registers. [run*] asks native to fire unique payloads,
- * time them, and report via [setStatsCallback].
+ * Keep-alive callbacks for the ArkTS -> Kotlin payload benches.
+ *
+ * Every payload case is identified by [caseName], so the ArkTS side can cache
+ * prepared payloads per case and report results back to the same slot.
  */
 internal class CrossRuntimeInvocationPerfTestModule : Module() {
 
@@ -38,63 +42,77 @@ internal class CrossRuntimeInvocationPerfTestModule : Module() {
         )
     }
 
-    fun setCallbackWithSmallString(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithSmallString", callbackFn)
+    fun setCallbackWithPlainString(caseName: String, callbackFn: AnyCallbackFn) {
+        val callbackRef = GlobalFunctions.createFunction(pagerId) { data ->
+            callbackFn(data)
+            true
+        }
+        BridgeManager.callModuleMethod(
+            pagerId,
+            moduleName(),
+            "SetCallbackWithPlainString",
+            caseName,
+            callbackRef,
+            syncCallValue(syncCall = true, keepCallbackAlive = true)
+        )
     }
 
-    fun setCallbackWithMedianString(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithMedianString", callbackFn)
-    }
-
-    fun setCallbackWithLongString(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithLongString", callbackFn)
-    }
-
-    fun setCallbackWithSmallJSON(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithSmallJSON", callbackFn)
-    }
-
-    fun setCallbackWithMedianJSON(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithMedianJSON", callbackFn)
-    }
-
-    fun setCallbackWithLargeJSON(callbackFn: CallbackFn) {
-        registerPayloadCallback("SetCallbackWithLargeJSON", callbackFn)
-    }
-
-    fun runSmallString(count: Int) = runCase("RunSmallString", count)
-
-    fun runMedianString(count: Int) = runCase("RunMedianString", count)
-
-    fun runLongString(count: Int) = runCase("RunLongString", count)
-
-    fun runSmallJSON(count: Int) = runCase("RunSmallJSON", count)
-
-    fun runMedianJSON(count: Int) = runCase("RunMedianJSON", count)
-
-    fun runLargeJSON(count: Int) = runCase("RunLargeJSON", count)
-
-    private fun registerPayloadCallback(methodName: String, callbackFn: CallbackFn) {
+    fun setCallbackWithJson(caseName: String, callbackFn: CallbackFn) {
         toNative(
             keepCallbackAlive = true,
-            methodName = methodName,
-            param = null,
+            methodName = "SetCallbackWithJson",
+            param = caseName,
             callback = callbackFn,
             syncCall = true
         )
     }
 
-    private fun runCase(methodName: String, count: Int) {
+    fun runPlainString(caseName: String, count: Int, payloadChars: Int) {
+        runConfig("RunPlainString", caseName, count, payloadChars)
+    }
+
+    fun runJsonString(caseName: String, count: Int, payloadChars: Int) {
+        runConfig("RunJsonString", caseName, count, payloadChars)
+    }
+
+    fun runKRRecord(caseName: String, count: Int, payloadChars: Int) {
+        runConfig("RunKRRecord", caseName, count, payloadChars)
+    }
+
+    fun runKRJsonValue(request: JSONObject) {
         toNative(
             keepCallbackAlive = false,
-            methodName = methodName,
-            param = JSONObject().put("count", count).toString(),
+            methodName = "RunKRJsonValue",
+            param = request,
             callback = null,
             syncCall = false
         )
     }
 
+    private fun runConfig(methodName: String, caseName: String, count: Int, payloadChars: Int) {
+        val config = JSONObject()
+            .put("case", caseName)
+            .put("count", count)
+            .put("payloadChars", payloadChars)
+        toNative(
+            keepCallbackAlive = false,
+            methodName = methodName,
+            param = config.toString(),
+            callback = null,
+            syncCall = false
+        )
+    }
+
+    private fun syncCallValue(syncCall: Boolean, keepCallbackAlive: Boolean): Int {
+        return if (pageData?.isOhOs == true) {
+            (if (syncCall) 1 else 0) + if (keepCallbackAlive) CALLBACK_KEEP_ALIVE_MASK else 0
+        } else {
+            if (syncCall) 1 else 0
+        }
+    }
+
     companion object {
         const val MODULE_NAME = "KRCrossRuntimeInvocationPerfTestModule"
+        private const val CALLBACK_KEEP_ALIVE_MASK = 2
     }
 }
