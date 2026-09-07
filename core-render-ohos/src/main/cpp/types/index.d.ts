@@ -94,6 +94,3 @@ export const isBackPressConsumed: (instanceId: string, sendTime: number) => numb
 export const isKRJsonValue: (value: object) => boolean
 /** @internal Consumes a router token emitted by KRJsonValue.toJSON(). */
 export const takeKRJsonRoutePayload: (token: string) => KRJsonValue | undefined
-
-/** 仅当 C++ `KUIKLY_OHOS_NAPI_RECORD_BENCH=1` 时 so 才导出该符号。 */
-export const benchNapiRecordConvert: (value: object, iterations: number) => string;

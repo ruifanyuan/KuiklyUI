@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import { KRJsonValue, KRNativeRenderController, KRRecord, KRRouterParams, Kuikly, runNapiRecordConvertBench, KUIKLY_OHOS_NAPI_RECORD_BENCH } from '@kuikly-open/render';
+import { KRJsonValue, KRNativeRenderController, KRRecord, KRRouterParams, Kuikly } from '@kuikly-open/render';
 import globalNativeManager from '../kuikly/MyNativeManager';
 import { KuiklyViewDelegate } from '../kuikly/KuiklyViewDelegate';
 import pasteboard from '@ohos.pasteboard';
@@ -49,18 +49,11 @@ struct Index {
   }
 
   aboutToAppear(): void {
-    const appearStartTs = Date.now();
     AppKRRenderManager.getInstance().initIfNeed();
     const routerParams = router.getParams() as Record<string, Object> | null;
     const params = routerParams ?? ({} as Record<string, Object>);
     this.pageName = (params?.pageName as string) || LaunchParams.pageName || null;
     this.pageData = KRRouterParams.resolvePageData(params);
-    hilog.info(0x0000, 'RouterPerf',
-      `stage=index_aboutToAppear, pageName=${this.pageName}, ` +
-        `setupMs=${Date.now() - appearStartTs}`);
-    if (KUIKLY_OHOS_NAPI_RECORD_BENCH === 1 && this.pageName === 'NapiRecordBench') {
-      runNapiRecordConvertBench();
-    }
     if (this.contextCodeHandler.isNeedGetContextCode(params)) {
       this.contextCodeHandler.handleGetContextCode(getContext(), params, (contextCode) => {
         this.contextCode = contextCode;

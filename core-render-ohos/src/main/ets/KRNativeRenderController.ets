@@ -615,23 +615,11 @@ export class KRNativeRenderController {
       return;
     }
     this.didInit = true;
-    const initStartTs = Date.now();
-    let pageData = this.createPageParams(this.pageParams, this.viewRect.width, this.viewRect.height);
-    const paramsCreatedTs = Date.now();
-    let configJson = this.createConfigJson(new KRSize(this.viewRect.width, this.viewRect.height));
-    const configCreatedTs = Date.now();
-    KRRenderLog.i('RouterPerf',
-      `stage=arkts_create_page_params, pageName=${this.pageName}, ` +
-        `createParamsMs=${paramsCreatedTs - initStartTs}, ` +
-        `createConfigMs=${configCreatedTs - paramsCreatedTs}`);
-    const napiStartTs = Date.now();
+    const pageData = this.createPageParams(this.pageParams, this.viewRect.width, this.viewRect.height);
+    const configJson = this.createConfigJson(new KRSize(this.viewRect.width, this.viewRect.height));
     render.onInitRenderView(this.instanceId, this.pageName, pageData, this.viewRect.width, this.viewRect.height,
       configJson
       , this.uiContext, this.uiContext?.getHostContext()?.resourceManager);
-    KRRenderLog.i('RouterPerf',
-      `stage=arkts_onInitRenderView_return, pageName=${this.pageName}, ` +
-        `onInitMs=${Date.now() - napiStartTs}, ` +
-        `totalMs=${Date.now() - initStartTs}`);
     this.runLazyTasksOnce();
   }
 

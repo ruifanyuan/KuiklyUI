@@ -49,38 +49,22 @@ export class KRRouterModule extends KuiklyRenderBaseModule {
   // supported and is materialized only for that legacy input path.
   private openPage(params: KRAny) {
     try {
-      const parseStartTs = Date.now();
       const nativeParams: KRJsonValue | undefined =
         KRJsonParam.isNative(params) ? params as KRJsonValue : undefined;
       const legacyParams: KRRecord | undefined =
         nativeParams === undefined ? KRJsonParam.asRecord(params) : undefined;
-      const parseEndTs = Date.now();
       const pageName = (nativeParams?.get('pageName') ??
         legacyParams?.['pageName']) as string;
       const pageData = (nativeParams?.get('pageData') ??
         legacyParams?.['pageData']) as KRAny | undefined;
-      const routeStartTimestamp = (nativeParams?.get('__kuiklyRouteStartTimestampMs') ??
-        legacyParams?.['__kuiklyRouteStartTimestampMs']) as number | undefined;
       const ctx = getContext() as common.UIAbilityContext;
-      KRRenderLog.i('RouterPerf',
-        `stage=arkts_router_parse, pageName=${pageName}, ` +
-          `paramsMode=${nativeParams === undefined ? typeof params : 'native'}, ` +
-          `parseMs=${parseEndTs - parseStartTs}`);
-      const adapterStartTs = Date.now();
       const adapter = KuiklyRenderAdapterManager.krRouterAdapter;
       if (KRJsonParam.isNative(pageData) &&
           adapter?.openPageWithKRJson !== undefined) {
         adapter.openPageWithKRJson(ctx, pageName, pageData as KRJsonValue);
-        KRRenderLog.i('RouterPerf',
-          `stage=arkts_native_payload_to_adapter, pageName=${pageName}, ` +
-            `transportMs=${routeStartTimestamp === undefined ? -1 : Date.now() - routeStartTimestamp}`);
       } else {
         adapter?.openPage(ctx, pageName, KRJsonParam.asRecord(pageData));
       }
-      KRRenderLog.i('RouterPerf',
-        `stage=arkts_router_adapter_return, pageName=${pageName}, ` +
-          `adapterMs=${Date.now() - adapterStartTs}, ` +
-          `totalMs=${Date.now() - parseStartTs}`);
     } catch (e) {
       KRRenderLog.e(KRRouterModule.MODULE_NAME, `openPage error ${e}`);
     }

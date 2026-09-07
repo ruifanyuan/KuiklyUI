@@ -289,8 +289,6 @@ napi_value KRJsonGetSize(napi_env env, napi_callback_info info) {
 }  // namespace
 
 napi_value KRRenderValue::WrapKRJSON(napi_env env, KRJSONValue value) {
-    KR_LOG_INFO_WITH_TAG("KRJsonNative") << "stage=wrap_enter, type=" << kuikly::util::json::GetType(value)
-                                         << ", size=" << kuikly::util::json::GetSize(value);
     napi_value result = nullptr;
     if (env == nullptr || napi_create_object(env, &result) != napi_ok) {
         KR_LOG_ERROR_WITH_TAG("KRJsonNative") << "stage=wrap_create_object_failed";
@@ -316,7 +314,6 @@ napi_value KRRenderValue::WrapKRJSON(napi_env env, KRJSONValue value) {
         KR_LOG_ERROR_WITH_TAG("KRJsonNative") << "stage=wrap_define_properties_failed";
         return nullptr;
     }
-    KR_LOG_INFO_WITH_TAG("KRJsonNative") << "stage=wrap_ready";
     return result;
 }
 

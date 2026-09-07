@@ -23,7 +23,6 @@
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/scheduler/KRContextScheduler.h"
 #include "libohos_render/utils/KRConvertUtil.h"
-#include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/view/KRRenderView.h"
 #include "libohos_render/manager/KRRenderManager.h"
 
@@ -113,21 +112,8 @@ void KRRenderCore::DidInit() {
         strongSelf->contextHandler_->InitContext();
         strongSelf->notifyInitState(KRInitState::kStateInitContextFinish);
         strongSelf->notifyInitState(KRInitState::kStateCreateInstanceStart);
-        const auto dispatch_wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          std::chrono::system_clock::now().time_since_epoch())
-                                          .count();
-        KR_LOG_INFO_WITH_TAG("RouterPerf") << "stage=cpp_call_kotlin_create_instance_enter, "
-                                            << "dispatchWallMs=" << dispatch_wall_ms;
-        const auto call_kotlin_t0 = std::chrono::steady_clock::now();
         strongSelf->CallKotlinMethod(KuiklyRenderContextMethod::KuiklyRenderContextMethodCreateInstance, page_name, page_data,
                                      parsed_page_data, null_arg, null_arg);
-        const auto call_kotlin_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                        std::chrono::steady_clock::now() - call_kotlin_t0)
-                                        .count();
-        KR_LOG_INFO_WITH_TAG("RouterPerf") << "stage=cpp_call_kotlin_create_instance_return, callMs="
-                                            << call_kotlin_ms;
-        // 获取操作完成后的时间点
-        auto end = std::chrono::steady_clock::now();
         strongSelf->uiScheduler_->PerformSyncMainQueueTasksBlockIfNeed(sync);
         strongSelf->notifyInitState(KRInitState::kStateCreateInstanceFinish);
     });

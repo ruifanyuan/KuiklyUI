@@ -16,7 +16,6 @@
 import { IKRRouterAdapter, KRJsonValue, KRRecord } from '@kuikly-open/render';
 import router from '@ohos.router';
 import { common } from '@kit.AbilityKit';
-import { hilog } from '@kit.PerformanceAnalysisKit';
 import kuiklyEntry from 'libkuikly_entry.so';
 
 export class AppKRRouterAdapter implements IKRRouterAdapter {
@@ -45,7 +44,6 @@ export class AppKRRouterAdapter implements IKRRouterAdapter {
     } else {
       url = 'pages/Index';
     }
-    const pushStartTs = Date.now();
     router.pushUrl({
       url,
       params: {
@@ -53,9 +51,6 @@ export class AppKRRouterAdapter implements IKRRouterAdapter {
         pageData
       }
     });
-    hilog.info(0x0000, 'RouterPerf',
-      `stage=adapter_pushUrl_return, pageName=${pageName}, ` +
-        `pushUrlMs=${Date.now() - pushStartTs}`);
   }
 
   openPageWithKRJson(
