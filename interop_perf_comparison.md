@@ -153,3 +153,135 @@ logs/kuikly_main_interop_add3.log
 logs/kuikly_main_interop_open_kotlin_dump.log
 logs/kuikly_main_interop_open_cpp_dump.log
 ```
+
+---
+
+# Release 模式真机对比补充
+
+## 测试环境
+
+- 设备：HarmonyOS 真机 `LNG0223C13000049`
+- 构建模式：Release
+- 包名：`com.tencent.kuiklyohosdemo`
+- 测试页面：`InteropPerfTestPage`
+
+对比口径与 Debug 部分一致：`main` 不包含 KRJSONValue 用例，只比较 9 个共同用例。
+
+## 一、跨 Runtime 调用对比（ArkTS → Kotlin）
+
+### 1.1 文本测量基线
+
+| 基线 | dev3 | main |
+|---|---:|---:|
+| 10,000 次文本测量 | 2,102 ms | 2,240 ms |
+| 平均每次 | 0.21 ms | 0.22 ms |
+
+### 1.2 9 个共同用例
+
+| Payload | 规模 | 次数 | dev3 累计 | dev3 平均 | main 累计 | main 平均 |
+|---|---|---:|---:|---:|---:|---:|
+| 普通 string | 128 KB | 50 | 14 ms | 0.28 ms | 23 ms | 0.46 ms |
+| JSON string | 128 KB | 50 | 9 ms | 0.18 ms | 16 ms | 0.32 ms |
+| KRRecord | 128 KB | 50 | 38 ms | 0.76 ms | 55 ms | 1.10 ms |
+| 普通 string | 384 KB | 20 | 12 ms | 0.60 ms | 22 ms | 1.10 ms |
+| JSON string | 384 KB | 20 | 7 ms | 0.35 ms | 21 ms | 1.05 ms |
+| KRRecord | 384 KB | 20 | 53 ms | 2.65 ms | 71 ms | 3.55 ms |
+| 普通 string | 3 MB | 3 | 6 ms | 2.00 ms | 33 ms | 11.00 ms |
+| JSON string | 3 MB | 3 | 11 ms | 3.67 ms | 28 ms | 9.33 ms |
+| KRRecord | 3 MB | 3 | 72 ms | 24.00 ms | 61 ms | 20.33 ms |
+
+### 1.3 dev3 额外：KRJsonValue
+
+| Payload | 规模 | 次数 | 累计 | 平均 |
+|---|---|---:|---:|---:|
+| KRJsonValue | 128 KB | 50 | 0 ms | 0.00 ms |
+| KRJsonValue | 384 KB | 20 | 0 ms | 0.00 ms |
+| KRJsonValue | 3 MB | 3 | 1 ms | 0.33 ms |
+
+### 1.4 Release 观察
+
+- Release 模式整体绝对值明显低于 Debug。
+- dev3 依旧全面快于 main：
+  - 3 MB 普通 string：dev3 6 ms，main 33 ms；
+  - 3 MB JSON string：dev3 11 ms，main 28 ms；
+  - 3 MB KRRecord：dev3 72 ms，main 61 ms，两者差异相对较小，且 main 单次略优于 dev3 的平均值口径。
+- KRJsonValue 在 Release 下依旧接近 0 ms，且不随 payload 增长。
+
+## 二、JSON 解析测试对比
+
+### 2.1 扩容并准备 C++ backed 数据
+
+| 阶段 | 指标 | dev3 | main |
+|---|---|---:|---:|
+| init | 字段数 | 2,025 | 1,900 |
+| init | payload 体积 | 34,246 B | 33,924 B |
+| init | stringify | 1 ms | 1 ms |
+| init | parse | 1 ms | 1 ms |
+| init | prepare total | 2 ms | 2 ms |
+| +30 KB | 字段数 | 4,052 | 3,801 |
+| +30 KB | payload 体积 | 70,734 B | 70,016 B |
+| +30 KB | stringify | 3 ms | 2 ms |
+| +30 KB | parse | 1 ms | 2 ms |
+| +30 KB | prepare total | 4 ms | 4 ms |
+| +300 KB | 字段数 | 24,322 | 22,816 |
+| +300 KB | payload 体积 | 458,161 B | 451,232 B |
+| +300 KB | stringify | 17 ms | 17 ms |
+| +300 KB | parse | 7 ms | 13 ms |
+| +300 KB | prepare total | 24 ms | 30 ms |
+| +3 MB | 字段数 | 231,892 | 217,537 |
+| +3 MB | payload 体积 | 4,763,478 B | 4,672,382 B |
+| +3 MB | stringify | 171 ms | 247 ms |
+| +3 MB | parse | 110 ms | 188 ms |
+| +3 MB | prepare total | 281 ms | 435 ms |
+
+### 2.2 打开 Kotlin backed 页面
+
+| 指标 | dev3 | main |
+|---|---:|---:|
+| router openPage 返回 | 5 ms | 6 ms |
+| click → result created | 33 ms | 43 ms |
+| params 读取 | 0 ms | 1 ms |
+| 实际 key 数 | 2,026 | 1,901 |
+| 真实 JSON 体积 | 34,246 B | 33,924 B |
+| 真实序列化 | 0 ms | 1 ms |
+| 动态字段抽样 | 1 ms | 0 ms |
+| click → pageDidAppear | 37 ms | 49 ms |
+
+### 2.3 打开 C++ backed 页面
+
+| 指标 | dev3 | main |
+|---|---:|---:|
+| router openPage 返回 | 1 ms | 3 ms |
+| click → result created | 21 ms | 39 ms |
+| params 读取 | 0 ms | 0 ms |
+| 实际 key 数 | 2,026 | 1,901 |
+| 真实 JSON 体积 | 34,246 B | 33,924 B |
+| 真实序列化 | 0 ms | 1 ms |
+| 动态字段抽样 | 1 ms | 0 ms |
+| click → pageDidAppear | 24 ms | 44 ms |
+
+### 2.4 Release JSON 观察
+
+- dev3 在 3 MB C++ backed 解析路径优势最明显：prepare total 281 ms vs main 435 ms。
+- 打开 C++ backed 页面：dev3 click→created 21 ms，main 39 ms。
+- Release 下 30 KB / 300 KB 小规模差异不大，但大规模场景仍保持优势。
+
+## 三、Release 相关日志
+
+### dev3
+
+```text
+logs/release_compare_dev3_cross2.log
+logs/release_compare_dev3_json_add2.log
+logs/release_compare_dev3_open_kotlin_dump.log
+logs/release_compare_dev3_open_cpp_dump.log
+```
+
+### main（KuiklyUI 主工作目录）
+
+```text
+logs/release_compare_main_cross2.log
+logs/release_compare_main_json_add2.log
+logs/release_compare_main_open_kotlin_dump.log
+logs/release_compare_main_open_cpp_dump.log
+```
