@@ -344,13 +344,16 @@ internal class InteropPerfTestPage : BasePager() {
         val start = DateTime.currentTimestamp()
         var lastWidth = 0f
         var lastHeight = 0f
-        for (i in 0 until MEASURE_COUNT) {
-            shadow.setProp(TextConst.VALUE, "测$i 中文Abc🎉/${i * 17}")
-            val size = shadow.calculateRenderViewSize(MEASURE_MAX_WIDTH, MEASURE_MAX_HEIGHT)
-            lastWidth = size.width
-            lastHeight = size.height
+        try {
+            for (i in 0 until MEASURE_COUNT) {
+                shadow.setProp(TextConst.VALUE, "测$i 中文Abc🎉/${i * 17}")
+                val size = shadow.calculateRenderViewSize(MEASURE_MAX_WIDTH, MEASURE_MAX_HEIGHT)
+                lastWidth = size.width
+                lastHeight = size.height
+            }
+        } finally {
+            shadow.removeFromParentComponent()
         }
-        shadow.removeFromParentComponent()
         val cost = DateTime.currentTimestamp() - start
         measureLine =
             "Kotlin → ArkTS 同步文本测量｜$MEASURE_COUNT 次\n" +
