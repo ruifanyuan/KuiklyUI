@@ -79,6 +79,16 @@ internal class InteropPerfTestModule : Module() {
         runConfig("RunKRRecord", caseName, count, payloadChars)
     }
 
+    fun runKRJsonValue(request: JSONObject) {
+        toNative(
+            keepCallbackAlive = false,
+            methodName = "RunKRJsonValue",
+            param = request,
+            callback = null,
+            syncCall = false
+        )
+    }
+
     private fun runConfig(methodName: String, caseName: String, count: Int, payloadChars: Int) {
         val config = JSONObject()
             .put("case", caseName)

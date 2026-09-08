@@ -92,6 +92,11 @@ set(SOURCE_SET
         libohos_render/utils/KRURIHelper.cpp
         libohos_render/utils/KRBase64Util.cpp
         libohos_render/utils/KRJSONObject.cpp
+        libohos_render/utils/json/Value.cpp
+        libohos_render/utils/json/Reader.cpp
+        libohos_render/utils/json/DomBuilder.cpp
+        libohos_render/api/src/KRJSON.cpp
+        libohos_render/foundation/type/KRRenderValue.cpp
         libohos_render/utils/KRStringUtil.cpp
         libohos_render/utils/KRViewUtil.cpp
         libohos_render/utils/KRThreadChecker.cpp
@@ -154,6 +159,8 @@ target_include_directories(kuikly PUBLIC ${HMOS_SDK_NATIVE}/sysroot/usr/include)
 target_link_directories(kuikly PUBLIC ${HMOS_SDK_NATIVE}/sysroot/usr/lib/aarch64-linux-ohos)
 target_include_directories(kuikly PRIVATE ${NATIVERENDER_ROOT_PATH}
                     ${NATIVERENDER_ROOT_PATH}/include)
+# RapidJSON (header-only, vendored under thirdparty/) — SAX JSON parser
+target_include_directories(kuikly PRIVATE ${NATIVERENDER_ROOT_PATH}/thirdparty/rapidjson/include)
 target_link_libraries(kuikly PUBLIC hilog_ndk.z.so
                                     libability_runtime.so
                                     libace_napi.z.so

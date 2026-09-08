@@ -466,6 +466,15 @@ class IKRRenderViewExport : public std::enable_shared_from_this<IKRRenderViewExp
         return instance_id_;
     }
 
+    KRAnyValue GetInstanceIdValue() {
+        if (auto root = GetRootView().lock()) {
+            if (auto ctx = root->GetContext()) {
+                return ctx->InstanceIdValue();
+            }
+        }
+        return KRRenderValue();
+    }
+
     void SetViewTag(int view_tag) {
         view_tag_ = view_tag;
         // #ifndef NDEBUG

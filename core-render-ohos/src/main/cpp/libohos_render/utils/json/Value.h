@@ -1,0 +1,303 @@
+/*
+ * Tencent is pleased to support the open source community by making KuiklyUI
+ * available.
+ * Copyright (C) 2026 Tencent. All rights reserved.
+ * Licensed under the License of KuiklyUI;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * https://github.com/Tencent-TDS/KuiklyUI/blob/main/LICENSE
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#ifndef CORE_RENDER_OHOS_JSON_VALUE_H
+#define CORE_RENDER_OHOS_JSON_VALUE_H
+
+// Internal representation for the "Scheme A" tagged JSON value. The public,
+// C-ABI surface lives in libohos_render/api/include/Kuikly/KRJSON.h; this
+// header holds the C++ implementation details (heap boxes + encode/decode) and
+// the internal functions the C wrappers, reader and builder call directly.
+//
+// Layout of a KRJSONValue (uint64):
+//   bits[0..7]  : storage tag (kTag*)
+//   bits[8..63] : inline payload (null/bool/56-bit int) OR a 48-bit pointer to
+//                 a reference-counted heap box (ptr = value >> 8).
+// See utils/json/DESIGN.md for the full rationale and the alternative
+// NaN-boxing design (Scheme B).
+
+#include <atomic>
+#include <cassert>
+#include <cstdint>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "libohos_render/api/include/Kuikly/KRJSON.h"
+
+namespace kuikly {
+namespace util {
+namespace json {
+
+// Scheme A packs a 48-bit pointer into the high 56 bits of the 64-bit word.
+static_assert(sizeof(void *) == 8, "KRJSONValue tagging assumes 64-bit pointers");
+
+// Storage tags stored in the low byte of a KRJSONValue.
+//
+// Two families share this space: "immediate" tags (the value is encoded inline
+// in the high 56 bits) and "heap" tags (the high bits are a pointer to a
+// reference-counted HeapBox). They are INTERLEAVED, not two contiguous ranges
+// (e.g. kTagInt32/kTagFloat/kTagDoubleF32 are immediates sitting between heap
+// tags), so heap-ness is decided by the explicit set in IsHeapTag() — never by
+// a `t < N` range check.
+//
+// ⚠️ When you ADD, REMOVE, or CHANGE the heap-ness of a tag, you MUST keep these
+// in sync, or values will leak / be double-freed / be mis-decoded as pointers:
+//   1. IsHeapTag()'s kHeapTagMask (below) — the single source of truth for
+//      "is this a heap tag". AsBox()/Retain()/Release() all rely on it.
+//   2. The Release() switch in Value.cpp — how each heap tag frees its box.
+//   3. GetType() in Value.cpp — the tag -> public KRJSONType mapping.
+//   4. The mask is uint32 + a `t < 32` guard, so tag values MUST stay < 32.
+enum : uint8_t {
+    kTagNull = 0,   // immediate
+    kTagBool = 1,   // immediate, payload bit 8 = 0/1
+    kTagInt = 2,    // immediate, 56-bit signed int in bits[8..63]
+    kTagDouble = 3,   // heap NumberBox (double bits that are not lossless float)
+    kTagInt64 = 4,    // heap NumberBox (int64 out of 56-bit range)
+    kTagUint64 = 5,   // heap NumberBox (uint64 > int64 max)
+    kTagString = 6,   // heap StringBox (UTF-8)
+    kTagArray = 7,    // heap ArrayBox
+    kTagObject = 8,   // heap ObjectBox
+    kTagBytes = 9,    // heap BytesBox (bridge-only, not valid JSON text)
+    kTagInt32 = 10,   // immediate bridge Int (preserves Kotlin/C++ type)
+    kTagFloat = 11,   // immediate, 32-bit IEEE bits in [8..39]; GetType = KRJSON_FLOAT
+    kTagLong = 12,    // heap NumberBox (preserves Kotlin/C++ type)
+    kTagU16String = 13,  // heap U16StringBox (UTF-16; GetType = KRJSON_U16STRING = 13)
+    kTagDoubleF32 = 14,  // immediate float bits; GetType = KRJSON_DOUBLE (lossless)
+    kTagNapi = 15,   // heap OpaqueBox: two opaque pointers (render-layer NAPI
+                     // handle side-channel). GetType = KRJSON_NULL (not real JSON).
+    kFirstHeapTag = kTagDouble,
+    kTagInvalid = 0xFF,
+};
+
+// Common header of every heap box: an intrusive atomic refcount (starts at 1).
+struct HeapBox {
+    std::atomic<int32_t> rc{1};
+};
+
+// Number box: holds the raw 8 bytes of a double / int64 / uint64.
+struct NumberBox : HeapBox {
+    uint64_t bits = 0;
+};
+
+// Immutable UTF-8 string: [HeapBox rc][uint32 len][bytes][NUL].
+struct StringBox : HeapBox {
+    uint32_t len = 0;
+    const char *data() const { return reinterpret_cast<const char *>(this + 1); }
+    static StringBox *Create(const char *s, size_t n);
+    static void Free(StringBox *b);
+};
+
+// Immutable UTF-16 string: [HeapBox rc][uint32 unit_count][units][0].
+// GetString does not convert this box; callers use GetStringUtf16.
+struct U16StringBox : HeapBox {
+    uint32_t len = 0;  // code units, not bytes
+    const uint16_t *data() const { return reinterpret_cast<const uint16_t *>(this + 1); }
+    uint16_t *data() { return reinterpret_cast<uint16_t *>(this + 1); }
+    static U16StringBox *Create(const uint16_t *s, size_t n);
+    static void Free(U16StringBox *b);
+};
+static_assert(sizeof(U16StringBox) % alignof(uint16_t) == 0,
+              "UTF-16 payload follows U16StringBox and must be 2-byte aligned");
+
+// Immutable bytes: [HeapBox rc][uint32 len][bytes]. One allocation; no vector.
+struct BytesBox : HeapBox {
+    uint32_t len = 0;
+    const uint8_t *data() const { return reinterpret_cast<const uint8_t *>(this + 1); }
+    uint8_t *data() { return reinterpret_cast<uint8_t *>(this + 1); }
+    static BytesBox *Create(const uint8_t *s, size_t n);
+    static void Free(BytesBox *b);
+};
+
+// Array box: children stored by value as KRJSONValue words (each retained).
+struct ArrayBox : HeapBox {
+    std::vector<KRJSONValue> items;
+    ~ArrayBox();  // releases every element
+};
+
+// Object box: insertion-ordered flat entries; values are retained KRJSONValue
+// words. Lookup is linear — for the small objects on the render path this beats
+// a hash map (fewer allocations, better cache locality) and preserves order.
+// One member list per object (`union`): UTF-8 parse → `utf8`, UTF-16 parse →
+// `utf16`. The two encodings are not mixed.
+struct ObjectBox : HeapBox {
+    using Utf8Members = std::vector<std::pair<std::string, KRJSONValue>>;
+    using Utf16Members = std::vector<std::pair<std::u16string, KRJSONValue>>;
+    struct Utf16Keys {};
+    bool keys_utf16 = false;
+    union {
+        Utf8Members utf8;
+        Utf16Members utf16;
+    };
+    ObjectBox() : utf8() {}
+    explicit ObjectBox(Utf16Keys) : keys_utf16(true), utf16() {}
+    ObjectBox(const ObjectBox &) = delete;
+    ObjectBox &operator=(const ObjectBox &) = delete;
+    ~ObjectBox();  // releases every value, destroys the active union member
+};
+
+// Two opaque pointers behind one refcounted heap word. The JSON layer stays
+// NAPI-agnostic (plain void*); the render layer (KRRenderValue) uses this to
+// carry a {napi_env, napi_value} handle without a separate shared_ptr member on
+// every value. Never appears in parsed JSON; GetType reports KRJSON_NULL.
+struct OpaqueBox : HeapBox {
+    const void *a = nullptr;
+    const void *b = nullptr;
+};
+
+// ---- tag / encode / decode helpers ----
+inline uint8_t TagOf(KRJSONValue v) {
+    return static_cast<uint8_t>(v & 0xFFu);
+}
+static_assert(KRJSON_NULL == kTagNull);
+static_assert(KRJSON_BOOL == kTagBool);
+static_assert(KRJSON_INT == kTagInt);
+static_assert(KRJSON_DOUBLE == kTagDouble);
+static_assert(KRJSON_UINT == kTagUint64);
+static_assert(KRJSON_STRING == kTagString);
+static_assert(KRJSON_ARRAY == kTagArray);
+static_assert(KRJSON_OBJECT == kTagObject);
+static_assert(KRJSON_BYTES == kTagBytes);
+static_assert(KRJSON_FLOAT == kTagFloat);
+static_assert(KRJSON_LONG == kTagLong);
+static_assert(KRJSON_U16STRING == kTagU16String);
+
+inline bool IsHeapTag(uint8_t t) {
+    // Set-membership test "is tag t a heap-backed type?", encoded as a bitmask:
+    // bit t of kHeapTagMask is 1 iff tag t is a heap tag. The heap tags are not a
+    // contiguous range (immediate tags interleave), so this cannot be a `t >= N`
+    // range check — a bitmask captures the arbitrary set in one word.
+    //
+    //   (kHeapTagMask >> t) & 1   shifts bit t down to bit 0, then reads it;
+    //                             equivalent to (kHeapTagMask & (1u << t)) != 0.
+    //   t < 32u                   is REQUIRED: (a) shifting a uint32 by >= 32 is
+    //                             UB, and t comes from `v & 0xFF` so it can be up
+    //                             to 255 (kTagInvalid = 0xFF, or a corrupt byte);
+    //                             (b) any tag >= 16 is not a heap tag -> false.
+    //
+    // This is the hottest predicate in the render layer (AsBox -> every
+    // Retain/Release/GetType/accessor calls it); a profile showed the earlier
+    // 9-way `||` chain costing ~6% of the bridge thread. The mask is built from
+    // the tag enum (not a magic literal) so it can't silently drift — but adding
+    // a heap tag still requires adding its `(1u << kTagX)` term here (see the
+    // sync checklist on the tag enum above).
+    constexpr uint32_t kHeapTagMask =
+        (1u << kTagDouble) | (1u << kTagInt64) | (1u << kTagUint64) | (1u << kTagString) |
+        (1u << kTagArray) | (1u << kTagObject) | (1u << kTagBytes) |
+        (1u << kTagLong) | (1u << kTagU16String) | (1u << kTagNapi);
+    return t < 32u && ((kHeapTagMask >> t) & 1u) != 0u;
+}
+inline HeapBox *AsBox(KRJSONValue v) {
+    return IsHeapTag(TagOf(v)) ? reinterpret_cast<HeapBox *>(static_cast<uintptr_t>(v >> 8)) : nullptr;
+}
+inline bool IsUnique(KRJSONValue v) {
+    HeapBox *box = AsBox(v);
+    return box != nullptr && box->rc.load(std::memory_order_acquire) == 1;
+}
+// Cold, never-returns handler for the (should-be-impossible) case where a heap
+// pointer does not fit in 56 bits. Defined in Value.cpp; see EncodePtr.
+[[noreturn]] void CrashOnPointerTagViolation(uintptr_t p);
+
+inline KRJSONValue EncodePtr(const void *p, uint8_t tag) {
+    const uintptr_t u = reinterpret_cast<uintptr_t>(p);
+    // Scheme A stores the pointer in bits[8..63]; it must fit in 56 bits.
+    // aarch64/OHOS user VA is <= 48 bits today, but a top-byte-tagged (TBI/MTE)
+    // or >56-bit pointer would silently lose its high byte here and be restored
+    // as the wrong address by AsBox. This is a hard invariant of the whole
+    // scheme, so the guard is ALWAYS on (not a debug-only assert): the branch is
+    // one predictable, never-taken compare on the hot path.
+    if (__builtin_expect((u >> 56) != 0, 0)) {
+        CrashOnPointerTagViolation(u);
+    }
+    return (static_cast<uint64_t>(u) << 8) | tag;
+}
+inline KRJSONValue EncodeInt56(int64_t x) {
+    return (static_cast<uint64_t>(x) << 8) | kTagInt;
+}
+inline int64_t DecodeInt56(KRJSONValue v) {
+    return static_cast<int64_t>(v) >> 8;  // arithmetic shift sign-extends
+}
+
+// ---- internal value operations (the C wrappers in KRJSON.cpp forward here;
+//      reader/builder call these directly to stay off the C-ABI hot path) ----
+KRJSONValue Retain(KRJSONValue v);
+void Release(KRJSONValue v);
+
+KRJSONValue NewNull();
+KRJSONValue NewBool(bool b);
+KRJSONValue NewInt32(int32_t x);
+KRJSONValue NewInt(int64_t x);
+KRJSONValue NewLong(int64_t x);
+KRJSONValue NewUint(uint64_t x);
+KRJSONValue NewFloat(float f);
+KRJSONValue NewDouble(double d);
+KRJSONValue NewString(const char *s, size_t n);
+KRJSONValue NewStringUtf16(const uint16_t *s, size_t n);
+KRJSONValue NewBytes(const uint8_t *data, size_t n);
+KRJSONValue NewArray();
+KRJSONValue NewObject();
+KRJSONValue NewObjectUtf16();
+/** Box two opaque pointers (render-layer NAPI handle side-channel). Owned. */
+KRJSONValue NewOpaque(const void *a, const void *b);
+/** Read back the two pointers from a kTagNapi word. false (and untouched) otherwise. */
+bool GetOpaque(KRJSONValue v, const void **a, const void **b);
+void ArrayAppend(KRJSONValue array, KRJSONValue child);
+void ArraySet(KRJSONValue array, size_t index, KRJSONValue child);
+void ObjectPut(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
+void ObjectPutUtf16(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
+// Parser fast path: append a member WITHOUT the O(n) dedup scan ObjectPut does,
+// so building an N-key object from a trusted parser is O(n) instead of O(n^2).
+// Duplicate keys are collapsed once at the end via ObjectDedupLast. The public
+// ObjectPut* keep their overwrite-in-place semantics for API callers.
+void ObjectAppendNoDedup(KRJSONValue object, const char *key, size_t key_len, KRJSONValue child);
+void ObjectAppendUtf16NoDedup(KRJSONValue object, const uint16_t *key, size_t units, KRJSONValue child);
+// Collapse duplicate keys keeping the LAST value at the FIRST key's position
+// (matching the old dedup-on-insert behaviour and the JS `{a:1,a:2}`->`{a:2}`
+// convention). No-op when there are no duplicates (the common case).
+void ObjectDedupLast(KRJSONValue object);
+
+KRJSONType GetType(KRJSONValue v);
+bool GetBool(KRJSONValue v, bool default_value);
+int64_t GetInt(KRJSONValue v, int64_t default_value);
+uint64_t GetUint(KRJSONValue v, uint64_t default_value);
+double GetDouble(KRJSONValue v, double default_value);
+const char *GetString(KRJSONValue v, size_t *out_len);
+std::string Utf16ToUtf8(const uint16_t *s, size_t n);
+std::u16string Utf8ToUtf16(const char *s, size_t n);
+/** Borrowed UTF-16 units; NULL if not a UTF-16 string box. `out_units` is code-unit count. */
+const uint16_t *GetStringUtf16(KRJSONValue v, size_t *out_units);
+const uint8_t *GetBytes(KRJSONValue v, size_t *out_len);
+size_t GetSize(KRJSONValue v);
+KRJSONValue ArrayGet(KRJSONValue array, size_t index);
+KRJSONValue ObjectGet(KRJSONValue object, const char *key, size_t key_len);
+KRJSONValue ObjectGetUtf16(KRJSONValue object, const uint16_t *key, size_t units);
+bool ObjectKeysAreUtf16(KRJSONValue object);
+/** O(1) indexed access over the insertion-ordered member vector. Missing → INVALID. */
+KRJSONValue ObjectValueAt(KRJSONValue object, size_t index);
+/** Borrowed UTF-8 key bytes. nullptr if missing. Debug-asserts on UTF-16-key objects. */
+const char *ObjectKeyAt(KRJSONValue object, size_t index);
+/** Borrowed UTF-16 key units. nullptr if missing. Debug-asserts on UTF-8-key objects. */
+const uint16_t *ObjectKeyAtUtf16(KRJSONValue object, size_t index, size_t *out_units);
+void ObjectForEach(KRJSONValue object, KRJSONObjectVisitor visitor, void *userdata);
+
+std::string Dump(KRJSONValue v);
+/** Compact JSON text as UTF-16 units (same contract as Dump: `{"a":1}`). */
+std::u16string DumpUtf16(KRJSONValue v);
+
+}  // namespace json
+}  // namespace util
+}  // namespace kuikly
+
+#endif  // CORE_RENDER_OHOS_JSON_VALUE_H

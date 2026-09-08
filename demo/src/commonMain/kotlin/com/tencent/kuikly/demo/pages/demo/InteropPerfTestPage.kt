@@ -60,6 +60,7 @@ private enum class PayloadShape(val id: String, val label: String) {
     PLAIN_STRING("plain_string", "普通 string"),
     JSON_STRING("json_string", "JSON string"),
     KR_RECORD("kr_record", "KRRecord 对象"),
+    KR_JSON_VALUE("kr_json_value", "KRJsonValue 对象"),
 }
 
 private data class PayloadScale(val suffix: String, val chars: Int, val count: Int)
@@ -119,6 +120,16 @@ internal class InteropPerfTestPage : BasePager() {
     private var krRecord3mLine by observable(
         initialResultLine(PayloadShape.KR_RECORD, PAYLOAD_SCALES[2])
     )
+    private var krJsonValue128Line by observable(
+        initialResultLine(PayloadShape.KR_JSON_VALUE, PAYLOAD_SCALES[0])
+    )
+    private var krJsonValue384Line by observable(
+        initialResultLine(PayloadShape.KR_JSON_VALUE, PAYLOAD_SCALES[1])
+    )
+    private var krJsonValue3mLine by observable(
+        initialResultLine(PayloadShape.KR_JSON_VALUE, PAYLOAD_SCALES[2])
+    )
+
     private var registered = false
     private var payloadCallbackCount = 0
     private var completedCaseCount = 0
@@ -195,8 +206,8 @@ internal class InteropPerfTestPage : BasePager() {
                 Text {
                     attr {
                         text(
-                            "跨 runtime 调用测试：覆盖普通 string、JSON string 和 KRRecord " +
-                                "三种 payload，并分别测试 128 KB / 384 KB / 3 MB。"
+                            "跨 runtime 调用测试：覆盖普通 string、JSON string、KRRecord 和 " +
+                                "KRJsonValue 四种 payload，并分别测试 128 KB / 384 KB / 3 MB。"
                         )
                         fontSize(13f)
                         color(Color(0xFF555555))
@@ -243,6 +254,9 @@ internal class InteropPerfTestPage : BasePager() {
                 ResultLine("cross_kr_record_128k") { ctx.krRecord128Line }
                 ResultLine("cross_kr_record_384k") { ctx.krRecord384Line }
                 ResultLine("cross_kr_record_3m") { ctx.krRecord3mLine }
+                ResultLine("cross_kr_json_value_128k") { ctx.krJsonValue128Line }
+                ResultLine("cross_kr_json_value_384k") { ctx.krJsonValue384Line }
+                ResultLine("cross_kr_json_value_3m") { ctx.krJsonValue3mLine }
 
                 View {
                     attr {
@@ -389,8 +403,9 @@ internal class InteropPerfTestPage : BasePager() {
             }
             module.setCallbackWithJson(caseName(PayloadShape.JSON_STRING, scale), jsonSink)
             module.setCallbackWithJson(caseName(PayloadShape.KR_RECORD, scale), jsonSink)
+            module.setCallbackWithJson(caseName(PayloadShape.KR_JSON_VALUE, scale), jsonSink)
         }
-        crossStatus = "就绪：9 个 payload case 已注册；点击按钮开始跨 runtime 测试"
+        crossStatus = "就绪：12 个 payload case 已注册；点击按钮开始跨 runtime 测试"
         KLog.i(CROSS_RUNTIME_TAG, crossStatus)
     }
 
@@ -398,7 +413,7 @@ internal class InteropPerfTestPage : BasePager() {
         isTesting = true
         payloadCallbackCount = 0
         completedCaseCount = 0
-        crossStatus = "执行中：依次测试文本测量和 9 个 ArkTS → Kotlin payload case"
+        crossStatus = "执行中：依次测试文本测量和 12 个 ArkTS → Kotlin payload case"
         if (!runMeasureBench()) {
             isTesting = false
             return
@@ -410,6 +425,7 @@ internal class InteropPerfTestPage : BasePager() {
             module.runPlainString(caseName(PayloadShape.PLAIN_STRING, scale), scale.count, scale.chars)
             module.runJsonString(caseName(PayloadShape.JSON_STRING, scale), scale.count, scale.chars)
             module.runKRRecord(caseName(PayloadShape.KR_RECORD, scale), scale.count, scale.chars)
+            module.runKRJsonValue(buildKRJsonRequest(PayloadShape.KR_JSON_VALUE, scale))
         }
     }
 
@@ -445,12 +461,47 @@ internal class InteropPerfTestPage : BasePager() {
             "kr_record_128k" -> krRecord128Line = line
             "kr_record_384k" -> krRecord384Line = line
             "kr_record_3m" -> krRecord3mLine = line
+            "kr_json_value_128k" -> krJsonValue128Line = line
+            "kr_json_value_384k" -> krJsonValue384Line = line
+            "kr_json_value_3m" -> krJsonValue3mLine = line
         }
     }
 
     private fun caseDescription(caseName: String): String {
         val case = CASE_DEFS[caseName] ?: return "ArkTS → Kotlin｜未知 case=$caseName"
         return "ArkTS → Kotlin｜${case.first.label}｜${formatPayloadBytes(case.second.chars.toLong())}"
+    }
+
+    private fun buildKRJsonRequest(shape: PayloadShape, scale: PayloadScale): JSONObject {
+        val case = caseName(shape, scale)
+        val payload = buildKRJsonPayload(scale.chars)
+        return JSONObject()
+            .put("case", case)
+            .put("count", scale.count)
+            .put("payload", payload)
+    }
+
+    private fun buildKRJsonPayload(targetChars: Int): JSONObject {
+        val base = JSONObject()
+            .put("kind", "kr_json_value")
+            .put("i", 0)
+            .put("v", "")
+        val padLen = (targetChars - base.toString().length).coerceAtLeast(0)
+        return base.put("v", makePayloadString(padLen))
+    }
+
+    private fun makePayloadString(targetChars: Int): String {
+        val token = "0123456789abcdef测Abc"
+        val builder = StringBuilder(targetChars)
+        while (builder.length < targetChars) {
+            val remaining = targetChars - builder.length
+            if (remaining >= token.length) {
+                builder.append(token)
+            } else {
+                builder.append(token, 0, remaining)
+            }
+        }
+        return builder.toString()
     }
 
     private fun formatAverageMs(totalMs: Long, count: Int): String {

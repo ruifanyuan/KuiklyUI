@@ -15,6 +15,7 @@
 
 import {
   KRAny,
+  KRJsonValue,
   KuiklyRenderBaseModule,
   KuiklyRenderCallback
 } from '@kuikly-open/render';
@@ -92,6 +93,16 @@ export class KRInteropPerfTestModule extends KuiklyRenderBaseModule {
         this.krRecordPayloadCaches.set(config.caseName, payloads);
         this.runPreparedRecords(
           config.caseName, payloads, this.jsonCallbacks.get(config.caseName) ?? null
+        );
+        return null;
+      }
+      case 'RunKRJsonValue': {
+        const request = params as KRJsonValue;
+        const caseName = request.get('case') as string;
+        const count = request.get('count') as number;
+        const payload = request.get('payload') as KRJsonValue;
+        this.runPreparedKRJsonValue(
+          caseName, count, payload, this.jsonCallbacks.get(caseName) ?? null
         );
         return null;
       }
@@ -216,6 +227,20 @@ export class KRInteropPerfTestModule extends KuiklyRenderBaseModule {
     const start = Date.now();
     for (let i = 0; i < count; i++) {
       callback?.(payloads[i]);
+    }
+    this.report(caseName, count, Date.now() - start, bytes);
+  }
+
+  private runPreparedKRJsonValue(
+    caseName: string,
+    count: number,
+    payload: KRJsonValue,
+    callback: KuiklyRenderCallback | null
+  ): void {
+    const bytes = payload.toJSONString().length * count;
+    const start = Date.now();
+    for (let i = 0; i < count; i++) {
+      callback?.(payload);
     }
     this.report(caseName, count, Date.now() - start, bytes);
   }
