@@ -337,7 +337,7 @@ internal class InteropPerfTestPage : BasePager() {
     }
 
     // ---- Cross-runtime invocation helpers ----
-    private fun runMeasureBench() {
+    private fun runMeasureBench(): Boolean {
         val shadow = TextShadow(pagerId, MEASURE_SHADOW_REF, ViewConst.TYPE_RICH_TEXT)
         shadow.setProp(TextConst.FONT_SIZE, MEASURE_FONT_SIZE)
         shadow.setProp(TextConst.TEXT_USE_DP_FONT_SIZE_DIM, 1)
@@ -351,6 +351,13 @@ internal class InteropPerfTestPage : BasePager() {
                 lastWidth = size.width
                 lastHeight = size.height
             }
+        } catch (throwable: Throwable) {
+            measureLine =
+                "Kotlin → ArkTS 同步文本测量｜失败\n" +
+                    "异常：${throwable.message ?: throwable.toString()}"
+            crossStatus = "文本测量失败，请查看日志"
+            KLog.e(CROSS_RUNTIME_TAG, "measure bench failed: $throwable")
+            return false
         } finally {
             shadow.removeFromParentComponent()
         }
@@ -360,6 +367,7 @@ internal class InteropPerfTestPage : BasePager() {
                 "累计耗时：$cost ms｜平均：${formatAverageMs(cost, MEASURE_COUNT)} ms/次"
         crossStatus = "文本测量完成，继续执行 ArkTS → Kotlin 四类 payload 测试"
         KLog.i(CROSS_RUNTIME_TAG, measureLine)
+        return true
     }
 
     private fun registerNativeCallbacks() {
@@ -391,7 +399,10 @@ internal class InteropPerfTestPage : BasePager() {
         payloadCallbackCount = 0
         completedCaseCount = 0
         crossStatus = "执行中：依次测试文本测量和 9 个 ArkTS → Kotlin payload case"
-        runMeasureBench()
+        if (!runMeasureBench()) {
+            isTesting = false
+            return
+        }
         val module = acquireModule<InteropPerfTestModule>(
             InteropPerfTestModule.MODULE_NAME
         )
