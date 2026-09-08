@@ -16,11 +16,11 @@
 #include <arkui/native_node_napi.h>
 #include <cstdint>
 #include "libohos_render/expand/modules/back_press/KRBackPressModule.h"
+#include "libohos_render/foundation/KRCommon.h"
 #include "libohos_render/foundation/KRCallbackData.h"
 #include "libohos_render/foundation/thread/KRMainThread.h"
 #include "libohos_render/manager/KRArkTSManager.h"
 #include "libohos_render/manager/KRRenderManager.h"
-#include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/utils/NAPIUtil.h"
 #include "napi/native_api.h"
 
@@ -32,7 +32,7 @@ static napi_value OnLaunchStart(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     KRRenderManager::GetInstance().OnLaunchStart(instance_id);
     return 0;
 }
@@ -43,11 +43,11 @@ static napi_value UpdateConfig(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    std::string config_json = kuikly::util::getNApiArgsStdString(env, args[1]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
+    auto config_json = KRRenderValue::Make(env, args[1]);
     if (auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id)) {
         if (auto ctx = renderView->GetContext()) {
-            renderView->GetContext()->Config()->Update(config_json);
+            ctx->Config()->Update(config_json);
         } else {
             KR_LOG_ERROR << "Config update failed, context null";
         }
@@ -66,20 +66,31 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    std::string page_name = kuikly::util::getNApiArgsStdString(env, args[1]);
-    std::string page_data_json_str = kuikly::util::getNApiArgsStdString(env, args[2]);
+    auto instance_id = KRRenderValue::Make(env, args[0]);
+    auto page_name = KRRenderValue::Make(env, args[1]);
+    auto page_Data = KRRenderValue::Make(env, args[2]);
     double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[3]);
     double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[4]);
-    std::string config_json = kuikly::util::getNApiArgsStdString(env, args[5]);
-    auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
+    auto config_json = KRRenderValue::Make(env, args[5]);
+    std::string instance_id_utf8 = instance_id.toAsciiString();
+    auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id_utf8);
     if (renderView != nullptr) {
-        auto page_Data = KRRenderValue::Make(page_data_json_str == "" ? "{}" : page_data_json_str);
+        size_t page_data_units = 0;
+        if (page_Data.isString()) {
+            if (KRJSONGetType(page_Data.jsonValue()) == KRJSON_U16STRING) {
+                KRJSONGetStringUtf16(page_Data.jsonValue(), &page_data_units);
+            } else {
+                KRJSONGetString(page_Data.jsonValue(), &page_data_units);
+            }
+        }
+        if (!page_Data.isMap() && !page_Data.isArray() && (!page_Data.isString() || page_data_units == 0)) {
+            page_Data = KRRenderValue::Make(KRRenderValue::Map{});
+        }
         auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json);
         ArkUI_ContextHandle context_handle;
         OH_ArkUI_GetContextFromNapiValue(env, args[6], &context_handle);
         NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[7]);
-        int64_t launch_time = KRRenderManager::GetInstance().GetLaunchStartTime(instance_id);
+        int64_t launch_time = KRRenderManager::GetInstance().GetLaunchStartTime(instance_id_utf8);
         renderView->Init(context, context_handle, native_resources_manager, renderViewWidth, renderViewHeight,
                          launch_time);
     } else {
@@ -98,7 +109,7 @@ static napi_value OnDestroyRenderView(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
-    std::string instanceId = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instanceId = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     KRRenderManager::GetInstance().DestroyRenderView(instanceId);
     return 0;
 }
@@ -113,7 +124,7 @@ static napi_value OnRenderViewSizeChanged(napi_env env, napi_callback_info info)
         return 0;
     }
 
-    std::string instanceId = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instanceId = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
     double width = kuikly::util::getNApiArgsDouble(env, args[1]);
     double height = kuikly::util::getNApiArgsDouble(env, args[2]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instanceId);
@@ -149,9 +160,10 @@ static napi_value ArkTSOnSendEvent(napi_env env, napi_callback_info info) {
         return 0;
     }
 
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    auto event = kuikly::util::getNApiArgsStdString(env, args[1]);
-    auto data = kuikly::util::getNApiArgsStdString(env, args[2]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
+    auto event = KRRenderValue::Make(env, args[1]);
+    // 结构化 napi 值（Record / Array）直接构建 KRJSON，字符串同样兼容
+    auto data = KRRenderValue::Make(env, args[2]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
     if (renderView != nullptr) {
         renderView->SendEvent(event, data);
@@ -170,9 +182,9 @@ static napi_value ArkTSOnSendEventSync(napi_env env, napi_callback_info info) {
         return 0;
     }
 
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
-    auto event = kuikly::util::getNApiArgsStdString(env, args[1]);
-    auto data = kuikly::util::getNApiArgsStdString(env, args[2]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
+    auto event = KRRenderValue::Make(env, args[1]);
+    auto data = KRRenderValue::Make(env, args[2]);
     bool sync = kuikly::util::getNApiArgsBool(env, args[3]);
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id);
     if (renderView != nullptr) {
@@ -199,7 +211,7 @@ static napi_value isBackPressConsumed(napi_env env, napi_callback_info info) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return result;
     }
-    std::string instance_id = kuikly::util::getNApiArgsStdString(env, args[0]);
+    std::string instance_id = kuikly::util::getNApiArgsAsciiStdString(env, args[0]);
 
     auto render_view = KRRenderManager::GetInstance().GetRenderView(instance_id);
     if (render_view != nullptr) {
@@ -218,6 +230,27 @@ static napi_value isBackPressConsumed(napi_env env, napi_callback_info info) {
     return result;
 }
 
+static napi_value IsKRJsonValue(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok) {
+        return nullptr;
+    }
+    KRJSONValue value = KRJSON_INVALID;
+    napi_value result = nullptr;
+    napi_get_boolean(env, argc == 1 && KRRenderValue::TryUnwrapKRJSON(env, args[0], &value), &result);
+    return result;
+}
+
+static napi_value TakeKRJsonRoutePayload(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value args[1] = {nullptr};
+    if (napi_get_cb_info(env, info, &argc, args, nullptr, nullptr) != napi_ok || argc != 1) {
+        return nullptr;
+    }
+    return KRRenderValue::TakeKRJSONRoutePayload(env, args[0]);
+}
+
 EXTERN_C_START
 static napi_value Init(napi_env env, napi_value exports) {
     napi_property_descriptor desc[] = {
@@ -232,6 +265,8 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"OnLaunchStart", nullptr, OnLaunchStart, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"createNativeRoot", nullptr, CreateNativeRoot, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isBackPressConsumed", nullptr, isBackPressConsumed, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"isKRJsonValue", nullptr, IsKRJsonValue, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"takeKRJsonRoutePayload", nullptr, TakeKRJsonRoutePayload, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     KRMainThread::Export(env, exports);                   // 缓存主线程 uv_loop / async 句柄

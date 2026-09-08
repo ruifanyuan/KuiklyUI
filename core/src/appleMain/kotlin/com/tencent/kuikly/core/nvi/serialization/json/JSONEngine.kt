@@ -17,6 +17,13 @@ package com.tencent.kuikly.core.nvi.serialization.json
 
 actual object JSONEngine {
 
+    /**
+     * 文本解析走 [JSONTokener]：严格 JSON 优先 [NSJSONSerialization]（惰性 Foundation
+     * 容器），宽松历史写法回退到 [AbstractJSONTokener]。
+     *
+     * `NSDictionary` 不保留文本成员顺序，因此 `JSONObject(jsonStr).toString()` 的 key
+     * 次序在 Apple 上可能与输入不同（见 JsonConformanceSuite 对 key order 的平台开关）。
+     */
     actual fun parse(jsonStr: String): Any? {
         return JSONTokener(jsonStr).nextValue()
     }
