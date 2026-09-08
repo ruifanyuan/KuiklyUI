@@ -338,7 +338,7 @@ internal class InteropPerfTestPage : BasePager() {
 
     // ---- Cross-runtime invocation helpers ----
     private fun runMeasureBench() {
-        val shadow = TextShadow(pagerId, nativeRef, ViewConst.TYPE_RICH_TEXT)
+        val shadow = TextShadow(pagerId, MEASURE_SHADOW_REF, ViewConst.TYPE_RICH_TEXT)
         shadow.setProp(TextConst.FONT_SIZE, MEASURE_FONT_SIZE)
         shadow.setProp(TextConst.TEXT_USE_DP_FONT_SIZE_DIM, 1)
         val start = DateTime.currentTimestamp()
@@ -561,6 +561,7 @@ internal class InteropPerfTestPage : BasePager() {
         private const val MEASURE_FONT_SIZE = 16f
         private const val MEASURE_MAX_WIDTH = 320f
         private const val MEASURE_MAX_HEIGHT = 100000f
+        private const val MEASURE_SHADOW_REF = 1_000_000
         private val EXPECTED_CALLBACK_COUNT =
             PAYLOAD_SCALES.sumOf { it.count } * PayloadShape.values().size
     }
