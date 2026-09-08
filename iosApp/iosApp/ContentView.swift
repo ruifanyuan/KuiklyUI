@@ -14,16 +14,28 @@
  */
 
 import SwiftUI
-//import shared
-
-
+import Foundation
 
 struct ContentView: View {
-  //  let greet = Greeting().greet()
-
     var body: some View {
-        KuiklyRenderViewPage(pageName: "router", data: [:]).ignoresSafeArea()
+        let env = ProcessInfo.processInfo.environment
+        let args = ProcessInfo.processInfo.arguments
+        let pageName = launchValue("pageName", env: env, args: args) ?? "router"
+        return KuiklyRenderViewPage(pageName: pageName, data: [:]).ignoresSafeArea()
     }
+}
+
+/// `SIMCTL_CHILD_KUIKLY_PAGE_NAME` / `--pageName`，与鸿蒙 `aa start --ps` 对齐。
+private func launchValue(_ name: String, env: [String: String], args: [String]) -> String? {
+    if let i = args.firstIndex(of: "--" + name), i + 1 < args.count {
+        let value = args[i + 1]
+        if !value.isEmpty { return value }
+    }
+    let envKey = name == "pageName" ? "KUIKLY_PAGE_NAME" : "KUIKLY_" + name.uppercased()
+    if let value = env[envKey], !value.isEmpty {
+        return value
+    }
+    return nil
 }
 
 struct ContentView_Previews: PreviewProvider {

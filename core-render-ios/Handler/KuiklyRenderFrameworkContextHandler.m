@@ -100,7 +100,7 @@
     }
     NSMutableArray * arguments = [[NSMutableArray alloc] initWithCapacity:6];
     for (id arg in args) {
-        id ele = [KRConvertUtil nativeObjectToKotlinObject:arg];
+        id ele = [KRConvertUtil nativeObjectToKotlinBridgeArg:arg];
         if (ele) {
             [arguments addObject:ele];
         }
