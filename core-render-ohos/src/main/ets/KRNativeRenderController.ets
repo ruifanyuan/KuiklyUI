@@ -617,8 +617,9 @@ export class KRNativeRenderController {
     this.didInit = true;
     const pageData = this.createPageParams(this.pageParams, this.viewRect.width, this.viewRect.height);
     const configJson = this.createConfigJson(new KRSize(this.viewRect.width, this.viewRect.height));
-    render.onInitRenderView(this.instanceId, this.pageName, pageData, this.viewRect.width, this.viewRect.height,
-      configJson, this.uiContext, this.uiContext?.getHostContext()?.resourceManager);
+    render.onInitRenderView(this.instanceId, this.pageName, this.contextCode, this.executeMode.mode, pageData,
+      this.viewRect.width, this.viewRect.height, configJson, this.uiContext,
+      this.uiContext?.getHostContext()?.resourceManager);
     this.runLazyTasksOnce();
   }
 
@@ -720,8 +721,6 @@ export class KRNativeRenderController {
     pageData[KRFeature] = {
       "box_shadow_fill" : 1
     };
-    pageData[KRExecuteMode] = this.executeMode.mode;
-    pageData[KRContextCode] = this.contextCode;
     return pageData;
   }
 

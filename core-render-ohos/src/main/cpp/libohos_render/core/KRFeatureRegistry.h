@@ -70,7 +70,7 @@ struct HasShouldPreparePageData : std::false_type {};
 
 template <typename T>
 struct HasShouldPreparePageData<
-    T, std::void_t<decltype(T::ShouldPreparePageData(std::declval<const std::shared_ptr<KRRenderValue> &>(),
+    T, std::void_t<decltype(T::ShouldPreparePageData(std::declval<const KRRenderValue &>(),
                                                      std::declval<const std::shared_ptr<IKRRenderLayer> &>()))>>
     : std::true_type {};
 
@@ -120,7 +120,7 @@ void TryRegisterModules() {
 }
 
 template <typename F>
-bool TryShouldPreparePageData(const std::shared_ptr<KRRenderValue> &page_data,
+bool TryShouldPreparePageData(const KRRenderValue &page_data,
                              const std::shared_ptr<IKRRenderLayer> &layer) {
     if constexpr (HasShouldPreparePageData<F>::value) {
         return F::ShouldPreparePageData(page_data, layer);
@@ -165,15 +165,15 @@ struct KRFeatureRegistry {
         (TryRegisterModules<Features>(), ...);
     }
 
-    static std::shared_ptr<KRRenderValue> PreparePageDataForKotlin(const std::shared_ptr<KRRenderValue> &page_data,
-                                                                  const std::shared_ptr<IKRRenderLayer> &layer) {
-        if (!page_data) {
+    static KRRenderValue PreparePageDataForKotlin(const KRRenderValue &page_data,
+                                                 const std::shared_ptr<IKRRenderLayer> &layer) {
+        if (page_data.isNull()) {
             return page_data;
         }
         if (!(TryShouldPreparePageData<Features>(page_data, layer) || ...)) {
             return page_data;
         }
-        const std::string page_data_json = page_data->toString();
+        const std::string page_data_json = page_data.toString();
         cJSON *page_data_obj = cJSON_Parse(page_data_json.c_str());
         if (page_data_obj != nullptr && cJSON_IsObject(page_data_obj)) {
             (TryPreparePageData<Features>(page_data_obj, layer), ...);

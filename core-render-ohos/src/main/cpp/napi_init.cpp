@@ -59,19 +59,21 @@ static napi_value UpdateConfig(napi_env env, napi_callback_info info) {
 
 // 初始化render view
 static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
-    // args: instance_id, page_name, page_data, width, height, config_json, uiContext, resourceManager
-    size_t argc = 8;
-    napi_value args[8] = {nullptr};
+    // args: instance_id, page_name, context_code, execute_mode, page_data, width, height, config_json, uiContext, resourceManager
+    size_t argc = 10;
+    napi_value args[10] = {nullptr};
     if (napi_ok != napi_get_cb_info(env, info, &argc, args, nullptr, nullptr)) {
         napi_throw_error(env, "-1000", "napi_get_cb_info error");
         return 0;
     }
     auto instance_id = KRRenderValue::Make(env, args[0]);
     auto page_name = KRRenderValue::Make(env, args[1]);
-    auto page_Data = KRRenderValue::Make(env, args[2]);
-    double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[3]);
-    double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[4]);
-    auto config_json = KRRenderValue::Make(env, args[5]);
+    std::string context_code = kuikly::util::getNApiArgsStdString(env, args[2]);
+    int execute_mode = kuikly::util::getNApiArgsInt(env, args[3]);
+    auto page_Data = KRRenderValue::Make(env, args[4]);
+    double renderViewWidth = kuikly::util::getNApiArgsDouble(env, args[5]);
+    double renderViewHeight = kuikly::util::getNApiArgsDouble(env, args[6]);
+    auto config_json = KRRenderValue::Make(env, args[7]);
     std::string instance_id_utf8 = instance_id.toAsciiString();
     auto renderView = KRRenderManager::GetInstance().GetRenderView(instance_id_utf8);
     if (renderView != nullptr) {
@@ -86,10 +88,11 @@ static napi_value OnInitRenderView(napi_env env, napi_callback_info info) {
         if (!page_Data.isMap() && !page_Data.isArray() && (!page_Data.isString() || page_data_units == 0)) {
             page_Data = KRRenderValue::Make(KRRenderValue::Map{});
         }
-        auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json);
+        auto context = std::make_shared<KRRenderContextParams>(page_name, page_Data, instance_id, config_json,
+                                                               context_code, execute_mode);
         ArkUI_ContextHandle context_handle;
-        OH_ArkUI_GetContextFromNapiValue(env, args[6], &context_handle);
-        NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[7]);
+        OH_ArkUI_GetContextFromNapiValue(env, args[8], &context_handle);
+        NativeResourceManager *native_resources_manager = OH_ResourceManager_InitNativeResourceManager(env, args[9]);
         int64_t launch_time = KRRenderManager::GetInstance().GetLaunchStartTime(instance_id_utf8);
         renderView->Init(context, context_handle, native_resources_manager, renderViewWidth, renderViewHeight,
                          launch_time);

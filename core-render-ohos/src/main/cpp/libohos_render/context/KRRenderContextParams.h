@@ -28,7 +28,8 @@
 class KRRenderContextParams {
  public:
     KRRenderContextParams(const KRRenderValue &page_name, const KRRenderValue &page_data,
-                          const KRRenderValue &instance_id, const KRRenderValue &configJson) {
+                          const KRRenderValue &instance_id, const KRRenderValue &configJson,
+                          const std::string &context_code, int execute_mode) {
         // Keep the NAPI UTF-16 boxes for CallKotlin. std::string copies are
         // only for C++ lookup / logs / paths — do not Make() them back to Kotlin.
         this->page_name_value_ = page_name;
@@ -38,9 +39,8 @@ class KRRenderContextParams {
         this->page_data_ = page_data;
         this->parsed_page_data_ = this->page_data_.container();
         this->config_ = std::make_shared<KRConfig>(configJson);
-        this->execute_mode_ = kuikly::ExecuteModeFactory::Create(
-            this->parsed_page_data_.opt(u"executeMode").toInt());
-        this->context_code_ = this->parsed_page_data_.opt(u"contextCode").toString();
+        this->context_code_ = context_code;
+        this->execute_mode_ = kuikly::ExecuteModeFactory::Create(execute_mode);
     }
     const std::string &PageName() const {
         return page_name_;
