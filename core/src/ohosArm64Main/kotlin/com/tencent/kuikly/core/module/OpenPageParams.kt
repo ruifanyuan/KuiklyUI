@@ -21,9 +21,11 @@ internal actual fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
     routeStartTimestampMs: Long,
+    extra: Map<String, String>?,
 ): Any {
     return JSONObject().apply {
         put("pageName", pageName)
+        putOpenPageExtras(extra)
         pageData?.let { put("pageData", it) }
         put("__kuiklyRouteStartTimestampMs", routeStartTimestampMs)
     }

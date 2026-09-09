@@ -24,17 +24,30 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
  * KRJSONValue directly. Other platforms preserve their historical JSON-text
  * ABI. [routeStartTimestampMs] is framework-internal tracing metadata kept on
  * the envelope (never inside business [pageData]), so it does not change the
- * adapter or destination Pager pageData contract.
+ * adapter or destination Pager pageData contract. Optional [extra] string
+ * fields are written onto the same envelope (not nested in [pageData]).
  */
 internal expect fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
     routeStartTimestampMs: Long,
+    extra: Map<String, String>?,
 ): Any
 
-internal fun stringifyOpenPageParams(pageName: String, pageData: JSONObject?): String {
+internal fun stringifyOpenPageParams(
+    pageName: String,
+    pageData: JSONObject?,
+    extra: Map<String, String>? = null,
+): String {
     return JSONObject().apply {
         put("pageName", pageName)
+        putOpenPageExtras(extra)
         pageData?.let { put("pageData", it) }
     }.toString()
+}
+
+internal fun JSONObject.putOpenPageExtras(extra: Map<String, String>?) {
+    extra?.forEach { (key, value) ->
+        put(key, value)
+    }
 }

@@ -32,6 +32,7 @@ internal actual fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
     routeStartTimestampMs: Long,
+    extra: Map<String, String>?,
 ): Any {
-    return stringifyOpenPageParams(pageName, pageData)
+    return stringifyOpenPageParams(pageName, pageData, extra)
 }

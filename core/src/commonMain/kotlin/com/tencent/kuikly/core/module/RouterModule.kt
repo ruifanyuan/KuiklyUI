@@ -32,6 +32,7 @@ class RouterModule : Module() {
             pageName = pageName,
             pageData = pageData,
             routeStartTimestampMs = DateTime.currentTimestamp(),
+            extra = null,
         )
         toNative(
             false,
