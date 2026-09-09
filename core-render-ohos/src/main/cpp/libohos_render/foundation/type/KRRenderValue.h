@@ -118,6 +118,11 @@ class KRRenderValue {
     }
     bool operator==(std::nullptr_t) const { return !static_cast<bool>(*this); }
     bool operator!=(std::nullptr_t) const { return static_cast<bool>(*this); }
+    // Value equality: same tagged word, or same JSON content. UTF-8 / UTF-16
+    // strings compare by text; objects compare by key (order-insensitive).
+    // Empty (INVALID) is not equal to JSON null. NAPI boxes compare by handle.
+    bool operator==(const KRRenderValue &other) const;
+    bool operator!=(const KRRenderValue &other) const { return !(*this == other); }
 
     // Transitional compatibility: existing KRAnyValue call sites may keep `value->`.
     KRRenderValue *operator->() { return this; }

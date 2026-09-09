@@ -630,3 +630,163 @@ JSVM_Status KRRenderValue::ToJsVmBytes(JSVM_Env env, JSVM_Value *result) const {
     }
     return status;
 }
+
+namespace {
+
+bool JsonEquals(KRJSONValue a, KRJSONValue b);
+
+bool ObjectEquals(KRJSONValue a, KRJSONValue b) {
+    using kuikly::util::json::GetSize;
+    using kuikly::util::json::ObjectGet;
+    using kuikly::util::json::ObjectGetUtf16;
+    using kuikly::util::json::ObjectKeyAt;
+    using kuikly::util::json::ObjectKeyAtUtf16;
+    using kuikly::util::json::ObjectKeysAreUtf16;
+    using kuikly::util::json::ObjectValueAt;
+    using kuikly::util::json::Utf16ToUtf8;
+    using kuikly::util::json::Utf8ToUtf16;
+
+    const size_t n = GetSize(a);
+    if (n != GetSize(b)) {
+        return false;
+    }
+    const bool a16 = ObjectKeysAreUtf16(a);
+    const bool b16 = ObjectKeysAreUtf16(b);
+    for (size_t i = 0; i < n; ++i) {
+        KRJSONValue child_b = KRJSON_INVALID;
+        if (a16 && b16) {
+            size_t units = 0;
+            const uint16_t *key = ObjectKeyAtUtf16(a, i, &units);
+            if (key == nullptr) {
+                return false;
+            }
+            child_b = ObjectGetUtf16(b, key, units);
+        } else if (!a16 && !b16) {
+            const char *key = ObjectKeyAt(a, i);
+            if (key == nullptr) {
+                return false;
+            }
+            child_b = ObjectGet(b, key, std::strlen(key));
+        } else if (a16) {
+            size_t units = 0;
+            const uint16_t *key = ObjectKeyAtUtf16(a, i, &units);
+            if (key == nullptr) {
+                return false;
+            }
+            const std::string utf8 = Utf16ToUtf8(key, units);
+            child_b = ObjectGet(b, utf8.data(), utf8.size());
+        } else {
+            const char *key = ObjectKeyAt(a, i);
+            if (key == nullptr) {
+                return false;
+            }
+            const std::u16string u16 = Utf8ToUtf16(key, std::strlen(key));
+            child_b = ObjectGetUtf16(b, reinterpret_cast<const uint16_t *>(u16.data()), u16.size());
+        }
+        if (child_b == KRJSON_INVALID) {
+            return false;
+        }
+        if (!JsonEquals(ObjectValueAt(a, i), child_b)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool JsonEquals(KRJSONValue a, KRJSONValue b) {
+    if (a == b) {
+        return true;
+    }
+    if (a == KRJSON_INVALID || b == KRJSON_INVALID) {
+        return false;
+    }
+    using kuikly::util::json::ArrayGet;
+    using kuikly::util::json::GetBool;
+    using kuikly::util::json::GetBytes;
+    using kuikly::util::json::GetDouble;
+    using kuikly::util::json::GetInt;
+    using kuikly::util::json::GetOpaque;
+    using kuikly::util::json::GetSize;
+    using kuikly::util::json::GetType;
+    using kuikly::util::json::GetUint;
+    using kuikly::util::json::TagOf;
+    using kuikly::util::json::kTagNapi;
+
+    const uint8_t ta = TagOf(a);
+    const uint8_t tb = TagOf(b);
+    if (ta == kTagNapi || tb == kTagNapi) {
+        if (ta != kTagNapi || tb != kTagNapi) {
+            return false;
+        }
+        const void *a0 = nullptr;
+        const void *a1 = nullptr;
+        const void *b0 = nullptr;
+        const void *b1 = nullptr;
+        if (!GetOpaque(a, &a0, &a1) || !GetOpaque(b, &b0, &b1)) {
+            return false;
+        }
+        return a0 == b0 && a1 == b1;
+    }
+
+    const KRJSONType pa = GetType(a);
+    const KRJSONType pb = GetType(b);
+    if ((pa == KRJSON_STRING || pa == KRJSON_U16STRING) &&
+        (pb == KRJSON_STRING || pb == KRJSON_U16STRING)) {
+        return KRRenderValue::MakeBorrowed(a).stringEquals(KRRenderValue::MakeBorrowed(b));
+    }
+    if (pa != pb) {
+        return false;
+    }
+    switch (pa) {
+        case KRJSON_NULL:
+            return true;
+        case KRJSON_BOOL:
+            return GetBool(a, false) == GetBool(b, false);
+        case KRJSON_INT:
+        case KRJSON_LONG:
+            return GetInt(a, 0) == GetInt(b, 0);
+        case KRJSON_UINT:
+            return GetUint(a, 0) == GetUint(b, 0);
+        case KRJSON_FLOAT:
+        case KRJSON_DOUBLE: {
+            const double da = GetDouble(a, 0.0);
+            const double db = GetDouble(b, 0.0);
+            return std::memcmp(&da, &db, sizeof(double)) == 0;
+        }
+        case KRJSON_BYTES: {
+            size_t na = 0;
+            size_t nb = 0;
+            const uint8_t *ba = GetBytes(a, &na);
+            const uint8_t *bb = GetBytes(b, &nb);
+            if (na != nb) {
+                return false;
+            }
+            if (na == 0) {
+                return true;
+            }
+            return ba != nullptr && bb != nullptr && std::memcmp(ba, bb, na) == 0;
+        }
+        case KRJSON_ARRAY: {
+            const size_t n = GetSize(a);
+            if (n != GetSize(b)) {
+                return false;
+            }
+            for (size_t i = 0; i < n; ++i) {
+                if (!JsonEquals(ArrayGet(a, i), ArrayGet(b, i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        case KRJSON_OBJECT:
+            return ObjectEquals(a, b);
+        default:
+            return false;
+    }
+}
+
+}  // namespace
+
+bool KRRenderValue::operator==(const KRRenderValue &other) const {
+    return JsonEquals(value_, other.value_);
+}
