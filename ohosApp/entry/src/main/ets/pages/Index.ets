@@ -86,7 +86,7 @@ struct Index {
     Stack({ alignContent: Alignment.TopStart }) {
       if (this.showKuikly) {
         Kuikly({
-          pageName: this.pageName ?? 'router',
+          pageName: this.pageName ?? 'OrientationButtonDemo',
           pageData: this.pageData ?? {},
           delegate: this.kuiklyViewDelegate,
           contextCode: this.contextCode,
@@ -104,12 +104,12 @@ struct Index {
             });
           },
           nativeManager: globalNativeManager,
-        });
+        }).backgroundColor(Color.Pink);
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.shouldUseBlackBackground() ? Color.Black : Color.Transparent)
+    .backgroundColor( Color.Brown)
     .expandSafeArea([SafeAreaType.KEYBOARD]);
   }
 
