@@ -22,6 +22,7 @@ import com.tencent.kuikly.core.base.ColorStop
 import com.tencent.kuikly.core.base.DeclarativeBaseView
 import com.tencent.kuikly.core.base.Direction
 import com.tencent.kuikly.core.base.Size
+import com.tencent.kuikly.core.layout.Frame
 import com.tencent.kuikly.core.base.ViewConst
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.base.event.Event
@@ -140,15 +141,25 @@ open class TextView : DeclarativeBaseView<TextAttr, TextEvent>(), MeasureFunctio
         tryFireLineBreakMarginEvent()
     }
 
+    override fun layoutFrameDidChanged(frame: Frame) {
+        super.layoutFrameDidChanged(frame)
+        tryFireLineBreakMarginEvent()
+    }
+
     private fun tryFireLineBreakMarginEvent() {
-        if (attr.getProp(TextConst.LINE_BREAK_MARGIN) != null) {
-            getPager().addTaskWhenPagerDidCalculateLayout {
-                val isLineBreakMargin =
-                    shadow?.callMethod(TextConst.SHADOW_METHOD_IS_LINE_BREAK_MARGIN, "") == "1"
-                if (isLineBreakMargin) {
+        if (attr.getProp(TextConst.LINE_BREAK_MARGIN) == null) {
+            return
+        }
+        val fireIfNeeded = {
+            if (shadow?.callMethod(TextConst.SHADOW_METHOD_IS_LINE_BREAK_MARGIN, "") == "1") {
+                getPager().addTaskWhenPagerDidCalculateLayout {
                     onFireEvent(TextEvent.TextEventConst.ON_LINE_BREAK_MARGIN, null)
                 }
             }
+        }
+        fireIfNeeded()
+        getPager().addTaskWhenPagerUpdateLayoutFinish {
+            fireIfNeeded()
         }
     }
 

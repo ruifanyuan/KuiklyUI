@@ -239,7 +239,8 @@ void KRRichTextView::OnForegroundDraw(ArkUI_NodeCustomEvent *event) {
         OH_Drawing_PathDestroy(backgroundPath);
     }
 
-    if(OH_Drawing_TextLinePaint && line_break_margin_ > 0 && richTextShadow->DidExceedMaxLines()){
+    if(OH_Drawing_TextLinePaint && line_break_margin_ > 0 && richTextShadow->DidExceedMaxLines() &&
+       !richTextShadow->UsedLayoutTailIndent()){
         auto text_lines = richTextShadow->GetTextLines();
         size_t line_count = OH_Drawing_GetDrawingArraySize(text_lines);
         for(int i = 0; i < line_count; ++i){

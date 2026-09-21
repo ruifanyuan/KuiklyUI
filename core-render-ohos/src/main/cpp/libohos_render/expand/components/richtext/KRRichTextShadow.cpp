@@ -36,6 +36,7 @@
 #include "libohos_render/expand/components/richtext/KRCustomEmojiPixmapCache.h"
 #include "libohos_render/expand/components/richtext/KRParagraph.h"
 #include "libohos_render/expand/components/richtext/KRRichTextShadow.h"
+#include "libohos_render/expand/components/richtext/KRRichTextTailIndent.h"
 #include "libohos_render/foundation/thread/KRMainThread.h"
 #include "libohos_render/utils/KRConvertUtil.h"
 #include "libohos_render/utils/KRLinearGradientParser.h"
@@ -67,6 +68,10 @@ constexpr char kRawFilePrefix[] = "rawfile:";
 
 static bool isRawFilePath(const std::string &src) {
     return src.find(kRawFilePrefix) == 0;
+}
+
+static bool KRLineBreakMarginLegacyTrigger(bool did_exceed_max_lines) {
+    return KRLineBreakMarginFeatureAvailable() && did_exceed_max_lines && &OH_Drawing_DestroyTextLines != nullptr;
 }
 
 KRRichTextShadow::~KRRichTextShadow() {
@@ -109,7 +114,7 @@ KRAnyValue KRRichTextShadow::Call(const std::string &method_name, const std::str
     if (kuikly::util::isEqual(method_name, "spanRect")) {  // 调用获取placeholder span位置方法
         return SpanRect(NewKRRenderValue(params)->toInt());
     } else if(method_name == "isLineBreakMargin"){
-        return NewKRRenderValue(did_exceed_max_lines_ && OH_Drawing_DestroyTextLines? "1" : "0");
+        return NewKRRenderValue(is_line_break_margin_ ? "1" : "0");
     }
     return KRRenderValue::Make(nullptr);
 }
@@ -121,6 +126,9 @@ KRAnyValue KRRichTextShadow::Call(const std::string &method_name, const std::str
  * @return
  */
 KRSize KRRichTextShadow::CalculateRenderViewSize(double constraint_width, double constraint_height) {
+    is_line_break_margin_ = false;
+    used_layout_tail_indent_ = false;
+    did_exceed_max_lines_ = false;
     if(StyledStringEnabled()){
         KRSize sz = CalculateRenderViewSizeWithStyledString(constraint_width, constraint_height);
         return sz;
@@ -128,7 +136,12 @@ KRSize KRRichTextShadow::CalculateRenderViewSize(double constraint_width, double
         SetParagraph(nullptr);
     }
     ReleaseLastTypography();
-    BuildTextTypography(constraint_width, constraint_height);
+    BuildTextTypography(constraint_width, constraint_height, false);
+    if (KRTextTailIndentApiAvailable()) {
+        RelayoutWithLineBreakTailIndentIfNeeded(constraint_width, constraint_height);
+    } else {
+        is_line_break_margin_ = KRLineBreakMarginLegacyTrigger(did_exceed_max_lines_);
+    }
     return context_measure_size_;
 }
 
@@ -199,13 +212,15 @@ KRSchedulerTask KRRichTextShadow::TaskToMainQueueWhenWillSetShadowToView() {
     auto offsetX = context_thread_drawOffsetX_;
     auto measure_size = context_measure_size_;
     auto text_align = context_thread_text_align_;
-    return [self, typography, offsetY, offsetX, measure_size, text_align] {
+    auto used_layout_tail_indent = used_layout_tail_indent_;
+    return [self, typography, offsetY, offsetX, measure_size, text_align, used_layout_tail_indent] {
         KRRichTextShadow *shadow = reinterpret_cast<KRRichTextShadow *>(self.get());
         shadow->SetMainThreadTypography(typography);
         shadow->main_thread_drawOffsetY_ = offsetY;
         shadow->main_thread_drawOffsetX_ = offsetX;
         shadow->main_thread_text_align_ = text_align;
         shadow->main_measure_size_ = measure_size;
+        shadow->main_thread_used_layout_tail_indent_ = used_layout_tail_indent;
     };
 }
 
@@ -301,7 +316,27 @@ OH_Drawing_TypographyCreate* CreateTypographyHandler(OH_Drawing_TypographyStyle*
     return OH_Drawing_CreateTypographyHandler(typoStyle, wrapper.GetFontCollection());
 }
 
-OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_width, double constraint_height) {
+void KRRichTextShadow::RelayoutWithLineBreakTailIndentIfNeeded(double constraint_width, double constraint_height) {
+    int number_of_lines = GetKRValue("numberOfLines", props_, props_)->toInt();
+    float line_break_margin = GetKRValue("lineBreakMargin", props_, props_)->toFloat();
+    if (number_of_lines <= 0 || line_break_margin <= 0) {
+        return;
+    }
+    is_line_break_margin_ = KRLineBreakMarginLegacyTrigger(did_exceed_max_lines_);
+    if (!is_line_break_margin_) {
+        return;
+    }
+    if (KRTextTailIndentApiAvailable()) {
+        ReleaseLastTypography();
+        BuildTextTypography(constraint_width, constraint_height, true);
+    }
+}
+
+OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_width, double constraint_height,
+                                                             bool apply_line_break_tail_indent) {
+    if (!apply_line_break_tail_indent) {
+        used_layout_tail_indent_ = false;
+    }
     auto rootView = GetRootView().lock();
     if (rootView == nullptr) {
         return nullptr;
@@ -592,6 +627,12 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
             if (&OH_Drawing_SetTypographyVerticalAlignment != nullptr) {
                 OH_Drawing_SetTypographyVerticalAlignment(typoStyle, TEXT_VERTICAL_ALIGNMENT_CENTER);
             }
+            if (apply_line_break_tail_indent) {
+                int raw_number_of_lines = GetKRValue("numberOfLines", props_, props_)->toInt();
+                float line_break_margin = GetKRValue("lineBreakMargin", props_, props_)->toFloat();
+                used_layout_tail_indent_ = KRApplyLineBreakTailIndent(
+                    typoStyle, raw_number_of_lines, line_break_margin * static_cast<float>(dpi));
+            }
             handler = CreateTypographyHandler(typoStyle);
         } else {
             isFirst = false;
@@ -666,6 +707,7 @@ OH_Drawing_Typography *KRRichTextShadow::BuildTextTypography(double constraint_w
     double maxWidth = constraint_width * dpi;
     OH_Drawing_TypographyLayout(typography_raw, maxWidth);
     did_exceed_max_lines_ = OH_Drawing_TypographyDidExceedMaxLines(typography_raw);
+    is_line_break_margin_ = KRLineBreakMarginLegacyTrigger(did_exceed_max_lines_);
     // 获取文本布局结果的宽高
     auto height = OH_Drawing_TypographyGetHeight(typography_raw);
     auto ouput_measure_height_ = height / dpi;

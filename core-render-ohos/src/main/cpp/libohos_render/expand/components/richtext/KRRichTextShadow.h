@@ -193,7 +193,11 @@ class KRRichTextShadow : public IKRRenderShadowExport {
     bool DidExceedMaxLines(){
         return did_exceed_max_lines_;
     }
-    
+
+    bool UsedLayoutTailIndent() const {
+        return main_thread_used_layout_tail_indent_;
+    }
+
     OH_Drawing_Array *GetTextLines();
     KRAnyValue BuildEventParams(KRAnyValue res);
     KRAnyValue BuildLongPressEventParams(KRAnyValue res);
@@ -277,6 +281,9 @@ class KRRichTextShadow : public IKRRenderShadowExport {
     KRRenderValue::Array values_;
     OH_Drawing_Array *text_lines_ = nullptr;
     bool did_exceed_max_lines_ = false;
+    bool is_line_break_margin_ = false;
+    bool used_layout_tail_indent_ = false;
+    bool main_thread_used_layout_tail_indent_ = false;
     // 持有 typography 的两个槽位：
     //  - main_thread_typography_:    主线程使用（Paint/SpanIndex 等）；
     //  - context_thread_typography_: context 线程使用（Layout/SpanRect 计算）。
@@ -317,7 +324,9 @@ class KRRichTextShadow : public IKRRenderShadowExport {
      * context_thread_typography_，返回值依旧返回裸指针（仅供调用栈内立即
      * 使用，生命周期由 context_thread_typography_ 管理）。
      */
-    OH_Drawing_Typography *BuildTextTypography(double constraint_width, double constraint_height);
+    OH_Drawing_Typography *BuildTextTypography(double constraint_width, double constraint_height,
+                                               bool apply_line_break_tail_indent = false);
+    void RelayoutWithLineBreakTailIndentIfNeeded(double constraint_width, double constraint_height);
 
     void ReleaseLastTypography();
     /**
