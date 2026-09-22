@@ -235,19 +235,14 @@ open class RichTextView : DeclarativeBaseView<RichTextAttr, RichTextEvent>(),
     }
 
     private fun tryFireLineBreakMarginEvent() {
-        if (attr.getProp(TextConst.LINE_BREAK_MARGIN) == null) {
-            return
-        }
-        val fireIfNeeded = {
-            if (shadow?.callMethod(TextConst.SHADOW_METHOD_IS_LINE_BREAK_MARGIN, "") == "1") {
-                getPager().addTaskWhenPagerDidCalculateLayout {
+        if (attr.getProp(TextConst.LINE_BREAK_MARGIN) != null) {
+            getPager().addTaskWhenPagerDidCalculateLayout {
+                val isLineBreakMargin =
+                    shadow?.callMethod(TextConst.SHADOW_METHOD_IS_LINE_BREAK_MARGIN, "") == "1"
+                if (isLineBreakMargin) {
                     onFireEvent(TextEvent.TextEventConst.ON_LINE_BREAK_MARGIN, null)
                 }
             }
-        }
-        fireIfNeeded()
-        getPager().addTaskWhenPagerUpdateLayoutFinish {
-            fireIfNeeded()
         }
     }
 
