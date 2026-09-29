@@ -17,12 +17,16 @@ package com.tencent.kuikly.demo.pages.demo
 
 import com.tencent.kuikly.core.annotations.Page
 import com.tencent.kuikly.core.base.Color
+import com.tencent.kuikly.core.base.ViewRef
+import com.tencent.kuikly.core.directives.scrollToPosition
 import com.tencent.kuikly.core.directives.vforIndex
 import com.tencent.kuikly.core.log.KLog
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.List
+import com.tencent.kuikly.core.views.ListView
 import com.tencent.kuikly.core.views.Scroller
+import com.tencent.kuikly.core.views.ScrollerView
 import com.tencent.kuikly.core.views.Text
 import com.tencent.kuikly.core.views.View
 import com.tencent.kuikly.core.base.ViewBuilder
@@ -32,17 +36,19 @@ import com.tencent.kuikly.demo.pages.demo.base.NavBar
 /**
  * OHOS 状态栏点击回顶（back-to-top）验证页面。
  *
- * 覆盖三种用例：
+ * 覆盖四种用例：
  * 1. Scroller：未注册 scrollToTop 回调 → 点状态栏应由框架默认回顶；
- * 2. Scroller：已注册 scrollToTop 回调 → 点状态栏应触发回调且不自动回顶；
+ * 2. Scroller：已注册 scrollToTop 回调 → 点状态栏触发回调，由 Kotlin 侧在回调里执行回顶（框架不自动回顶）；
  * 3. List：未注册回调 → 点状态栏应由框架默认回顶。
+ * 4. List：已注册 scrollToTop 回调 → 点状态栏触发回调，由 Kotlin 侧用 scrollToPosition(0) 执行回顶（框架不自动回顶）。
  */
 @Page("OhosBackToTopPage")
 internal class OhosBackToTopDemoPage : BasePager() {
 
     companion object {
         private const val TAG = "OhosBackToTopPage"
-        private const val SCROLL_VIEW_HEIGHT = 260f
+        // 4 个用例需在一屏内展示（首页无滚动容器），故取值需保证总高度不超出可视区
+        private const val SCROLL_VIEW_HEIGHT = 140f
     }
 
     private val itemCount by observableList<Int>()
@@ -51,6 +57,10 @@ internal class OhosBackToTopDemoPage : BasePager() {
     private var callbackScrollerOffsetY by observable(0f)
     private var listOffsetY by observable(0f)
     private var scrollToTopCallbackCount by observable(0)
+    private var callbackScrollerRef: ViewRef<ScrollerView<*, *>>? = null
+    private var callbackListOffsetY by observable(0f)
+    private var callbackListScrollToTopCount by observable(0)
+    private var callbackListViewRef: ViewRef<ListView<*, *>>? = null
 
     override fun body(): ViewBuilder {
         val ctx = this
@@ -98,6 +108,9 @@ internal class OhosBackToTopDemoPage : BasePager() {
                 attr {
                     size(pagerData.pageViewWidth, SCROLL_VIEW_HEIGHT)
                 }
+                ref {
+                    ctx.callbackScrollerRef = it
+                }
                 vforIndex({ ctx.itemCount }) { item, _, _ ->
                     ctx.demoItem(item, Color.GREEN).invoke(this)
                 }
@@ -107,7 +120,13 @@ internal class OhosBackToTopDemoPage : BasePager() {
                     }
                     scrollToTop {
                         ctx.scrollToTopCallbackCount++
-                        KLog.i(TAG, "scrollToTop callback fired, count=${ctx.scrollToTopCallbackCount}")
+                        KLog.i(
+                            TAG,
+                            "scrollToTop callback fired, count=${ctx.scrollToTopCallbackCount}, " +
+                                "offsetY=${ctx.callbackScrollerOffsetY}, scroll to top on Kotlin side"
+                        )
+                        // 业务已接管：由 Kotlin 侧执行回顶（框架此时不会自动回顶）
+                        ctx.callbackScrollerRef?.view?.setContentOffset(0f, 0f, true)
                     }
                 }
             }
@@ -130,6 +149,44 @@ internal class OhosBackToTopDemoPage : BasePager() {
                 event {
                     scroll { param ->
                         ctx.listOffsetY = param.offsetY
+                    }
+                }
+            }
+
+            // 用例 4：List 注册 scrollToTop 回调，由 Kotlin 侧用 scrollToPosition(0) 回顶
+            Text {
+                attr {
+                    marginTop(10f)
+                    fontSize(14f)
+                    text(
+                        "4) List(回调接管/scrollToPosition) offsetY=${ctx.callbackListOffsetY}" +
+                            " callbackCount=${ctx.callbackListScrollToTopCount}"
+                    )
+                }
+            }
+            List {
+                attr {
+                    size(pagerData.pageViewWidth, SCROLL_VIEW_HEIGHT)
+                }
+                ref {
+                    ctx.callbackListViewRef = it
+                }
+                vforIndex({ ctx.itemCount }) { item, _, _ ->
+                    ctx.demoItem(item, Color.RED).invoke(this)
+                }
+                event {
+                    scroll { param ->
+                        ctx.callbackListOffsetY = param.offsetY
+                    }
+                    scrollToTop {
+                        ctx.callbackListScrollToTopCount++
+                        KLog.i(
+                            TAG,
+                            "List scrollToTop callback fired, count=${ctx.callbackListScrollToTopCount}, " +
+                                "offsetY=${ctx.callbackListOffsetY}, scroll to top by scrollToPosition(0)"
+                        )
+                        // 业务已接管：由 Kotlin 侧用 scrollToPosition(0) 回顶（框架此时不会自动回顶）
+                        ctx.callbackListViewRef?.view?.scrollToPosition(0)
                     }
                 }
             }

@@ -23,8 +23,11 @@
 
 #include "libohos_render/expand/events/common_event/KRCommonEventName.h"
 
+// 系统 CommonEvent 句柄类型（定义于 BasicServicesKit/oh_commonevent.h），保持全局命名空间
 typedef void CommonEvent_Subscriber;
 typedef struct CommonEvent_SubscribeInfo CommonEvent_SubscribeInfo;
+
+namespace kuikly {
 
 /**
  * 系统公共事件（CommonEvent）订阅管理器。
@@ -77,5 +80,7 @@ class KRCommonEventManager {
     std::map<CommonEventName, CommonEvent_Subscriber *> system_subscribers_;
     std::map<CommonEventName, CommonEvent_SubscribeInfo *> system_subscribe_infos_;
 };
+
+}  // namespace kuikly
 
 #endif  // CORE_RENDER_OHOS_KRCOMMONEVENTMANAGER_H
