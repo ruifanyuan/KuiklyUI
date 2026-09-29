@@ -409,7 +409,8 @@ void KRRenderView::SubscribeCommonEvents() {
         return;
     }
     is_common_event_subscribed_ = true;
-    KRCommonEventManager::GetInstance().Subscribe(CommonEventName::COMMON_EVENT_CLICK_STATUSBAR, instance_id);
+    kuikly::KRCommonEventManager::GetInstance().Subscribe(kuikly::CommonEventName::COMMON_EVENT_CLICK_STATUSBAR,
+                                                          instance_id);
 }
 
 void KRRenderView::UnsubscribeCommonEvents() {
@@ -417,19 +418,19 @@ void KRRenderView::UnsubscribeCommonEvents() {
         return;
     }
     is_common_event_subscribed_ = false;
-    KRCommonEventManager::GetInstance().Unsubscribe(CommonEventName::COMMON_EVENT_CLICK_STATUSBAR,
-                                                    context_->InstanceId());
+    kuikly::KRCommonEventManager::GetInstance().Unsubscribe(kuikly::CommonEventName::COMMON_EVENT_CLICK_STATUSBAR,
+                                                            context_->InstanceId());
 }
 
-void KRRenderView::OnCommonEvent(CommonEventName name) {
+void KRRenderView::OnCommonEvent(kuikly::CommonEventName name) {
     KREnsureMainThread();
 
-    if (name != CommonEventName::COMMON_EVENT_CLICK_STATUSBAR) {
+    if (name != kuikly::CommonEventName::COMMON_EVENT_CLICK_STATUSBAR) {
         return;
     }
     if (!is_active_) {
         KR_LOG_INFO_WITH_TAG("KRCommonEvent")
-            << "skip " << CommonEventNameToEventString(name) << ", instance is not active";
+            << "skip " << kuikly::CommonEventNameToEventString(name) << ", instance is not active";
         return;
     }
     if (core_ == nullptr) {

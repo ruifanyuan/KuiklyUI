@@ -20,7 +20,6 @@
 #include <cfloat>
 #include <cmath>
 #include <deviceinfo.h>
-#include "libohos_render/expand/events/common_event/KRCommonEventManager.h"
 #include "libohos_render/expand/components/view/KRView.h"
 #include "libohos_render/foundation/type/KRRenderValue.h"
 #include "libohos_render/utils/KRJSONObject.h"

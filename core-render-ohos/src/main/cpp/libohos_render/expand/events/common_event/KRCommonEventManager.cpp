@@ -23,6 +23,8 @@
 #include "libohos_render/utils/KRRenderLoger.h"
 #include "libohos_render/view/KRRenderView.h"
 
+namespace kuikly {
+
 namespace {
 constexpr char kCommonEventLogTag[] = "KRCommonEvent";
 
@@ -192,3 +194,5 @@ void KRCommonEventManager::DispatchEventToInstances(CommonEventName name) {
         << "dispatch event=" << CommonEventNameToEventString(name) << ", registered=" << instance_ids.size()
         << ", dispatched=" << dispatched;
 }
+
+}  // namespace kuikly

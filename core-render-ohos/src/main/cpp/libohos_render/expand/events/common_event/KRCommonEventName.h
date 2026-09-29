@@ -18,6 +18,8 @@
 
 #include <cstring>
 
+namespace kuikly {
+
 /**
  * 框架关注的系统公共事件（CommonEvent）。
  * 新增事件时在此追加枚举值，并在 KRCommonEventManager 中登记系统事件名。
@@ -54,5 +56,7 @@ inline bool CommonEventNameFromEventString(const char *event, CommonEventName &o
     }
     return false;
 }
+
+}  // namespace kuikly
 
 #endif  // CORE_RENDER_OHOS_KRCOMMONEVENTNAME_H

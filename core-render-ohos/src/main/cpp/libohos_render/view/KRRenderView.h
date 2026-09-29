@@ -53,7 +53,7 @@ class KRRenderView : public IKRRenderView {
      * 收到系统公共事件时回调：仅活跃实例处理，并分发给内部的滚动容器
      * @param name 事件枚举
      */
-    void OnCommonEvent(CommonEventName name) override;
+    void OnCommonEvent(kuikly::CommonEventName name) override;
 
     /**
      * 当前渲染实例是否处于活跃（可见）状态
