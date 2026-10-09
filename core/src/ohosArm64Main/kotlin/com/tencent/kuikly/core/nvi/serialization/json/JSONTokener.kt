@@ -1,7 +1,7 @@
 /*
  * Tencent is pleased to support the open source community by making KuiklyUI
  * available.
- * Copyright (C) 2025 Tencent. All rights reserved.
+ * Copyright (C) 2026 Tencent. All rights reserved.
  * Licensed under the License of KuiklyUI;
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,25 +13,9 @@
  * limitations under the License.
  */
 
-package com.tencent.kuikly.core.module
+package com.tencent.kuikly.core.nvi.serialization.json
 
-import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-
-actual fun Any.toPlatformObject(): Any {
-    if (this is List<*>) {
-        return this.toTypedArray()
-    }
-    return this
-}
-
-actual fun Any.toKotlinObject(): Any {
-    return this
-}
-
-internal actual fun platformOpenPageParams(
-    pageName: String,
-    pageData: JSONObject?,
-    routeStartTimestampMs: Long,
-): Any {
-    return stringifyOpenPageParams(pageName, pageData)
-}
+/**
+ * OHOS 实现：直接使用宽松扫描器，无原生解析快路径。
+ */
+actual class JSONTokener actual constructor(json: String) : AbstractJSONTokener(json)

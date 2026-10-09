@@ -1,7 +1,7 @@
 /*
  * Tencent is pleased to support the open source community by making KuiklyUI
  * available.
- * Copyright (C) 2025 Tencent. All rights reserved.
+ * Copyright (C) 2026 Tencent. All rights reserved.
  * Licensed under the License of KuiklyUI;
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,17 +16,6 @@
 package com.tencent.kuikly.core.module
 
 import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
-
-actual fun Any.toPlatformObject(): Any {
-    if (this is List<*>) {
-        return this.toTypedArray()
-    }
-    return this
-}
-
-actual fun Any.toKotlinObject(): Any {
-    return this
-}
 
 internal actual fun platformOpenPageParams(
     pageName: String,
