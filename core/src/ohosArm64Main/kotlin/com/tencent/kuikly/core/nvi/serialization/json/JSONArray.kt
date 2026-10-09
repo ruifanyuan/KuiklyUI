@@ -16,8 +16,8 @@
 package com.tencent.kuikly.core.nvi.serialization.json
 
 /**
- * OHOS 实现：底层容器为 Kotlin `ArrayList`，解析走 [JSONTokener]，
- * 与重构前完全一致。
+ * OHOS 实现：底层容器可以是 Kotlin List（代码构造）或原生 KRJSON 数组
+ * （统一 KRJSON 桥接 / [JSONTokener] 快路径，见 [LazyJsonList]）。
  */
 actual class JSONArray internal actual constructor(
     values: MutableList<Any?>
@@ -30,4 +30,7 @@ actual class JSONArray internal actual constructor(
 
     @Throws(JSONException::class)
     actual constructor(jsonTokener: JSONTokener) : this(requireJSONArrayValues(jsonTokener.nextValue()))
+
+    /** 包装原生 KRJSON 数组，读取时按需转换，不做整树拷贝。 */
+    internal constructor(list: LazyJsonList) : this(list as MutableList<Any?>)
 }
