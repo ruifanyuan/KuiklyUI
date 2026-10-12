@@ -31,7 +31,7 @@ class RouterModule : Module() {
         val params = platformOpenPageParams(
             pageName = pageName,
             pageData = pageData,
-            routeStartTimestampMs = DateTime.currentTimestamp(),
+            routeStartTimestampMs = DateTime.currentTimestamp()
         )
         toNative(
             false,

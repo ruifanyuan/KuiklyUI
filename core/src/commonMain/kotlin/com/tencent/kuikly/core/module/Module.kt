@@ -86,7 +86,7 @@ abstract class Module {
         args: Array<Any>, // 参数列表(参数类型仅支持String，Int，Float，ByteArray类型)
         callbackFn: AnyCallbackFn?
     ): Any? {
-        return syncArgsToNative(methodName, args, callbackFn?.let { cb -> { res -> cb(res.toLegacyAtomic()) } })
+        return syncArgsToNative(methodName, args, callbackFn?.let { cb -> { res: Any? -> cb(res.toLegacyAtomic()) } })
             .toLegacyAtomic()
     }
 
@@ -102,7 +102,7 @@ abstract class Module {
         args: Array<Any>,
         callbackFn: AnyCallbackFn?
     ): Any? {
-        return syncArgsToNative(methodName, args, callbackFn?.let { cb -> { res -> cb(res.toStructured()) } })
+        return syncArgsToNative(methodName, args, callbackFn?.let { cb -> { res: Any? -> cb(res.toStructured()) } })
             .toStructured()
     }
 
@@ -151,7 +151,7 @@ abstract class Module {
         args: Array<Any>, // 参数列表(参数类型仅支持String，Int，Float，ByteArray类型)
         callbackFn: AnyCallbackFn?
     ) {
-        asyncArgsToNative(methodName, args, callbackFn?.let { cb -> { res -> cb(res.toLegacyAtomic()) } })
+        asyncArgsToNative(methodName, args, callbackFn?.let { cb -> { res: Any? -> cb(res.toLegacyAtomic()) } })
     }
 
     /*
@@ -166,7 +166,7 @@ abstract class Module {
         args: Array<Any>,
         callbackFn: AnyCallbackFn?
     ) {
-        asyncArgsToNative(methodName, args, callbackFn?.let { cb -> { res -> cb(res.toStructured()) } })
+        asyncArgsToNative(methodName, args, callbackFn?.let { cb -> { res: Any? -> cb(res.toStructured()) } })
     }
 
     private fun asyncArgsToNative(methodName: String, args: Array<Any>, callbackFn: AnyCallbackFn?) {

@@ -75,7 +75,7 @@ actual fun Any.toKotlinObject(): Any {
 internal actual fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
-    routeStartTimestampMs: Long,
+    routeStartTimestampMs: Long
 ): Any {
     return stringifyOpenPageParams(pageName, pageData)
 }

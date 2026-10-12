@@ -20,7 +20,7 @@ import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 internal actual fun platformOpenPageParams(
     pageName: String,
     pageData: JSONObject?,
-    routeStartTimestampMs: Long,
+    routeStartTimestampMs: Long
 ): Any {
     return JSONObject().apply {
         put("pageName", pageName)
