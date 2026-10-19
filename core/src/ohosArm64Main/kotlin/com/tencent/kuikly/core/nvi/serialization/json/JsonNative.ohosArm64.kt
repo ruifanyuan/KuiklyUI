@@ -265,6 +265,13 @@ internal object JsonNative {
         return if (n == bytes) chars.concatToString() else chars.concatToString(0, n)
     }
 
+    /**
+     * Decode UTF-8 into caller-owned storage.
+     *
+     * `throwOnInvalidSequence = true` is a reserved internal path for a future explicit Kotlin
+     * API. The current JSON bridge always uses replacement mode and has no production caller
+     * for strict decoding.
+     */
     internal fun decodeUTF8Into(
         src: CPointer<ByteVar>,
         byteLen: Int,

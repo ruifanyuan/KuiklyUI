@@ -15,7 +15,7 @@ The HarmonyOS renderer SHALL preserve Unicode scalar values when converting betw
 - **THEN** the output bytes equal the original input and reported lengths exclude terminators
 
 ### Requirement: Malformed input follows Kotlin semantics
-HarmonyOS UTF conversion SHALL follow Kotlin/Native UTF-8 semantics. Default decoding SHALL replace each Unicode maximal ill-formed subpart with U+FFFD. Strict decoding SHALL throw `CharacterCodingException`. Default UTF-16 encoding SHALL replace unpaired surrogates with U+FFFD, and the native strict encoding helper SHALL reject malformed UTF-16.
+HarmonyOS UTF conversion SHALL follow Kotlin/Native UTF-8 semantics in production paths. Default decoding SHALL replace each Unicode maximal ill-formed subpart with U+FFFD. Default UTF-16 encoding SHALL replace unpaired surrogates with U+FFFD. Strict decode/encode helpers are reserved for future explicit callers; the current JSON bridge always uses default replacement mode.
 
 #### Scenario: HarmonyOS default UTF-8 decoding
 - **GIVEN** malformed continuation bytes, overlong encodings, truncated sequences, or out-of-range code points
@@ -23,9 +23,9 @@ HarmonyOS UTF conversion SHALL follow Kotlin/Native UTF-8 semantics. Default dec
 - **THEN** each Unicode maximal ill-formed subpart is replaced by one U+FFFD and valid adjacent text is retained
 
 #### Scenario: HarmonyOS strict UTF-8 decoding
-- **GIVEN** malformed UTF-8 and a strict Kotlin decode request
+- **GIVEN** malformed UTF-8 and a future explicit caller of the reserved strict decode path
 - **WHEN** native decoding reports failure
-- **THEN** partial native output is discarded and Kotlin throws `CharacterCodingException`
+- **THEN** partial native output is discarded and the Kotlin wrapper throws `CharacterCodingException`
 
 #### Scenario: HarmonyOS default unpaired UTF-16 surrogates
 - **GIVEN** isolated high or low surrogate units
@@ -33,7 +33,7 @@ HarmonyOS UTF conversion SHALL follow Kotlin/Native UTF-8 semantics. Default dec
 - **THEN** isolated surrogates are replaced with U+FFFD as before
 
 #### Scenario: HarmonyOS strict UTF-16 encoding
-- **GIVEN** isolated high or low surrogate units and a strict encoding request
+- **GIVEN** isolated high or low surrogate units and a future explicit caller of the reserved strict encoding helper
 - **WHEN** the native helper processes them
 - **THEN** malformed UTF-16 is rejected rather than silently replaced
 
@@ -43,7 +43,7 @@ HarmonyOS UTF conversion SHALL follow Kotlin/Native UTF-8 semantics. Default dec
 - **THEN** success output or exception behavior remains unchanged
 
 ### Requirement: Bounded caller-owned decoding
-The HarmonyOS native decoding boundary SHALL accept explicit byte length, UTF-16 output capacity, and a strict-mode flag, and write only within caller-owned storage. It MUST reject invalid pointers and insufficient capacity with a failure sentinel. Strict mode MUST reject malformed UTF-8 with the same sentinel; callers MUST discard partial output on failure. Default mode MUST replace malformed input as described above. It SHALL NOT allocate output storage or retain pointers.
+The HarmonyOS native decoding boundary SHALL accept explicit byte length, UTF-16 output capacity, and a reserved strict-mode flag, write only within caller-owned storage, and reject invalid arguments with a failure sentinel. Strict mode MUST reject malformed UTF-8; callers MUST discard partial output. The bundled Kotlin JSON bridge MUST use replacement mode. It SHALL NOT allocate output storage or retain pointers.
 
 #### Scenario: HarmonyOS direct Kotlin output
 - **GIVEN** valid UTF-8 and a pinned Kotlin character array with capacity at least the input byte count
@@ -61,9 +61,9 @@ The HarmonyOS native decoding boundary SHALL accept explicit byte length, UTF-16
 - **THEN** the native boundary writes Kotlin-compatible replacement characters directly into the caller-owned array
 
 #### Scenario: HarmonyOS malformed strict decoding
-- **GIVEN** malformed UTF-8 read through the Kotlin JSON bridge
+- **GIVEN** malformed UTF-8 and a future explicit caller of the reserved strict decode path
 - **WHEN** decoding is requested with `throwOnInvalidSequence = true`
-- **THEN** the native boundary reports failure and Kotlin throws `CharacterCodingException`
+- **THEN** the native boundary reports failure and the Kotlin wrapper throws `CharacterCodingException`
 
 ### Requirement: Text offsets remain UTF-16 based
 HarmonyOS paragraph offsets SHALL count UTF-16 code units, not UTF-8 bytes, Unicode scalar values, or graphemes. Existing UTF-16 storage SHALL be reusable without encoding round trips.

@@ -118,6 +118,8 @@ KUIKLY_EXPORT const uint16_t *KRJSONGetStringUTF16(KRJSON value, size_t *out_uni
  * Decode UTF-8 directly into caller-owned UTF-16 storage.
  * `capacity` is in UTF-16 units and must be at least `bytes`; no terminator.
  * Default mode replaces each maximal ill-formed subpart with U+FFFD.
+ * Strict mode is reserved for an explicit future caller; the bundled Kotlin JSON bridge
+ * currently always uses default mode.
  * Strict mode returns SIZE_MAX for invalid arguments/malformed UTF-8; on malformed
  * input the output may contain a partial prefix, which callers must discard.
  * Zero bytes returns zero, including for NULL pointers. Does not retain pointers.

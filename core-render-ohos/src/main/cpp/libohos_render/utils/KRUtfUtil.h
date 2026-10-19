@@ -25,6 +25,7 @@ namespace util {
 namespace utf {
 
 std::u16string ToUTF16(const char *input, size_t bytes);
+// The strict overload is reserved for a future explicit caller; renderer paths use replacement.
 std::string ToUTF8(const uint16_t *input, size_t units, bool strict = false);
 std::u32string ToUTF32(const std::string &input);
 std::string ToUTF8(const std::u32string &input);
@@ -32,8 +33,8 @@ std::string ToUTF8(const std::u32string &input);
 // UTF-16 unit count after Unicode maximal-subpart replacement.
 size_t UTF16Length(const std::string &input);
 
-// Allocation-free decode. Strict mode returns SIZE_MAX on malformed input;
-// default mode replaces each maximal ill-formed subpart with U+FFFD.
+// Allocation-free decode. Strict mode is reserved for a future explicit caller and returns
+// SIZE_MAX on malformed input; default mode replaces each maximal ill-formed subpart with U+FFFD.
 // Capacity is in UTF-16 units and must be at least bytes. No terminator is written.
 size_t DecodeInto(const uint8_t *input, size_t bytes, uint16_t *output, size_t capacity,
                   bool strict);
