@@ -143,7 +143,7 @@ class KRScrollerView : public IKRRenderViewExport {
                                     float velocity_y);
     void CancelSpringScrollAnimation();
     void DisposeSpringScrollAnimator();
-    /** 关闭系统内置的"点击状态栏回顶"（API 15+ 且公共事件已订阅成功时才关闭） */
+    /** 关闭系统内置的"点击状态栏回顶"。节点为空或系统 API < 15 时不设置，保持原有滚动行为。 */
     void DisableSystemBackToTopIfNeed();
     /** 框架实现的默认回顶：滚动到顶部 */
     void ScrollToTopByFramework();

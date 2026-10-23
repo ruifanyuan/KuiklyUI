@@ -62,13 +62,6 @@ class KRRenderView : public IKRRenderView {
     void OnCommonEvent(kuikly::CommonEventName name) override;
 
     /**
-     * 当前渲染实例是否处于活跃（可见）状态
-     */
-    bool is_active() const {
-        return is_active_;
-    }
-
-    /**
      * 获取渲染节点视图（要求在主线程调用）
      * @param tag 所在tag
      * @return 对应节点view
