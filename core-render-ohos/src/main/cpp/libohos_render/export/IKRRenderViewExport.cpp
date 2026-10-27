@@ -37,21 +37,21 @@ static KRRenderViewOnResetProp gExternalPropHandlerOnReset = nullptr;
 static KRRenderViewOnSetPropV2 gExternalPropHandlerOnSetV2 = nullptr;
 static KRRenderViewOnResetPropV2 gExternalPropHandlerOnResetV2 = nullptr;
 
-void KRRenderViewSetExternalPropHandler(KRRenderViewOnSetProp set, KRRenderViewOnResetProp reset) {
+KUIKLY_EXPORT void KRRenderViewSetExternalPropHandler(KRRenderViewOnSetProp set, KRRenderViewOnResetProp reset) {
     gExternalPropHandlerOnSet = set;
     gExternalPropHandlerOnReset = reset;
     gExternalPropHandlerOnSetV2 = nullptr;
     gExternalPropHandlerOnResetV2 = nullptr;
 }
 
-void KRRenderViewSetExternalPropHandlerV2(KRRenderViewOnSetPropV2 set, KRRenderViewOnResetPropV2 reset) {
+KUIKLY_EXPORT void KRRenderViewSetExternalPropHandlerV2(KRRenderViewOnSetPropV2 set, KRRenderViewOnResetPropV2 reset) {
     gExternalPropHandlerOnSetV2 = set;
     gExternalPropHandlerOnResetV2 = reset;
     gExternalPropHandlerOnSet = nullptr;
     gExternalPropHandlerOnReset = nullptr;
 }
 
-ArkUI_NodeHandle KRRenderViewGetNodeHandle(uint64_t instanceId, int tag) {
+KUIKLY_EXPORT ArkUI_NodeHandle KRRenderViewGetNodeHandle(uint64_t instanceId, int tag) {
     KREnsureMainThread();
     auto renderView = KRRenderManager::GetInstance().GetRenderView(std::to_string(instanceId));
     if (!renderView) {
