@@ -51,6 +51,7 @@ import ohos.KRJSONObjectKeyAt
 import ohos.KRJSONObjectKeyAtUTF16
 import ohos.KRJSONObjectKeysAreUTF16
 import ohos.KRJSONObjectValueAt
+import ohos.KRJSONParse
 import ohos.KRJSONParseUTF16
 import ohos.KRJSONRelease
 import ohos.KRJSONRetain
@@ -188,6 +189,11 @@ internal object JsonNative {
                 JSON_KIND_U16STRING -> {
                     val ptr = KRJSONGetStringUTF16(bits.toULong(), len.ptr) ?: return@memScoped 0L
                     KRJSONParseUTF16(ptr, len.value.convert<size_t>(), null).toLong()
+                }
+                JSON_KIND_STRING -> {
+                    // UTF-8 盒（KRJSONParse / Make(std::string) 产出）：len 是字节数，按 UTF-8 原样解析
+                    val ptr = KRJSONGetString(bits.toULong(), len.ptr) ?: return@memScoped 0L
+                    KRJSONParse(ptr, len.value.convert<size_t>(), null).toLong()
                 }
                 else -> 0L
             }
