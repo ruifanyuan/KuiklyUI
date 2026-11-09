@@ -5,6 +5,10 @@
 > 关联调用方：[`KRContextScheduler.cpp`](../../src/main/cpp/libohos_render/scheduler/KRContextScheduler.cpp)
 >
 > 状态：✅ 已落地并通过模块编译 + 链接验证（`libkuikly.so`）
+>
+> 2026-11-06 粒度调整：`OnAsync` 从整批持锁改为逐 task 持锁。异步任务仍保持 FIFO，
+> 同步直跑任务可在两个完整 task 之间插入；单个 task 内部及同步等待主线程期间不解锁。
+> 此调整不保证 mutex 公平性，也不限制整次 `OnAsync` 的执行时间。
 
 ---
 
@@ -86,23 +90,25 @@ if (m_isExecutingTask.load()) { task(); return; }
 
 > 核心思路：**`m_taskMutex` 用标准 `std::mutex` 即可，靠 RAII 自然管理生命周期；阻塞 lock 取代 try_lock + 自旋，由 OS 负责挂起/唤醒；同线程重入用 worker 线程归属判定收紧。**
 
-### 3.1 `OnAsync` 阶段 2：阻塞 lock + RAII
+### 3.1 `OnAsync` 阶段 2：逐 task 阻塞 lock + RAII
 
 ```cpp
-{
-    std::lock_guard<std::mutex> taskLock(m_taskMutex);
-    m_isExecutingTask.store(true);
-    while (!local.empty()) {
-        auto fn = std::move(local.front());
-        local.pop();
-        if (fn) { fn(); }
+while (!local.empty()) {
+    auto fn = std::move(local.front());
+    local.pop();
+    if (fn) {
+        std::lock_guard<std::mutex> taskLock(m_taskMutex);
+        ExecutingFlagGuard execFlagGuard(m_isExecutingTask);
+        fn();
     }
-    m_isExecutingTask.store(false);
 }
 ```
 
 - 抢不到锁时，worker 被 OS 挂起；调用线程 `unlock` 时立即唤醒，**0 CPU、0 send 风暴**。
 - worker 自身**不会**对 `m_taskMutex` 自死锁——同线程嵌套提交同步任务会走下面 3.3 的快路径，不会再回到这里 lock 一次。
+- 每个完整 task 返回后释放执行权，捕获对象在锁外析构。执行标志与锁通过 RAII 配对，异常 unwind 时先落标再解锁，不增加 C++ catch。
+- 原有异步任务之间以及 task 内新提交的异步任务仍保持 FIFO；同步任务可以插入，但不能截断正在执行的 task。需要原子执行的一组操作应显式放在同一个 task 内。
+- 不引入等待者优先或时间预算：逐 task 解锁只是提供抢锁机会，worker 仍可能立即重新拿锁；libuv timer 仍需等 `OnAsync` 返回后才能处理。
 
 ### 3.2 `DirectRunOnCurThread`：try_to_lock + yield
 
@@ -163,7 +169,7 @@ if (m_isExecutingTask.load() && IsCurrentThreadWorkerThread()) {
 
 | 成员 | 类型 | 语义 | 持有者 | 互斥粒度 |
 |---|---|---|---|---|
-| `m_taskMutex` | `std::mutex` | **kuikly context 任务执行权令牌**：任意时刻最多一个线程拿到，拿到的就是当前正在执行 task 体的线程 | worker（OnAsync batch 模式）或任意调用线程（DirectRunOnCurThread 借位模式） | 跨线程互斥 |
+| `m_taskMutex` | `std::mutex` | **kuikly context 任务执行权令牌**：任意时刻最多一个线程拿到，拿到的就是当前正在执行 task 体的线程 | worker（OnAsync 逐 task 持锁）或任意调用线程（DirectRunOnCurThread 借位模式） | 跨线程互斥 |
 | `m_isExecutingTask` | `std::atomic<bool>` | **worker 处于 task 执行栈中**的提示位，仅供 worker 自己识别"task 体内嵌套提交同步任务"的重入场景，让其直接执行避开自死锁 | worker | **不能**作为跨线程同步条件 |
 | `m_syncMainTaskMutex` + `m_sync_main_task_locked` | `std::mutex` 保护 `bool` | **跨线程标志位**：由 `KRContextScheduler` 在主线程同步逻辑中举旗/落旗，`DirectRunOnCurThread` 观察它决定是否让步 | `KRContextScheduler` 主线程同步流程 | 标志位（非锁） |
 
@@ -355,7 +361,7 @@ Release build 零成本（NDEBUG 编译期消除），Debug build 一旦短路�
 
 ### 8.2 理论意图
 
-`ScheduleTaskOnMainThread(sync=true)` 是一个“反向同步调用”：worker 线程把任务派回主线程执行，并在 worker 线程上 `cv.wait` 阻塞等结果。这个窗口期内，worker **没有**持有 `m_taskMutex`（已退出 OnAsync 阶段 2 的 `lock_guard` 作用域）。
+`ScheduleTaskOnMainThread(sync=true)` 是一个“反向同步调用”：worker 线程把任务派回主线程执行，并在 worker 线程上等待结果。调用发生在 `OnAsync` 的 task 执行栈内，因此这个窗口期内 worker **仍然持有** `m_taskMutex`，尚未退出当前 task 的 `lock_guard` 作用域。
 
 举旗要表达的意图是：
 
@@ -567,3 +573,73 @@ if (sync) {
 - ⏳ 本机仓库未提供 `hvigorw` 包装脚本，未在终端跑完整构建；需在 DevEco Studio 里或全局 hvigorw 环境下验证一次 `[XX/XX] Linking libkuikly.so`。
 - ⏳ 建议跑一轮业务回归：`KRForwardArkTSModule` 高频调用场景 + 主线程同步调用 worker 场景，观察主线程是否出现 100ms 级别卡顿。
 
+## 10. 逐 Task 持锁回归测试
+
+主机测试位于 [`src/test/cpp/thread`](../../src/test/cpp/thread)，编译真实 `KRThread.cpp` 并链接主机 libuv，仅替换 OHOS QoS、日志和 macOS 线程命名差异。
+
+```bash
+cmake -S core-render-ohos/src/test/cpp/thread -B /tmp/kuikly-thread-tests
+cmake --build /tmp/kuikly-thread-tests
+ctest --test-dir /tmp/kuikly-thread-tests --output-on-failure
+```
+
+测试覆盖：同批 `A -> 同步 S -> B`、异步 FIFO 与 worker 嵌套调用、反向同步等待 fast-fail、
+100ms 超时降级、并发执行互斥以及 timer 回调。边界用例通过捕获对象析构屏障确定性地验证
+执行锁已在 task 返回后释放，不依赖 mutex 公平性或调度时序。
+
+2026-11-06 验证：旧版整批持锁在边界用例失败，逐 task 版本通过全部用例及 10 次重复运行；
+主机 ThreadSanitizer 运行通过、无数据竞争报告；OHOS Debug 原生模块完成 `[58/58]`
+链接 `libkuikly.so`。后续 Release HAP 构建、签名及真机冒烟也已通过，详见 §11。
+
+## 11. 2026-11-06 验证补充
+
+### 11.1 主机合成争用对比
+
+[`krthread_benchmark.cpp`](../../src/test/cpp/thread/krthread_benchmark.cpp) 编译真实
+`KRThread.cpp`。每组先排入 32 个异步 task，每个 task `sleep_for(2ms)`；
+第一个 task 开始后，调用线程提交同步直跑任务，统计从提交到执行的等待时间。
+先预热一组，再测量 40 组；基线与修改版均使用 Release 构建、同一测试代码，
+仅通过 CMake 的 `KUIKLY_THREAD_SOURCE` 切换实现，基线为本轮改动前的 HEAD。
+
+| 实现 / 轮次 | p50 (ms) | p95 (ms) | 最大值 (ms) | 整批结束前插入 | 异步降级 |
+|---|---:|---:|---:|---:|---:|
+| 整批持锁 / 第 1 轮 | 72.662 | 76.780 | 83.195 | 0/40 | 0/40 |
+| 逐 task 持锁 / 第 1 轮 | 9.428 | 43.291 | 53.674 | 40/40 | 0/40 |
+| 整批持锁 / 第 2 轮 | 72.728 | 74.615 | 75.018 | 0/40 | 0/40 |
+| 逐 task 持锁 / 第 2 轮 | 6.963 | 42.429 | 71.261 | 39/40 | 0/40 |
+
+这些是 macOS 主机的合成争用结果，不是 OHOS 业务耗时或掉帧指标，也不证明 CPU
+占用下降。第 2 轮仍有一组等待整批结束，说明普通 mutex 无公平性保证；
+不得将逐 task 解锁解释成“同步调用最多只等一个 task”。
+长 task、同步反向等待主线程以及整次 `OnAsync` 对 libuv timer 的阻塞均未被拆分。
+
+日志：`logs/kuikly_thread_benchmark_{baseline,current}.log` 和对应的 `_repeat.log`。
+可使用以下命令运行修改版：
+
+```bash
+cmake -S core-render-ohos/src/test/cpp/thread -B /tmp/kuikly-thread-benchmark -DCMAKE_BUILD_TYPE=Release
+cmake --build /tmp/kuikly-thread-benchmark
+/tmp/kuikly-thread-benchmark/krthread_benchmark
+```
+
+### 11.2 OHOS Release 真机冒烟
+
+2026-11-06 11:00:29 至 11:02:24，设备 `ALN-AL00`、系统 `OpenHarmony-7.0.0.102`，
+使用新构建的 Release HAP（`debug=false`）覆盖安装且保留应用数据。
+包内 `libkuikly.so` 与本轮生成的 stripped native 库 SHA-256 一致：
+`33a43902e56cdf75cb5c12a0b36c1f18941f824486d2dfc33b16bcf08b242831`。
+
+运行现有 `scripts/mobile-test/ohos-release-smoke.cjs`：冷启动路由、
+`HelloWorldPage` 跳转、系统返回、`ListViewDemoPage` 滚动、前后台恢复，
+通过 5 项、失败 0 项、跳过 0 项。整个交互过程 PID 保持 `17699`，
+PID 过滤的 hilog 未命中脚本检查的致命错误。
+这是自研 DSL 的基础冒烟，不覆盖完整 demo、Compose DSL、
+高频同步 ArkTS 调用或真实业务延迟。
+
+报告及截图、UI 树、日志：`logs/kuikly_thread_device_smoke_1106_1100/`；
+构建日志：`logs/kuikly_thread_hap_release_build.log`。
+本次构建在进程内复用已有本地签名缓存，未修改仓库签名配置。
+
+独立 C++ 测试与基准已成功交叉编译为 OHOS arm64，但设备执行
+`/data/local/tmp/` 中二进制时报 `Permission denied`，因此未获得真机 C++ 基准数据，
+不将交叉编译或 HAP 冒烟等同于真机基准通过。

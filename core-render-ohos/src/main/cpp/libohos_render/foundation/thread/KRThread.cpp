@@ -29,6 +29,14 @@ struct TimerContext {
     std::function<void()> exec;
 };
 
+struct ExecutingFlagGuard {
+    std::atomic<bool> &flag;
+    explicit ExecutingFlagGuard(std::atomic<bool> &f) : flag(f) { flag.store(true); }
+    ~ExecutingFlagGuard() { flag.store(false); }
+    ExecutingFlagGuard(const ExecutingFlagGuard &) = delete;
+    ExecutingFlagGuard &operator=(const ExecutingFlagGuard &) = delete;
+};
+
 // DirectRunOnCurThread fast-fail 等待窗口：
 //   * 设计取舍：调用者在该窗口内不停 try_lock + yield 抢 m_taskMutex；
 //     超时后降级为 DispatchAsync，避免 caller 线程被 worker 长跑卡死。
@@ -174,37 +182,26 @@ void KRThread::OnAsync() {
     }
 
     // 阶段 2：取出当前所有立即任务（包括 timer 到点后重新入队的任务），
-    // 按入队顺序执行，受 m_taskMutex 保护以保留与 DirectRunOnCurThread 互斥语义。
+    // 异步任务保持入队顺序；每个完整 task 独立持锁，允许同步任务在 task 之间插入。
     std::queue<std::function<void()>> local;
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
         std::swap(local, m_pending);
     }
-    if (local.empty()) {
-        return;
-    }
-
     // 抢执行权：阻塞等待。即使此刻有 DirectRunOnCurThread 持锁，
     // worker 也只是被挂起到对方 unlock，期间不忙等、不浪费 CPU。
     // worker 线程不会自我重入（task 内嵌套提交同步任务走 m_isExecutingTask 快路径），
     // 故对 m_taskMutex 阻塞 lock 不会自死锁。
-    {
-        std::lock_guard<std::mutex> taskLock(m_taskMutex);
-        m_isExecutingTask.store(true);
-        while (!local.empty()) {
-            auto fn = std::move(local.front());
-            local.pop();
-            if (fn) {
-                // 任何未捕获异常都会一路冒到 std::thread 入口触发 std::terminate，
-                // 同时让 m_taskMutex / m_isExecutingTask 来不及落回干净状态——
-                // 这里不套 C++ catch，为的是让 K/N unhandled hook 能先于 std::terminate
-                // 触发、打出完整 Kotlin 侧崩溃栈（catch 会让 K/N 观察到 "C++ 已处理"
-                // 从而抑制 hook）。同时靠 std::mutex / std::atomic 的 RAII 保证 unwind
-                // 将 m_taskMutex 释放、m_isExecutingTask 下文恢复。
-                fn();
-            }
+    while (!local.empty()) {
+        auto fn = std::move(local.front());
+        local.pop();
+        if (fn) {
+            std::lock_guard<std::mutex> taskLock(m_taskMutex);
+            ExecutingFlagGuard execFlagGuard(m_isExecutingTask);
+            // 不套 C++ catch，让异常原样冒到 K/N unhandled hook。
+            // unwind 时先恢复执行标志，再释放锁；fn 的捕获对象在锁外析构。
+            fn();
         }
-        m_isExecutingTask.store(false);
     }
 }
 
@@ -348,11 +345,7 @@ void KRThread::DirectRunOnCurThread(const std::function<void()> &task) {
             // ExecutingFlagGuard 必须走 RAII：因为异常路径下手写的
             // `m_isExecutingTask.store(false)` 会被跳过，导致标志位残留，
             // 后续同线程调用会误入 nested 快路径。
-            struct ExecutingFlagGuard {
-                std::atomic<bool> &flag;
-                explicit ExecutingFlagGuard(std::atomic<bool> &f) : flag(f) { flag.store(true); }
-                ~ExecutingFlagGuard() { flag.store(false); }
-            } execFlagGuard(m_isExecutingTask);
+            ExecutingFlagGuard execFlagGuard(m_isExecutingTask);
             task();
             didHandleTask = true;
             break;

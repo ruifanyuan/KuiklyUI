@@ -127,8 +127,9 @@ class KRThread {
 
     // ---- 任务执行权 / 同步主任务标志 ----
     // m_taskMutex："kuikly context 任务执行权"令牌。任意时刻只允许一个线程持有，
-    // 持有者就是当前正在跑 task 体的线程——可能是 worker 线程（OnAsync batch 模式），
+    // 持有者就是当前正在跑 task 体的线程——可能是 worker 线程（OnAsync 逐 task 持锁），
     // 也可能是任意调用线程（DirectRunOnCurThread 借位模式）。
+    // 异步任务保持 FIFO，但整批不具备原子性：同步任务可在两个完整 task 之间插入。
     // 不可递归——同线程嵌套调用靠 m_isExecutingTask + 线程比对短路规避。
     // 决策记录：为什么不用 std::recursive_mutex，见
     // docs/design/krthread-task-mutex.md §4.1。
